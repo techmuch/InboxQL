@@ -1,4 +1,7 @@
-.PHONY: all build frontend backend clean run stop start restart test
+.PHONY: all build frontend backend install uninstall clean run stop start restart test
+
+PREFIX ?= $(shell go env GOPATH)
+BINDIR ?= $(PREFIX)/bin
 
 all: build
 
@@ -16,6 +19,15 @@ frontend:
 backend:
 	@echo "Building backend..."
 	go build -o bin/uea ./cmd/uea
+
+install: build
+	@echo "Installing uea binary to $(BINDIR)..."
+	mkdir -p $(BINDIR)
+	install -m 755 bin/uea $(BINDIR)/uea
+
+uninstall:
+	@echo "Removing uea binary from $(BINDIR)..."
+	rm -f $(BINDIR)/uea
 
 test:
 	@echo "Running backend tests..."

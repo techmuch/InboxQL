@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -53,7 +54,24 @@ func (sm *SyncManager) getHostConnectionLimiter(host string) chan struct{} {
 }
 
 // StartSync initiates the synchronization process for a given account.
+//
+// It is normally run in its own goroutine. A panic here — a malformed IMAP
+// response reaching a parser is the realistic cause — would otherwise take down
+// the entire server process rather than just this account's sync, so the whole
+// body runs under a recover that records the failure against the account and
+// lets every other account carry on.
 func (sm *SyncManager) StartSync(acc *account.Account) {
+	defer func() {
+		if r := recover(); r != nil {
+			// The stack trace is the only way to find the offending parser, so
+			// it is logged in full rather than just the panic value.
+			log.Printf("PANIC during sync of account %s on host %s: %v\n%s",
+				acc.ID, acc.Host, r, debug.Stack())
+			store.UpdateAccountStatus(acc.ID, "error",
+				fmt.Sprintf("internal error during sync: %v", r))
+		}
+	}()
+
 	limiter := sm.getHostConnectionLimiter(acc.Host)
 	limiter <- struct{}{} // Acquire slot
 	defer func() { <-limiter }() // Release slot
@@ -239,7 +257,15 @@ func ConnectIMAP(acc *account.Account) (*client.Client, error) {
 	var c *client.Client
 	var err error
 	if acc.SSL {
-		c, err = client.DialTLS(addr, &tls.Config{InsecureSkipVerify: true})
+		// Certificate verification is mandatory. This previously passed
+		// InsecureSkipVerify:true, which silently accepted any certificate and
+		// left every login and every message body open to a trivial MITM.
+		// ServerName is set explicitly so verification is against the host the
+		// user configured rather than whatever the connection resolved to.
+		c, err = client.DialTLS(addr, &tls.Config{
+			ServerName: acc.Host,
+			MinVersion: tls.VersionTLS12,
+		})
 	} else {
 		c, err = client.Dial(addr)
 	}
@@ -247,6 +273,10 @@ func ConnectIMAP(acc *account.Account) (*client.Client, error) {
 		return nil, err
 	}
 	if err := c.Login(acc.User, acc.Password); err != nil {
+		// Close the connection rather than leaking it: the caller only defers
+		// Logout on success, so a failed login would otherwise hold the socket
+		// open until GC.
+		c.Logout()
 		return nil, err
 	}
 	return c, nil

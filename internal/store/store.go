@@ -14,6 +14,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/user/uea/internal/account"
 	"github.com/user/uea/internal/message"
+	"github.com/user/uea/internal/vault"
 )
 
 const (
@@ -87,11 +88,23 @@ func InitDB(dataDir string) (*sql.DB, error) {
 			return
 		}
 
-		db, err = sql.Open("sqlite3", dbPath)
+		// busy_timeout makes concurrent writers wait for the lock instead of
+		// failing instantly with "database is locked". WAL allows one writer at
+		// a time, and sync goroutines write messages concurrently, so without
+		// this a second account syncing is an error rather than a short wait.
+		db, err = sql.Open("sqlite3", dbPath+"?_busy_timeout=5000&_foreign_keys=on")
 		if err != nil {
 			err = fmt.Errorf("failed to open database: %w", err)
 			return
 		}
+
+		// SQLite permits exactly one writer. Letting database/sql open an
+		// unbounded pool of connections that then contend for that single write
+		// lock produces lock contention under concurrent sync, so the pool is
+		// capped deliberately rather than left at the default.
+		db.SetMaxOpenConns(8)
+		db.SetMaxIdleConns(4)
+		db.SetConnMaxLifetime(time.Hour)
 
 		_, err = db.Exec("PRAGMA journal_mode=WAL;")
 		if err != nil {
@@ -109,9 +122,75 @@ func InitDB(dataDir string) (*sql.DB, error) {
 			err = fmt.Errorf("failed to run database migrations: %w", err)
 			return
 		}
+
+		// The credential vault lives alongside the database, and account rows
+		// are unreadable without it, so it is initialised here rather than
+		// leaving each caller to remember.
+		if err = vault.Init(dataDir); err != nil {
+			err = fmt.Errorf("failed to initialise credential vault: %w", err)
+			return
+		}
+
+		if err = MigrateAccountPasswords(); err != nil {
+			err = fmt.Errorf("failed to encrypt stored account passwords: %w", err)
+			return
+		}
 	})
 
 	return db, err
+}
+
+// MigrateAccountPasswords rewrites any account password still held as plaintext
+// into the vault envelope.
+//
+// This is a data migration rather than a schema one, so it is deliberately not
+// part of the PRAGMA user_version ladder: it must run on every start, since a
+// row can arrive as plaintext from an older binary or a restored backup at any
+// point, not only at the moment the schema changes.
+func MigrateAccountPasswords() error {
+	rows, err := db.Query("SELECT id, password FROM accounts")
+	if err != nil {
+		return err
+	}
+
+	type pending struct{ id, password string }
+	var todo []pending
+
+	for rows.Next() {
+		var id string
+		var password sql.NullString
+		if err := rows.Scan(&id, &password); err != nil {
+			rows.Close()
+			return err
+		}
+		if password.Valid && password.String != "" && !vault.IsEncrypted(password.String) {
+			todo = append(todo, pending{id: id, password: password.String})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	// Closed explicitly rather than deferred: the UPDATEs below need the write
+	// lock, and on SQLite an open read cursor can still be holding it.
+	rows.Close()
+
+	if len(todo) == 0 {
+		return nil
+	}
+
+	for _, item := range todo {
+		encrypted, err := vault.Encrypt(item.password)
+		if err != nil {
+			return fmt.Errorf("account %s: %w", item.id, err)
+		}
+		if _, err := db.Exec("UPDATE accounts SET password = ? WHERE id = ?", encrypted, item.id); err != nil {
+			return fmt.Errorf("account %s: %w", item.id, err)
+		}
+	}
+
+	log.Printf("Encrypted %d previously-plaintext account password(s) at rest.", len(todo))
+	return nil
 }
 
 // migrateDB runs database migrations.
@@ -444,8 +523,19 @@ func DeleteSession(id string) error {
 }
 
 // Account functions
+
+// SaveAccount persists an account, encrypting its password at rest.
+//
+// The caller passes a plaintext password and never has to think about the
+// vault; encryption happens here so there is exactly one path into the
+// accounts table and no way to accidentally write a plaintext row.
 func SaveAccount(acc *account.Account) error {
-	_, err := db.Exec(`
+	encrypted, err := vault.Encrypt(acc.Password)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt account password: %w", err)
+	}
+
+	_, err = db.Exec(`
 		INSERT INTO accounts (id, name, email, host, port, user, password, ssl, smtp_host, smtp_port, last_sync_status, last_sync_error)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -460,10 +550,12 @@ func SaveAccount(acc *account.Account) error {
 			smtp_port = EXCLUDED.smtp_port,
 			last_sync_status = EXCLUDED.last_sync_status,
 			last_sync_error = EXCLUDED.last_sync_error;
-	`, acc.ID, acc.Name, acc.Email, acc.Host, acc.Port, acc.User, acc.Password, acc.SSL, acc.SMTPHost, acc.SMTPPort, acc.LastSyncStatus, acc.LastSyncError)
+	`, acc.ID, acc.Name, acc.Email, acc.Host, acc.Port, acc.User, encrypted, acc.SSL, acc.SMTPHost, acc.SMTPPort, acc.LastSyncStatus, acc.LastSyncError)
 	return err
 }
 
+// GetAccount loads an account with its password decrypted, ready to use for an
+// IMAP login.
 func GetAccount(id string) (*account.Account, error) {
 	acc := &account.Account{}
 	err := db.QueryRow("SELECT id, name, email, host, port, user, password, ssl, smtp_host, smtp_port, last_sync_status, last_sync_error FROM accounts WHERE id = ?", id).
@@ -471,7 +563,16 @@ func GetAccount(id string) (*account.Account, error) {
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return acc, err
+	if err != nil {
+		return nil, err
+	}
+
+	decrypted, err := vault.Decrypt(acc.Password)
+	if err != nil {
+		return nil, fmt.Errorf("account %s: %w", id, err)
+	}
+	acc.Password = decrypted
+	return acc, nil
 }
 
 func ListAccounts() ([]*account.Account, error) {
@@ -485,6 +586,16 @@ func ListAccounts() ([]*account.Account, error) {
 		acc := &account.Account{}
 		if err := rows.Scan(&acc.ID, &acc.Name, &acc.Email, &acc.Host, &acc.Port, &acc.User, &acc.Password, &acc.SSL, &acc.SMTPHost, &acc.SMTPPort, &acc.LastSyncStatus, &acc.LastSyncError); err != nil {
 			return nil, err
+		}
+		decrypted, err := vault.Decrypt(acc.Password)
+		if err != nil {
+			// One unreadable row must not blank out the whole account list, so
+			// the error is logged and that account is returned without a
+			// password rather than aborting the query.
+			log.Printf("WARN: could not decrypt password for account %s: %v", acc.ID, err)
+			acc.Password = ""
+		} else {
+			acc.Password = decrypted
 		}
 		accs = append(accs, acc)
 	}
@@ -679,11 +790,19 @@ func GetTemporalVolume(filter AnalyticsFilter) ([]AnalyticsData, error) {
 }
 
 func GetTopSenders(filter AnalyticsFilter) ([]AnalyticsData, error) {
+	// "Excluding the user's own addresses" is derived from the configured
+	// accounts, not from a hardcoded literal: both the account's email and the
+	// IMAP login user are checked, since providers differ over which one shows
+	// up in the From header. Comparison is case-insensitive because header
+	// casing is not something a mail server guarantees.
 	query := `
-		SELECT from_addr, COUNT(*) as count 
-		FROM messages 
-		WHERE from_addr NOT IN (SELECT email FROM accounts)
-		AND from_addr NOT LIKE '%david.d.fullmer@gmail.com%'
+		SELECT from_addr, COUNT(*) as count
+		FROM messages
+		WHERE LOWER(from_addr) NOT IN (
+			SELECT LOWER(email) FROM accounts WHERE email IS NOT NULL AND email != ''
+			UNION
+			SELECT LOWER(user) FROM accounts WHERE user IS NOT NULL AND user != ''
+		)
 	`
 	args := []interface{}{}
 	query, args = applyFilters(query, filter, args)

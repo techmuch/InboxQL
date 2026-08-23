@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -18,6 +19,14 @@ import (
 
 var syncManager = sync.NewSyncManager(5)
 
+// envOrDefault returns the environment variable's value, or fallback when unset.
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
 func main() {
 	fmt.Println("Starting Universal Email Analytics (UEA)...")
 
@@ -30,8 +39,18 @@ func main() {
 	defer store.CloseDB()
 	log.Printf("Database initialized successfully at %s/%s", dataDir, store.DBNAME)
 
-	// Create initial user for testing
-	if err := auth.CreateInitialUser("admin@uea.local", "password123"); err != nil {
+	// Bootstrap the initial administrator. The password is overridable so a
+	// deployment is not forced to run with a published default; when it is not
+	// set we still create the documented dev account, but say so loudly rather
+	// than leaving a well-known credential in place silently.
+	adminUser := envOrDefault("UEA_ADMIN_USER", "admin@uea.local")
+	adminPass := os.Getenv("UEA_ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = "password123"
+		log.Printf("WARN: using the default development password for %s. "+
+			"Set UEA_ADMIN_PASSWORD before exposing this server beyond localhost.", adminUser)
+	}
+	if err := auth.CreateInitialUser(adminUser, adminPass); err != nil {
 		log.Printf("Warning: failed to create initial user: %v", err)
 	}
 
@@ -42,17 +61,12 @@ func main() {
 	mux.HandleFunc("/api/login", handleLogin)
 	mux.HandleFunc("/api/logout", handleLogout)
 
-	// Protected API Routes Sub-mux
+	// Sub-mux for the /api/accounts/* subtree only. Every other protected route
+	// is an exact-match registration on the parent mux below, which always wins
+	// over a subtree pattern, so listing them here too would be dead weight.
 	apiMux := http.NewServeMux()
-	apiMux.HandleFunc("/api/accounts", handleAccounts)
 	apiMux.HandleFunc("/api/accounts/stats", handleAccountStats)
 	apiMux.HandleFunc("/api/accounts/sync", handleAccountSync)
-	apiMux.HandleFunc("/api/messages", handleMessages)
-	apiMux.HandleFunc("/api/message", handleMessage)
-	apiMux.HandleFunc("/api/profile", handleProfile)
-	apiMux.HandleFunc("/api/analytics", handleAnalytics)
-	apiMux.HandleFunc("/api/settings", handleSettings)
-	apiMux.HandleFunc("/api/agents", handleAgents)
 
 	// Register the protected mux with auth middleware
 	mux.Handle("/api/accounts", auth.Middleware(http.HandlerFunc(handleAccounts)))
@@ -171,7 +185,10 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(accounts)
+		// Passwords never leave the server. Previously the full account
+		// struct, plaintext password included, was serialised to any
+		// authenticated client.
+		json.NewEncoder(w).Encode(account.RedactAll(accounts))
 
 	case http.MethodPost:
 		var acc account.Account
@@ -182,13 +199,24 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 		if acc.ID == "" {
 			acc.ID = strings.ToLower(strings.ReplaceAll(acc.Name, " ", "-"))
 		}
+
+		// Because GET redacts the password, an edit that does not touch the
+		// password field submits it empty. Treat that as "leave it alone"
+		// rather than wiping a working credential; a caller that genuinely
+		// wants no password can delete and recreate the account.
+		if acc.Password == "" {
+			if existing, err := store.GetAccount(acc.ID); err == nil && existing != nil {
+				acc.Password = existing.Password
+			}
+		}
+
 		if err := store.SaveAccount(&acc); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(acc)
+		json.NewEncoder(w).Encode(acc.Redacted())
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
@@ -277,8 +305,35 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(msgs)
 }
 
+// handleMessage serves a single message by id, backing the Thread Focus view.
+//
+// This was previously an empty function body: the route was registered and
+// returned 200 with no content, so every caller silently received nothing.
 func handleMessage(w http.ResponseWriter, r *http.Request) {
-// ... (no changes needed to handleMessage)
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "missing id parameter", http.StatusBadRequest)
+		return
+	}
+
+	msg, err := store.GetMessageByID(id)
+	if err != nil {
+		log.Printf("Error loading message %s: %v", id, err)
+		http.Error(w, "failed to load message", http.StatusInternalServerError)
+		return
+	}
+	if msg == nil {
+		http.Error(w, "message not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(msg)
 }
 
 func handleAnalytics(w http.ResponseWriter, r *http.Request) {

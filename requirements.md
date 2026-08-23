@@ -10,10 +10,26 @@ By centralizing data into a local-first environment, UEA empowers users to perfo
 
 ### **2.1. Multi-Account Sync Engine**
 
-* **Intelligent Worker Pool:** Implement a sophisticated worker pool architecture that manages concurrency on a per-host basis. For example, while the engine can handle 50 concurrent Goroutines, it must limit connections to a single provider (e.g., imap.gmail.com) to a maximum of 10 to respect server-side rate limits and prevent temporary IP blacklisting.  
-* **Stateful Incremental Sync:** Utilize IMAP UIDs and MODSEQ (where available) to track synchronization state. The engine should only fetch new headers or flags since the last recorded high-water mark, significantly reducing bandwidth and processing overhead for multi-year archives.  
-* **Deduplication Logic:** Implement a content-aware hashing algorithm (e.g., SHA-256) on normalized message bodies and unique Message-ID headers. This ensures that a single email CC'd to multiple managed accounts or moved between folders is treated as a single entity in the analytics layer.  
-* **Credential Vault:** All IMAP and SMTP credentials must be encrypted using AES-256-GCM. The encryption key is derived from the user's master passphrase using a high-cost KDF (like Argon2id), ensuring that even if the SQLite file is compromised, the credentials remain secure.
+* **1. Intelligent Worker Pool with Real-Time Telemetry:** Implement a sophisticated worker pool architecture that manages concurrency on a per-host basis, coupled with deep observability.
+  * **Per-Host Rate Limiting:** The engine must cap concurrent connections to a single provider (e.g., maximum 10 to `imap.gmail.com`) to respect rate limits and prevent temporary IP blacklisting, even if the global dispatcher can handle 50+ concurrent Goroutines.
+  * **State Introspection API:** Expose an internal HTTP endpoint (e.g., using Go's `expvar` or Prometheus metrics) that broadcasts the real-time state of the worker pool. This must show active vs. idle workers, current host allocations, and individual worker states (`CONNECTING`, `AUTHENTICATING`, `IDLE`, `FETCHING`, `BACKOFF`).
+  * **Deadletter & Panic Recovery:** Implement robust panic recovery per worker. If a worker crashes, the dispatcher must log the stack trace, record the specific IMAP command that caused the failure, and gracefully spin up a replacement worker without halting the entire pool.
+* **2. Stateful Incremental Sync and Attempt Auditing:** Utilize IMAP UIDs, `MODSEQ`, and `UIDVALIDITY` to track synchronization state, backed by a persistent audit trail of all sync activities.
+  * **High-Water Mark Tracking:** The engine should only fetch new headers or flags since the last recorded state, significantly reducing bandwidth. It must explicitly handle `UIDVALIDITY` changes to automatically trigger full re-syncs when mailboxes are repacked.
+  * **Sync Attempt Ledger:** Every synchronization attempt must be logged in a dedicated SQLite table (e.g., `sync_history`). This ledger must record:
+    * Target account and folder.
+    * Start and end timestamps.
+    * Bytes transferred and messages processed.
+    * The outcome: `SUCCESS`, `PARTIAL_SUCCESS` (e.g., network timeout halfway through), or `FAILURE` with the specific error code/message.
+  * **Dry-Run Mode:** Implement a CLI flag or configuration option for a "dry run." In this mode, the engine negotiates the sync state and logs the UIDs it *would* fetch or update, without actually downloading the payloads or mutating the local database.
+* **3. Deduplication Logic with Deterministic Debugging:** Implement a content-aware hashing algorithm (e.g., SHA-256) on normalized message bodies and unique `Message-ID` headers to ensure cross-folder and cross-account deduplication.
+  * **MIME Normalization Pipeline:** The engine must reliably strip whitespace, normalize encodings, and remove variable MIME boundaries before hashing.
+  * **Hash Explainability:** In debug mode, the engine must be able to dump the exact normalized string that was fed into the SHA-256 function. This is critical for diagnosing "false negatives" where two seemingly identical emails yield different hashes due to invisible formatting or client-specific headers.
+  * **Collision Logging:** While SHA-256 collisions are statistically negligible, the database layer should enforce unique constraints and log an explicit `WARN` if two different raw emails ever generate the same hash, allowing for immediate manual inspection.
+* **4. Credential Vault and Safe Testing Harness:** All IMAP and SMTP credentials must be encrypted at rest using AES-256-GCM, with the key derived via Argon2id.
+  * **Secure Logging:** The logging system must be context-aware and strictly redact all plaintext passwords, session tokens, or OAuth bearer tokens from console output and log files, even at the `TRACE` log level.
+  * **Auth Failure Auditing:** Differentiate between network timeouts and legitimate `NO/BAD` authentication rejections from the IMAP server. Auth failures must be surfaced immediately to the sync ledger to prevent the worker pool from endlessly hammering a server with bad credentials and triggering an account lockout.
+  * **Mock Vault for CI/CD:** Provide an in-memory, unencrypted implementation of the `CredentialVault` interface specifically for unit and integration testing, completely bypassing the Argon2id/AES overhead during automated test suites.
 
 ### **2.2. Data Persistence & Hybrid Search**
 
@@ -58,7 +74,63 @@ The "Pulse" is the primary engine for data discovery. It is composed of interact
 
 *   **Temporal Volume Heatmap**: A calendar-based heat map (via `@nivo/calendar`) showing message density over the year. Clicking a specific day instantly filters all other widgets and the Mailbox to that date.
 *   **Top Senders List**: A ranked breakdown of where mail is coming from, automatically excluding the user's own addresses. Clicking a sender applies a cross-filter.
-*   **Topic Trends**: Uses interactive pillboxes to represent the volume of AI-discovered or keyword-based topics. Users can configure persistent "Ignore Words" via the settings menu to refine this list.
+*   **The "Responsiveness" Gauge (Productivity Focus)**: Helps users understand their own communication efficiency.
+    *   *Average Response Time (ART)*: A radial gauge or simple metric card (using `@nivo/bullet`) tracking response time against personal benchmarks or SLAs.
+    *   *Response Funnel*: A horizontal funnel chart tracking the flow: Received → Opened → Replied → Resolved. Clicking "Resolved" filters the list to show threads where the last message was from the user.
+*   **Flow & Relationship Mapping (Network View)**: Identifies hidden bottlenecks or key collaborators.
+    *   *Sankey Diagram*: Utilizes `@nivo/sankey` to visualize the flow of messages between departments or key contact groups, showing where attention capital is spent.
+    *   *Thread Depth Histogram*: A bar chart showing the distribution of thread lengths to identify communication bottlenecks.
+*   **Peak Activity & "Quiet Hours" (Energy Management)**: Focuses on daily and weekly rhythms.
+    *   *Hourly Density Punchcard*: A 24-hour grid (Monday–Sunday) showing when the user is most active.
+    *   *The "Backlog" Counter*: A real-time single-metric widget showing the current number of unread or unanswered emails relative to a daily goal.
+
+**Advanced AI Insights & Automation Widgets:**
+
+*   **Advanced Topic Discovery & Clustering**: Moves beyond basic keyword counting to organize content contextually.
+    *   *Pillar-Cluster Hierarchies*: Organizes topics around a central "content pillar" (e.g., "Family Logistics") with surrounding subtopic "clusters" (e.g., "Christmas List," "Church Activities").
+    *   *Latent Dirichlet Allocation (LDA) Visualization*: Uses LDA to automatically discover latent topics, assigning topic probabilities to each thread to infer meaning from word patterns.
+    *   *Semantic Relationship Mapping*: Uses link visualization or chord diagrams to show how different topics or entities are interconnected, highlighting communication bottlenecks or frequent collaborators.
+*   **Deep Sentiment & Emotional Intensity**: Categorizes the emotional tone of emails.
+    *   *Sentiment Trend & Score Widget*: A line chart showing how sentiment fluctuates over time to detect early signs of frustration before they escalate.
+    *   *Relationship Portraits*: A multi-layered visual (like "Themail") where topical words vary in color and size to portray the tone of a specific relationship over different timeframes (years vs. months).
+    *   *Emotional Categorization*: Identifies distinct emotions like joy, anger, or sadness by analyzing syntactic cues and context, rather than just binary positive/negative scoring.
+*   **Entity Extraction & Automation Widgets**: Turns emails into structured data.
+    *   *Automated Information Extraction*: Widgets that pull structured data from unstructured text, such as vendor names, amounts, and due dates from receipts or withdrawal notifications.
+    *   *Semantic Search Filter*: Allows querying the dashboard for complex concepts (e.g., "emails where my boss appears to be frustrated") by understanding intent and context rather than exact word matches.
+
+**Interactive Widget Logic (Zustand Integration):**
+
+*   *Cross-Widget Filtering*: Provides highly synchronized data exploration. For example, clicking a sentiment category (e.g., "Frustrated") instantly updates the Topic Trends to show which subjects are driving that negative sentiment.
+*   *Modal Insights*: Uses Zustand to manage modals that appear when clicking an entity, displaying a summary of all recent interactions and sentiment scores associated with that specific contact.
+
+**Architectural Approach for the Analytics Pulse:**
+
+To support heavy text analysis alongside real-time frontend filtering, the system requires a decoupled architecture:
+
+*   **1. High-Level System Architecture:**
+    *   **The Presentation Layer (React + Zustand + Nivo):** Handles rendering, state management, and user interactions. Queries the backend for aggregated, visualization-ready data.
+    *   **The API & Orchestration Layer (Golang):** Serves as the high-performance traffic cop handling authentication, database queries, and orchestrating data ingestion from the mail server.
+    *   **The AI & Data Science Engine:** Isolates deep learning and NLP workloads (like LDA) into a separate microservice or serverless pipeline.
+*   **2. Frontend Strategy:**
+    *   **State Management Design (Zustand):** Create a single, centralized slice-based store (`usePulseStore`).
+        *   *Global Filters State*: Store current `selectedDate`, `selectedSender`, `selectedTopic`, and `selectedSentiment`.
+        *   *Action Dispatchers*: Clicking a widget calls actions like `setDateFilter` in Zustand.
+        *   *Reactive Selectors*: Widgets subscribe only to specific filter states, automatically appending filters to their API fetches or native data filtering.
+    *   **Visualization Implementation:**
+        *   *Nivo Wrappers*: Build standard wrapper components around `@nivo` charts that automatically hook into the Zustand store for global theme and filter context.
+        *   *Modal Management*: Store `modalContent` and `isModalOpen` state in Zustand.
+*   **3. Backend Strategy:**
+    *   **Concurrency for Ingestion:** Use Go's goroutines/channels to build a concurrent email ingestion pipeline (one pool for DB insertion, another for AI engine pushing).
+    *   **Calculating Responsiveness:** Track Received, Opened, Replied, and Resolved timestamps in SQLite/PostgreSQL. Use SQL window functions to rapidly aggregate the Average Response Time (ART).
+    *   **Peak Activity Pre-aggregation:** Pre-aggregate hourly message densities in the database so the Go API can serve the pre-computed grid instantly for the Punchcard.
+*   **4. AI & Advanced Insights Engine:**
+    *   **Topic Discovery & LDA:** Utilize a dedicated Python service for daily batch jobs using NLP libraries to perform LDA over the corpus, saving topics back to the primary database.
+    *   **Deep Sentiment & Emotion:** Deploy open-source LLMs locally (via Ollama) or use managed infrastructure. Pass threads through models fine-tuned for multi-label emotion classification (Joy, Anger, Sadness).
+    *   **Semantic Search & Entity Extraction:** Generate vector embeddings for emails and store them in a vector database. Use orchestration frameworks (like LangChain) to translate intent into vector queries. Prompt lightweight LLMs to output strict JSON schemas for extracted entities (receipts, due dates) for Go to validate.
+*   **5. Suggested Phased Implementation:**
+    *   **Phase 1: The Foundation.** Build the Go REST API, the React/Zustand shell, and the core database. Implement basic metrics and simple Nivo charts.
+    *   **Phase 2: The Interactive Matrix.** Implement the Zustand cross-filtering logic. Connect the Heatmap, Sankey, and Funnel so interacting with one dynamically reshapes the others.
+    *   **Phase 3: The AI Integration.** Stand up the NLP pipeline, route data through the vector database for semantic search, and implement LLM inferences for sentiment scoring and LDA clustering.
 
 #### **3.2.2. The Mailbox (The Feed)**
 

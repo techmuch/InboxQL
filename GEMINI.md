@@ -16,6 +16,7 @@ This file serves as a comprehensive guide for Gemini CLI to understand the UEA p
 - `cmd/uea/`: Contains the main entry point (`main.go`). The binary serves as both the web server and the CLI administrative tool.
 - `internal/`: Core backend logic.
     - `account/`: Account configuration and credential management.
+    - `vault/`: AES-256-GCM encryption at rest for account passwords (machine-local key in `data/vault.key`).
     - `hasher/`: Content-aware hashing algorithms for message deduplication.
     - `message/`: Message data structures and processing logic.
     - `store/`: SQLite persistence layer, including schema migrations and optimized queries.
@@ -60,6 +61,9 @@ The project uses a `Makefile` to manage the build lifecycle.
 - **Concurrency:** Use the `SyncManager` in `internal/sync` to manage connection limits per host.
 - **Database:** Perform schema changes via the migration logic in `internal/store/store.go`. Ensure `PRAGMA user_version` is updated.
 - **Error Handling:** Follow standard Go error handling patterns; wrap errors with context where appropriate.
+- **Credentials:** Never write an account password to the database directly — `store.SaveAccount` encrypts via `internal/vault`, and `GetAccount`/`ListAccounts` decrypt. Never serialise a password to an API client; use `account.Redacted()` / `account.RedactAll()` on any handler that returns accounts.
+- **TLS:** IMAP connections must verify certificates. Do not reintroduce `InsecureSkipVerify`.
+- **Long-running goroutines:** Anything launched with `go` must recover from panics; a crashed sync worker must not take down the server.
 - **Styling:** Prefer Vanilla CSS for maximum flexibility and performance.
 - **Performance:** Use React Virtualization for the message feed to handle large datasets with zero lag.
 
@@ -69,6 +73,14 @@ The `uea` binary supports several administrative commands:
 - `uea doctor`: Run diagnostics on the installation.
 - `uea maintenance`: Re-index vectors or reclaim disk space.
 - `uea backup`: Create and manage encrypted backups.
+
+## Implementation Status
+
+Do not assume a feature described in `requirements.md` exists. As of the latest commit:
+- **Working:** IMAP sync with per-host concurrency limits and UID-based incremental fetch, message storage/dedup, auth + sessions, encrypted credentials, analytics dashboard with cross-filtering.
+- **Placeholder:** search is `LIKE` on subject only (no FTS5, no vectors); "topics" is the first word of the subject line (no LDA/NLP).
+- **Not implemented:** LLM gateway, Bullet-to-Draft/SSE, sentiment analysis, sync history ledger, MODSEQ/UIDVALIDITY handling, CLI subcommands (`doctor`/`maintenance`/`backup`), S3 backup.
+- **Design preview:** the Visual AI Agent Builder saves graph JSON but has no Eino runtime — there is no `eino` dependency in `go.mod` and no endpoint that executes an agent.
 
 ## Future Roadmap (Inferred)
 - **Semantic Search:** Full integration of vector embeddings for message bodies.

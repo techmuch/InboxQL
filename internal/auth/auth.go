@@ -112,3 +112,36 @@ func generateSecureToken(length int) string {
 	}
 	return hex.EncodeToString(b)
 }
+
+// SetPassword sets a user's password, creating the user when absent.
+//
+// This is the recovery path behind `uea user passwd`: without it, a forgotten
+// administrator password could only be resolved by deleting the database.
+func SetPassword(username, password string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	user, err := store.GetUserByUsername(username)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		user = &store.User{
+			ID:          uuid.New().String(),
+			Username:    username,
+			DisplayName: username,
+			Email:       username,
+		}
+	}
+	user.PasswordHash = string(hash)
+
+	if err := store.SaveUser(user); err != nil {
+		return err
+	}
+
+	// Existing sessions were minted against the old password, so a password
+	// change that left them valid would not actually lock anyone out.
+	return store.DeleteSessionsForUser(user.ID)
+}

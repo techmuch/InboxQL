@@ -206,3 +206,16 @@ func Decrypt(value string) (string, error) {
 	}
 	return string(plaintext), nil
 }
+
+// Reload discards the in-memory key and re-runs Init against dataDir.
+//
+// Used by `uea vault rotate`, which moves the old key file aside and then calls
+// this to mint a replacement. Nothing else should need it: the key is intended
+// to be loaded once per process.
+func Reload(dataDir string) error {
+	mu.Lock()
+	aead = nil
+	loaded = false
+	mu.Unlock()
+	return Init(dataDir)
+}

@@ -21,7 +21,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "uea.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 8
+	SchemaVersion = 9
 )
 
 var (
@@ -56,10 +56,10 @@ type Session struct {
 
 // MailboxSyncState represents the synchronization state for a specific mailbox.
 type MailboxSyncState struct {
-	ID        string `json:"id"`
-	AccountID string `json:"accountId"`
-	Name      string `json:"name"`
-	LastUID   uint32 `json:"lastUid"`
+	ID         string `json:"id"`
+	AccountID  string `json:"accountId"`
+	Name       string `json:"name"`
+	LastUID    uint32 `json:"lastUid"`
 	LastMODSEQ uint64 `json:"lastModseq"`
 }
 
@@ -394,6 +394,41 @@ func migrateDB(db *sql.DB) error {
 		currentVersion = 8
 	}
 
+	if currentVersion < 9 {
+		log.Println("Applying schema migration v9 (drafts and outbox)...")
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS drafts (
+				id TEXT PRIMARY KEY,
+				account_id TEXT NOT NULL,
+				in_reply_to TEXT,
+				to_addrs TEXT NOT NULL DEFAULT '[]',
+				cc_addrs TEXT NOT NULL DEFAULT '[]',
+				bcc_addrs TEXT NOT NULL DEFAULT '[]',
+				subject TEXT NOT NULL DEFAULT '',
+				body TEXT NOT NULL DEFAULT '',
+				status TEXT NOT NULL DEFAULT 'draft',
+				origin TEXT NOT NULL DEFAULT 'human',
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL,
+				queued_at INTEGER,
+				sent_at INTEGER,
+				last_error TEXT,
+				FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_drafts_status ON drafts(status);
+			CREATE INDEX IF NOT EXISTS idx_drafts_account ON drafts(account_id);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v9: %w", err)
+		}
+		_, err = db.Exec("PRAGMA user_version = 9;")
+		if err != nil {
+			return err
+		}
+		currentVersion = 9
+	}
+
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)
 	return nil
 }
@@ -629,7 +664,7 @@ func SaveMessage(m *message.Message) error {
 func ListMessagesFiltered(accountID string, filter AnalyticsFilter, limit, offset int) ([]*message.Message, error) {
 	query := "SELECT id, account_id, uid, message_id, content_hash, normalized_body, from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body, header, flags, size, internal_date FROM messages"
 	args := []interface{}{}
-	
+
 	var clauses []string
 	if accountID != "" {
 		clauses = append(clauses, "account_id = ?")
@@ -765,14 +800,14 @@ func GetTemporalVolume(filter AnalyticsFilter) ([]AnalyticsData, error) {
 	query := "SELECT strftime('%Y-%m-%d', date / 1000, 'unixepoch') as day, COUNT(*) FROM messages"
 	args := []interface{}{}
 	query, args = applyFilters(query, filter, args)
-	
+
 	if !strings.Contains(strings.ToUpper(query), "WHERE") {
 		query += " WHERE date > 0"
 	} else {
 		query += " AND date > 0"
 	}
 	query += " GROUP BY day ORDER BY day ASC"
-	
+
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -827,11 +862,11 @@ func GetTopSenders(filter AnalyticsFilter) ([]AnalyticsData, error) {
 func GetTopicStats(filter AnalyticsFilter) ([]AnalyticsData, error) {
 	ignoreStr, _ := GetSetting("ignore_words")
 	ignoreWords := strings.Split(strings.ToLower(ignoreStr), ",")
-	
+
 	query := "SELECT LOWER(SUBSTR(subject, 1, INSTR(subject || ' ', ' ') - 1)) as topic, COUNT(*) as count FROM messages"
 	args := []interface{}{}
 	query, args = applyFilters(query, filter, args)
-	
+
 	if !strings.Contains(strings.ToUpper(query), "WHERE") {
 		query += " WHERE topic != ''"
 	} else {
@@ -851,7 +886,7 @@ func GetTopicStats(filter AnalyticsFilter) ([]AnalyticsData, error) {
 		if err := rows.Scan(&d.Label, &d.Value); err != nil {
 			return nil, err
 		}
-		
+
 		isIgnored := false
 		for _, w := range ignoreWords {
 			cleanW := strings.TrimSpace(w)
@@ -894,4 +929,29 @@ func GetAccountStats(accountID string) (*account.AccountStats, error) {
 		stats.LastSync = "Never"
 	}
 	return stats, nil
+}
+
+// ListUsers returns every login, ordered by username.
+func ListUsers() ([]*User, error) {
+	rows, err := db.Query("SELECT id, username, password_hash, display_name, email, profile_image_url FROM users ORDER BY username")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*User
+	for rows.Next() {
+		u := &User{}
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Email, &u.ProfileImageURL); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+// DeleteSessionsForUser invalidates every session belonging to a user.
+func DeleteSessionsForUser(userID string) error {
+	_, err := db.Exec("DELETE FROM sessions WHERE user_id = ?", userID)
+	return err
 }

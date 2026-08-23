@@ -14,7 +14,30 @@ import ReactFlow, {
   Position
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Plus, Trash2, Edit2, ArrowLeft, Save, GripVertical, X } from 'lucide-react';
+import { Plus, Trash2, Edit2, ArrowLeft, Save, GripVertical, X, AlertTriangle } from 'lucide-react';
+
+/**
+ * The agent builder is a design surface only.
+ *
+ * Saving writes the canvas topology to the `agents` table as JSON and nothing
+ * more: there is no Eino dependency in the Go module and no endpoint that
+ * executes a saved graph. This banner exists so the feature does not read as
+ * finished — every node type from the spec is present and configurable, which
+ * makes it look considerably more complete than it is.
+ */
+const PreviewNotice = () => (
+  <div className="flex items-start gap-3 border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 px-4 py-3 mb-6">
+    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+    <div className="text-xs leading-relaxed">
+      <span className="font-bold uppercase tracking-wider">Design preview</span>
+      <span className="mx-2 opacity-40">|</span>
+      Agents defined here are saved as graph definitions but{' '}
+      <strong className="font-semibold">cannot be executed yet</strong> — the Eino
+      runtime is not implemented in the backend. Use this to draft topologies, not
+      to run workflows.
+    </div>
+  </div>
+);
 
 const NODE_CATEGORIES = [
   {
@@ -313,9 +336,17 @@ const FlowEditor = ({ initialNodes, initialEdges, onSave, onBack, currentAgent, 
             />
           </div>
         </div>
-        <button onClick={() => onSave(nodes, edges)} className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-xs font-semibold shadow hover:opacity-90 transition-opacity">
-          <Save className="w-4 h-4" /> Save Agent
-        </button>
+        <div className="flex items-center gap-4">
+          <span
+            title="Saving stores the graph definition only; there is no runtime to execute it yet"
+            className="hidden md:flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 border border-amber-500/40 bg-amber-500/10 px-2 py-1"
+          >
+            <AlertTriangle className="w-3 h-3" /> Design preview — not executable
+          </span>
+          <button onClick={() => onSave(nodes, edges)} className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-xs font-semibold shadow hover:opacity-90 transition-opacity">
+            <Save className="w-4 h-4" /> Save Agent
+          </button>
+        </div>
       </div>
       <div className="flex-1 w-full flex overflow-hidden">
         <Sidebar />
@@ -442,12 +473,14 @@ export const AgentManager = () => {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-bold">AI Agents</h2>
-          <p className="text-sm text-muted-foreground mt-1">Manage and visually build Eino-powered AI agents.</p>
+          <p className="text-sm text-muted-foreground mt-1">Draft agent topologies for the planned Eino runtime.</p>
         </div>
         <button onClick={handleCreateNew} className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold shadow hover:opacity-90 transition-opacity">
           <Plus className="w-4 h-4" /> Create New Agent
         </button>
       </div>
+
+      <PreviewNotice />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {agents.map((agent) => (
@@ -466,7 +499,12 @@ export const AgentManager = () => {
             <p className="text-sm text-muted-foreground line-clamp-2 flex-1">{agent.description}</p>
             <div className="mt-4 pt-4 border-t border-border flex justify-between items-center text-xs font-mono text-muted-foreground">
               <span>ID: {agent.id.substring(0, 8)}...</span>
-              <span className="bg-primary/10 text-primary px-2 py-0.5 font-bold">EINO</span>
+              <span
+                title="Saved as a graph definition; not executable yet"
+                className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5 font-bold"
+              >
+                DRAFT
+              </span>
             </div>
           </div>
         ))}

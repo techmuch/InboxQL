@@ -756,11 +756,16 @@ const SettingsView = () => {
                       <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Password</label>
                       <input 
                         type="password" 
-                        placeholder="••••••••"
+                        placeholder={editingAccountId ? 'Unchanged — type to replace' : '••••••••'}
                         className="w-full bg-background border border-border  px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
                         value={formState.pass}
                         onChange={(e) => setFormState({...formState, pass: e.target.value})}
                       />
+                      {editingAccountId && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Stored passwords are encrypted and never sent to the browser. Leave blank to keep the existing one.
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">IMAP Server</label>

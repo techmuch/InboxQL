@@ -987,7 +987,7 @@ func GetTopSenders(filter AnalyticsFilter) ([]AnalyticsData, error) {
 	`
 	args := []interface{}{}
 	query, args = applyFilters(query, filter, args)
-	query += " GROUP BY from_addr ORDER BY count DESC LIMIT 10"
+	query += " GROUP BY from_addr ORDER BY count DESC"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {

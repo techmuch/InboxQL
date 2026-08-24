@@ -162,6 +162,11 @@ const Dashboard = () => {
     }));
   }, [volume]);
 
+  const maxSenderValue = useMemo(() => {
+    if (!senders || senders.length === 0) return 1;
+    return Math.max(...senders.map(d => d.value), 1);
+  }, [senders]);
+
   const year = new Date().getFullYear();
   const fromDate = `${year}-01-01`;
   const toDate = `${year}-12-31`;
@@ -223,43 +228,69 @@ const Dashboard = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className={`p-6 bg-card border  shadow-sm min-h-64 flex flex-col group transition-colors ${from ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
-            <div className="flex items-center gap-3 mb-4">
-              <Mail className="w-5 h-5 text-primary" />
-              <span className="font-bold text-lg text-foreground">Top Senders {from ? `(Filtered)` : ''}</span>
+          <div className={`p-6 bg-card border shadow-sm min-h-64 flex flex-col group transition-colors ${from ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <Mail className="w-5 h-5 text-primary" />
+                <span className="font-bold text-lg text-foreground">Top Senders {from ? `(Filtered)` : ''}</span>
+              </div>
+              {senders && senders.length > 0 && (
+                <span className="text-[11px] font-mono text-muted-foreground">
+                  {senders.length} {senders.length === 1 ? 'sender' : 'senders'}
+                </span>
+              )}
             </div>
-            <div className="flex-1 space-y-3">
-              {(senders || []).slice(0, 5).map((d, i) => (
-                <button 
-                  key={i} 
-                  onClick={() => setFrom(d.label)}
-                  className={`w-full flex items-center gap-2.5 p-1.5  transition-all ${from === d.label ? 'bg-primary/10 ring-1 ring-primary' : 'hover:bg-accent'}`}
-                >
-                  <div className="w-7 h-7  bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary">
-                    {d.label[0]?.toUpperCase() || '?'}
-                  </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="text-xs font-semibold truncate leading-tight">{d.label}</div>
-                    <div className="text-[9px] text-muted-foreground uppercase tracking-tighter">{d.value} messages</div>
-                  </div>
-                  {from === d.label && <Check className="w-2.5 h-2.5 text-primary" />}
-                </button>
-              ))}
+            <div className="flex-1 space-y-2 overflow-y-auto max-h-[420px] pr-1">
+              {(senders || []).map((d, i) => {
+                const pct = Math.max(Math.round((d.value / maxSenderValue) * 100), 2);
+                const isSelected = from === d.label;
+                return (
+                  <button 
+                    key={i} 
+                    onClick={() => setFrom(d.label)}
+                    className={`w-full flex items-center gap-2.5 p-2 transition-all text-left rounded group/row ${isSelected ? 'bg-primary/10 ring-1 ring-primary' : 'hover:bg-accent'}`}
+                  >
+                    <div className="w-7 h-7 shrink-0 bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary rounded-sm">
+                      {d.label[0]?.toUpperCase() || '?'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs font-semibold truncate leading-tight">{d.label}</div>
+                        {isSelected && <Check className="w-3 h-3 text-primary shrink-0" />}
+                      </div>
+                      <div className="mt-1.5 w-full bg-muted/70 rounded h-4 overflow-hidden relative flex items-center">
+                        <div 
+                          className={`h-full transition-all duration-300 rounded ${isSelected ? 'bg-primary' : 'bg-primary/30 group-hover/row:bg-primary/50'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                        <div className="absolute inset-0 px-2 flex items-center justify-between text-[9px] font-mono pointer-events-none">
+                          <span className={`font-semibold ${isSelected ? 'text-primary-foreground drop-shadow-sm' : 'text-foreground'}`}>
+                            {d.value} {d.value === 1 ? 'message' : 'messages'}
+                          </span>
+                          <span className={`text-[8px] ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                            {pct}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
               {(!senders || senders.length === 0) && <span className="text-xs text-muted-foreground italic text-center pt-10 block">No senders found for these filters</span>}
             </div>
           </div>
 
-          <div className={`p-6 bg-card border  shadow-sm min-h-64 flex flex-col group transition-colors ${topic ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
+          <div className={`p-6 bg-card border shadow-sm min-h-64 flex flex-col group transition-colors ${topic ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
             <div className="flex items-center gap-3 mb-4">
               <Layout className="w-5 h-5 text-primary" />
               <span className="font-bold text-lg text-foreground">Topic Trends {topic ? `(Filtered)` : ''}</span>
             </div>
-            <div className="flex-1 flex flex-wrap gap-1.5 content-start">
+            <div className="flex-1 flex flex-wrap gap-1.5 content-start overflow-y-auto max-h-[420px] pr-1">
               {(topics || []).map((d, i) => (
                 <button 
                   key={i} 
                   onClick={() => setTopic(d.label)}
-                  className={`px-2.5 py-1  text-[10px] font-semibold flex items-center gap-1.5 transition-all ${topic === d.label ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted hover:bg-primary/10 hover:text-primary'}`}
+                  className={`px-2.5 py-1 text-[10px] font-semibold flex items-center gap-1.5 transition-all rounded ${topic === d.label ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted hover:bg-primary/10 hover:text-primary'}`}
                 >
                   <span className="truncate max-w-[100px]">{d.label}</span>
                   <span className={`text-[9px] ${topic === d.label ? 'text-primary-foreground/70' : 'opacity-50 font-mono'}`}>{d.value}</span>

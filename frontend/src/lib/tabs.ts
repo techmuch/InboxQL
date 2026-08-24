@@ -32,14 +32,24 @@ export const openTool = (id: string, label: string): void => {
     return;
   }
 
+  // FlexLayout's Actions are not exported through nexus-shell, so the action
+  // is dispatched by its wire format. The payload key is `tabNode`, not
+  // `tabId` — with the wrong key the model looks up `undefined`, finds
+  // nothing, and returns normally, so the tab quietly never came forward and
+  // no error was raised to say so. Hence the check afterwards rather than a
+  // bare try/catch: silence is the failure mode here, not an exception.
   try {
-    // FlexLayout's Actions are not exported through nexus-shell, so the action
-    // is dispatched by its wire format. Falling back to addTab would create a
-    // duplicate, which is the thing this function exists to prevent — so a
-    // failure here is logged rather than papered over.
-    model.doAction({ type: 'FlexLayout_SelectTab', data: { tabId: existing } } as any);
+    model.doAction({ type: 'FlexLayout_SelectTab', data: { tabNode: existing } } as any);
   } catch (e) {
     console.error('[UEA] could not focus the existing tab', id, e);
+    return;
+  }
+
+  const node: any = model.getNodeById(existing);
+  const parent = node?.getParent?.();
+  const selected = parent?.getChildren?.()[parent.getSelected?.()];
+  if (selected?.getId?.() !== existing) {
+    console.error('[UEA] tab did not come forward', id);
   }
 };
 

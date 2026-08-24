@@ -11,7 +11,7 @@ func TestApplyFilters(t *testing.T) {
 		From:  "alice@tech.com",
 		Topic: "status",
 	}
-	
+
 	var args []interface{}
 	finalQuery, finalArgs := applyFilters(baseQuery, filter, args)
 
@@ -28,7 +28,7 @@ func TestApplyFilters(t *testing.T) {
 func TestApplyFiltersEmpty(t *testing.T) {
 	baseQuery := "SELECT * FROM messages WHERE active = 1"
 	filter := AnalyticsFilter{}
-	
+
 	var args []interface{}
 	finalQuery, finalArgs := applyFilters(baseQuery, filter, args)
 

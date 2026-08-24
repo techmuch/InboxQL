@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "uea.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 13
+	SchemaVersion = 14
 )
 
 var (
@@ -75,6 +75,11 @@ type AnalyticsFilter struct {
 	Date  string `json:"date"`  // YYYY-MM-DD
 	From  string `json:"from"`  // email address
 	Topic string `json:"topic"` // keyword
+	// Folder additionally narrows the message list to one mailbox view. Only
+	// honoured by ListMessagesFiltered — the analytics aggregates deliberately
+	// cover every folder, since a chart of "mail per day" that silently
+	// excluded Sent would be misleading.
+	Folder string `json:"folder,omitempty"`
 }
 
 // InitDB initializes the SQLite database connection and sets up the schema.
@@ -575,6 +580,27 @@ func migrateDB(db *sql.DB) error {
 		currentVersion = 13
 	}
 
+	if currentVersion < 14 {
+		log.Println("Applying schema migration v14 (mailbox attribution)...")
+		// Sync fetches INBOX and Sent and wrote both into one flat table with
+		// no record of which was which, and the importer discarded the folder
+		// it read from. Without this column "Sent" can only ever be inferred
+		// from the sender address, which is wrong for anything you were CC'd
+		// on and for mail you sent from another client.
+		//
+		// Existing rows keep NULL and fall back to that inference.
+		if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN mailbox TEXT;`); err != nil {
+			log.Printf("Warning v14: %v", err)
+		}
+		if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_messages_mailbox ON messages(mailbox);`); err != nil {
+			return fmt.Errorf("failed to apply schema v14: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 14;"); err != nil {
+			return err
+		}
+		currentVersion = 14
+	}
+
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)
 	return nil
 }
@@ -800,15 +826,28 @@ func SaveMessage(m *message.Message) error {
 	bcc, _ := json.Marshal(m.Bcc)
 	flags, _ := json.Marshal(m.Flags)
 
+	// header is BLOB NOT NULL, and a nil []byte binds as NULL. Combined with
+	// INSERT OR IGNORE — which is here to make re-imports idempotent against
+	// the (account_id, content_hash) index — that turned a message with no
+	// header into a silent no-op: zero rows written, nil error returned. The
+	// duplicate case is the only one OR IGNORE should ever swallow.
+	header := m.Header
+	if header == nil {
+		header = []byte{}
+	}
+
 	_, err := db.Exec(`
-		INSERT OR IGNORE INTO messages (id, account_id, uid, message_id, content_hash, normalized_body, from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body, header, flags, size, internal_date)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-	`, m.ID, m.AccountID, m.UID, m.MessageID, m.ContentHash, m.NormalizedBody, m.From, string(to), string(cc), string(bcc), m.Subject, m.Date.UnixMilli(), m.Body, m.HTMLBody, m.Header, string(flags), m.Size, m.InternalDate.UnixMilli())
+		INSERT OR IGNORE INTO messages (id, account_id, uid, message_id, content_hash, normalized_body, from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body, header, flags, size, internal_date, mailbox)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	`, m.ID, m.AccountID, m.UID, m.MessageID, m.ContentHash, m.NormalizedBody, m.From, string(to), string(cc), string(bcc), m.Subject, m.Date.UnixMilli(), m.Body, m.HTMLBody, header, string(flags), m.Size, m.InternalDate.UnixMilli(), nullIfEmpty(m.Mailbox))
 	return err
 }
 
 func ListMessagesFiltered(accountID string, filter AnalyticsFilter, limit, offset int) ([]*message.Message, error) {
-	query := "SELECT id, account_id, uid, message_id, content_hash, normalized_body, from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body, header, flags, size, internal_date FROM messages"
+	// messageColumns rather than a hand-written list: this one had already
+	// drifted, omitting `mailbox`, so the list view could not tell which
+	// folder a message came from even after the column existed.
+	query := "SELECT " + messageColumns + " FROM messages"
 	args := []interface{}{}
 
 	var clauses []string
@@ -828,6 +867,9 @@ func ListMessagesFiltered(accountID string, filter AnalyticsFilter, limit, offse
 		clauses = append(clauses, "subject LIKE ?")
 		args = append(args, "%"+filter.Topic+"%")
 	}
+	if c := folderClause(filter.Folder); c != "" {
+		clauses = append(clauses, c)
+	}
 
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ")
@@ -844,22 +886,13 @@ func ListMessagesFiltered(accountID string, filter AnalyticsFilter, limit, offse
 
 	var msgs []*message.Message
 	for rows.Next() {
-		m := &message.Message{}
-		var to, cc, bcc, flags string
-		var date, internalDate int64
-		err := rows.Scan(&m.ID, &m.AccountID, &m.UID, &m.MessageID, &m.ContentHash, &m.NormalizedBody, &m.From, &to, &cc, &bcc, &m.Subject, &date, &m.Body, &m.HTMLBody, &m.Header, &flags, &m.Size, &internalDate)
+		m, err := scanMessage(rows.Scan)
 		if err != nil {
 			return nil, err
 		}
-		json.Unmarshal([]byte(to), &m.To)
-		json.Unmarshal([]byte(cc), &m.Cc)
-		json.Unmarshal([]byte(bcc), &m.Bcc)
-		json.Unmarshal([]byte(flags), &m.Flags)
-		m.Date = time.UnixMilli(date)
-		m.InternalDate = time.UnixMilli(internalDate)
 		msgs = append(msgs, m)
 	}
-	return msgs, nil
+	return msgs, rows.Err()
 }
 
 func ListMessages(accountID string, limit, offset int) ([]*message.Message, error) {
@@ -987,7 +1020,7 @@ func GetTopSenders(filter AnalyticsFilter) ([]AnalyticsData, error) {
 	`
 	args := []interface{}{}
 	query, args = applyFilters(query, filter, args)
-	query += " GROUP BY from_addr ORDER BY count DESC"
+	query += " GROUP BY from_addr ORDER BY count DESC LIMIT 10"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {

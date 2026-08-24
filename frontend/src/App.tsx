@@ -75,13 +75,15 @@ const LoginView = ({ onLogin }: { onLogin: (user: any) => void }) => {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Username</label>
-            <div className="relative">
-              <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <div className="flex items-center w-full bg-background border border-border focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/50 transition-all">
+              <div className="pl-3 pr-2 text-muted-foreground flex items-center justify-center shrink-0">
+                <User className="w-4 h-4" />
+              </div>
               <input 
                 type="text" 
                 value={username}
                 onChange={e => setUsername(e.target.value)}
-                className="w-full bg-background border border-border  py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                className="w-full bg-transparent py-2.5 pr-3 text-sm focus:outline-none border-0 text-foreground"
                 placeholder="Enter username"
                 required
               />
@@ -90,13 +92,15 @@ const LoginView = ({ onLogin }: { onLogin: (user: any) => void }) => {
 
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Password</label>
-            <div className="relative">
-              <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <div className="flex items-center w-full bg-background border border-border focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/50 transition-all">
+              <div className="pl-3 pr-2 text-muted-foreground flex items-center justify-center shrink-0">
+                <Lock className="w-4 h-4" />
+              </div>
               <input 
                 type="password" 
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full bg-background border border-border  py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                className="w-full bg-transparent py-2.5 pr-3 text-sm focus:outline-none border-0 text-foreground"
                 placeholder="••••••••"
                 required
               />
@@ -162,11 +166,6 @@ const Dashboard = () => {
     }));
   }, [volume]);
 
-  const maxSenderValue = useMemo(() => {
-    if (!senders || senders.length === 0) return 1;
-    return Math.max(...senders.map(d => d.value), 1);
-  }, [senders]);
-
   const year = new Date().getFullYear();
   const fromDate = `${year}-01-01`;
   const toDate = `${year}-12-31`;
@@ -228,69 +227,43 @@ const Dashboard = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className={`p-6 bg-card border shadow-sm min-h-64 flex flex-col group transition-colors ${from ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <Mail className="w-5 h-5 text-primary" />
-                <span className="font-bold text-lg text-foreground">Top Senders {from ? `(Filtered)` : ''}</span>
-              </div>
-              {senders && senders.length > 0 && (
-                <span className="text-[11px] font-mono text-muted-foreground">
-                  {senders.length} {senders.length === 1 ? 'sender' : 'senders'}
-                </span>
-              )}
+          <div className={`p-6 bg-card border  shadow-sm min-h-64 flex flex-col group transition-colors ${from ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
+            <div className="flex items-center gap-3 mb-4">
+              <Mail className="w-5 h-5 text-primary" />
+              <span className="font-bold text-lg text-foreground">Top Senders {from ? `(Filtered)` : ''}</span>
             </div>
-            <div className="flex-1 space-y-2 overflow-y-auto max-h-[420px] pr-1">
-              {(senders || []).map((d, i) => {
-                const pct = Math.max(Math.round((d.value / maxSenderValue) * 100), 2);
-                const isSelected = from === d.label;
-                return (
-                  <button 
-                    key={i} 
-                    onClick={() => setFrom(d.label)}
-                    className={`w-full flex items-center gap-2.5 p-2 transition-all text-left rounded group/row ${isSelected ? 'bg-primary/10 ring-1 ring-primary' : 'hover:bg-accent'}`}
-                  >
-                    <div className="w-7 h-7 shrink-0 bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary rounded-sm">
-                      {d.label[0]?.toUpperCase() || '?'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs font-semibold truncate leading-tight">{d.label}</div>
-                        {isSelected && <Check className="w-3 h-3 text-primary shrink-0" />}
-                      </div>
-                      <div className="mt-1.5 w-full bg-muted/70 rounded h-4 overflow-hidden relative flex items-center">
-                        <div 
-                          className={`h-full transition-all duration-300 rounded ${isSelected ? 'bg-primary' : 'bg-primary/30 group-hover/row:bg-primary/50'}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                        <div className="absolute inset-0 px-2 flex items-center justify-between text-[9px] font-mono pointer-events-none">
-                          <span className={`font-semibold ${isSelected ? 'text-primary-foreground drop-shadow-sm' : 'text-foreground'}`}>
-                            {d.value} {d.value === 1 ? 'message' : 'messages'}
-                          </span>
-                          <span className={`text-[8px] ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                            {pct}%
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="flex-1 space-y-3">
+              {(senders || []).slice(0, 5).map((d, i) => (
+                <button 
+                  key={i} 
+                  onClick={() => setFrom(d.label)}
+                  className={`w-full flex items-center gap-2.5 p-1.5  transition-all ${from === d.label ? 'bg-primary/10 ring-1 ring-primary' : 'hover:bg-accent'}`}
+                >
+                  <div className="w-7 h-7  bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary">
+                    {d.label[0]?.toUpperCase() || '?'}
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="text-xs font-semibold truncate leading-tight">{d.label}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-tighter">{d.value} messages</div>
+                  </div>
+                  {from === d.label && <Check className="w-2.5 h-2.5 text-primary" />}
+                </button>
+              ))}
               {(!senders || senders.length === 0) && <span className="text-xs text-muted-foreground italic text-center pt-10 block">No senders found for these filters</span>}
             </div>
           </div>
 
-          <div className={`p-6 bg-card border shadow-sm min-h-64 flex flex-col group transition-colors ${topic ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
+          <div className={`p-6 bg-card border  shadow-sm min-h-64 flex flex-col group transition-colors ${topic ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
             <div className="flex items-center gap-3 mb-4">
               <Layout className="w-5 h-5 text-primary" />
               <span className="font-bold text-lg text-foreground">Topic Trends {topic ? `(Filtered)` : ''}</span>
             </div>
-            <div className="flex-1 flex flex-wrap gap-1.5 content-start overflow-y-auto max-h-[420px] pr-1">
+            <div className="flex-1 flex flex-wrap gap-1.5 content-start">
               {(topics || []).map((d, i) => (
                 <button 
                   key={i} 
                   onClick={() => setTopic(d.label)}
-                  className={`px-2.5 py-1 text-[10px] font-semibold flex items-center gap-1.5 transition-all rounded ${topic === d.label ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted hover:bg-primary/10 hover:text-primary'}`}
+                  className={`px-2.5 py-1  text-[10px] font-semibold flex items-center gap-1.5 transition-all ${topic === d.label ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted hover:bg-primary/10 hover:text-primary'}`}
                 >
                   <span className="truncate max-w-[100px]">{d.label}</span>
                   <span className={`text-[9px] ${topic === d.label ? 'text-primary-foreground/70' : 'opacity-50 font-mono'}`}>{d.value}</span>
@@ -313,15 +286,20 @@ const MailClient = () => {
   const [folder, setFolder] = useState('inbox');
   const { date, from, topic, clearAll } = useFilterStore();
 
+  const [counts, setCounts] = useState<Record<string, { total: number; unread: number }>>({});
+
   const fetchMessages = async () => {
     setLoading(true);
     try {
       const query = new URLSearchParams();
       query.append('limit', '50');
+      query.append('folder', folder);
+      // The dashboard's cross-filters compose with the folder rather than
+      // replacing it: Sent plus a date means "sent, on that date".
       if (date) query.append('date', date);
       if (from) query.append('from', from);
       if (topic) query.append('topic', topic);
-      
+
       const res = await fetch(`/api/messages?${query.toString()}`);
       if (res.status === 401) {
         window.location.reload();
@@ -336,9 +314,31 @@ const MailClient = () => {
     setLoading(false);
   };
 
+  /**
+   * Counts come from the server, across every folder at once.
+   *
+   * They used to be derived from the loaded page, which meant the sidebar
+   * reported "how many of the fifty messages on screen are unread" while
+   * looking like a mailbox total.
+   */
+  const fetchCounts = async () => {
+    try {
+      const res = await fetch('/api/messages/counts');
+      if (!res.ok) return;
+      const rows = await res.json();
+      const byFolder: Record<string, { total: number; unread: number }> = {};
+      for (const r of rows) byFolder[r.folder] = { total: r.total, unread: r.unread };
+      setCounts(byFolder);
+    } catch { /* the sidebar renders without counts */ }
+  };
+
   useEffect(() => {
     fetchMessages();
-  }, [date, from, topic]);
+  }, [folder, date, from, topic]);
+
+  useEffect(() => {
+    fetchCounts();
+  }, [folder, date, from, topic]);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -349,13 +349,32 @@ const MailClient = () => {
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
+  /**
+   * What each folder is, in one place.
+   *
+   * The empty state matters more here than it looks: "your inbox is empty"
+   * shown under Trash reads as a bug. Each folder says what being empty
+   * actually means for it, and Sent and Drafts say it without implying the
+   * user should go and sync something.
+   */
+  const folderMeta: Record<string, { label: string; icon: any; empty: string }> = {
+    inbox:   { label: 'Inbox',   icon: Inbox,        empty: 'Nothing in the inbox. Sync an account or import mail to begin.' },
+    starred: { label: 'Starred', icon: Star,         empty: 'No starred messages. Flagged mail collects here.' },
+    sent:    { label: 'Sent',    icon: Send,         empty: 'No sent mail. Messages you sent — or imported from a Sent folder — appear here.' },
+    drafts:  { label: 'Drafts',  icon: File,         empty: 'No drafts. Composed but unsent messages wait here for approval.' },
+    spam:    { label: 'Spam',    icon: AlertOctagon, empty: 'No spam. Mail flagged as junk lands here.' },
+    trash:   { label: 'Trash',   icon: Trash2,       empty: 'Trash is empty. Deleted mail is kept here, not removed.' },
+  };
+
   const navItems = [
-    { id: 'inbox', label: 'Inbox', icon: Inbox, count: messages.filter(m => !m.flags?.includes('\\Seen')).length },
-    { id: 'starred', label: 'Starred', icon: Star },
-    { id: 'sent', label: 'Sent', icon: Send },
-    { id: 'drafts', label: 'Drafts', icon: File },
-    { id: 'spam', label: 'Spam', icon: AlertOctagon },
-    { id: 'trash', label: 'Trash', icon: Trash2 },
+    // Inbox and Spam show unread, because that is the number you act on.
+    // The rest show totals: an unread count on Sent or Drafts is meaningless.
+    { id: 'inbox',   label: 'Inbox',   icon: Inbox,        badge: counts.inbox?.unread },
+    { id: 'starred', label: 'Starred', icon: Star,         badge: counts.starred?.total },
+    { id: 'sent',    label: 'Sent',    icon: Send,         badge: counts.sent?.total },
+    { id: 'drafts',  label: 'Drafts',  icon: File,         badge: counts.drafts?.total },
+    { id: 'spam',    label: 'Spam',    icon: AlertOctagon, badge: counts.spam?.unread },
+    { id: 'trash',   label: 'Trash',   icon: Trash2,       badge: counts.trash?.total },
   ];
 
   // The detail view used to live here, replacing the list and requiring a
@@ -379,7 +398,7 @@ const MailClient = () => {
             >
               <item.icon className={`w-4 h-4 ${folder === item.id ? 'text-primary' : 'text-muted-foreground'}`} />
               <span className="flex-1 text-left">{item.label}</span>
-              {item.count ? <span className="text-[10px] font-bold">{item.count}</span> : null}
+              {item.badge ? <span className="text-[10px] font-bold tabular-nums">{item.badge}</span> : null}
             </button>
           ))}
         </div>
@@ -388,12 +407,16 @@ const MailClient = () => {
       <div className="flex-1 flex flex-col">
         <div className="h-12 border-b border-border flex items-center px-4 gap-2 sticky top-0 bg-background/80 backdrop-blur-md z-10">
           <button className="p-2 hover:bg-accent  transition-colors"><input type="checkbox" className="border-border" /></button>
-          <button onClick={fetchMessages} className={`p-2 hover:bg-accent  transition-colors ${loading ? 'animate-spin' : ''}`}>
+          <button onClick={() => { fetchMessages(); fetchCounts(); }} className={`p-2 hover:bg-accent  transition-colors ${loading ? 'animate-spin' : ''}`}>
             <RefreshCw className="w-4 h-4 text-muted-foreground" />
           </button>
           <button className="p-2 hover:bg-accent  transition-colors"><MoreVertical className="w-4 h-4 text-muted-foreground" /></button>
           <div className="flex-1" />
-          <div className="text-xs text-muted-foreground font-medium">1-50 of {messages.length}</div>
+          {/* The page shows at most 50; the total comes from the server so
+              the two numbers are not the same number twice. */}
+          <div className="text-xs text-muted-foreground font-medium tabular-nums">
+            {messages.length === 0 ? '0' : `1-${messages.length}`} of {counts[folder]?.total ?? messages.length}
+          </div>
           <button className="p-2 hover:bg-accent  transition-colors"><ChevronLeft className="w-4 h-4 text-muted-foreground" /></button>
           <button className="p-2 hover:bg-accent  transition-colors"><ChevronRight className="w-4 h-4 text-muted-foreground" /></button>
         </div>
@@ -411,14 +434,29 @@ const MailClient = () => {
         )}
 
         <div className="flex-1 overflow-auto">
-          {messages.length === 0 && !loading && (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground italic space-y-4">
-              <Mail className="w-12 h-12 opacity-10" />
-              <span>Your inbox is empty. Sync an account to begin.</span>
-            </div>
-          )}
+          {messages.length === 0 && !loading && (() => {
+            const meta = folderMeta[folder];
+            const EmptyIcon = meta?.icon ?? Mail;
+            return (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground space-y-4 px-8 text-center">
+                <EmptyIcon className="w-12 h-12 opacity-10" />
+                <span className="italic">{meta?.empty ?? 'Nothing here.'}</span>
+                {(date || from || topic) && (
+                  <button onClick={clearAll} className="text-xs font-semibold text-primary hover:underline not-italic">
+                    Filters are active — clear them
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           {messages.map(msg => {
             const isUnread = !msg.flags?.includes('\\Seen');
+            // A draft has no sender — it has not been sent by anyone yet — so
+            // the column that would show From shows who it is addressed to.
+            const isDraft = msg.flags?.includes('\\Draft');
+            const who = isDraft
+              ? (msg.to?.length ? `To: ${msg.to.join(', ')}` : 'No recipient')
+              : (msg.from || '(No Sender)');
             return (
               <div 
                 key={msg.id}
@@ -432,8 +470,13 @@ const MailClient = () => {
                   <input type="checkbox" onClick={(e) => e.stopPropagation()} className="border-border" />
                   <Star className="w-4 h-4 text-muted-foreground/40 hover:text-yellow-500 transition-colors" />
                 </div>
-                <div className={`w-48 truncate mr-4 text-sm ${isUnread ? 'font-bold' : 'text-foreground/70'}`}>
-                  {msg.from || '(No Sender)'}
+                <div className={`w-48 truncate mr-4 text-sm flex items-center gap-2 ${isUnread ? 'font-bold' : 'text-foreground/70'}`}>
+                  {isDraft && (
+                    <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                      Draft
+                    </span>
+                  )}
+                  <span className={`truncate ${isDraft && !msg.to?.length ? 'italic text-muted-foreground' : ''}`}>{who}</span>
                 </div>
                 <div className="flex-1 truncate flex items-center gap-2 text-foreground/90">
                   <span className={`text-sm ${isUnread ? 'font-bold' : 'font-medium'}`}>{msg.subject || '(No Subject)'}</span>
@@ -662,12 +705,14 @@ const SettingsView = () => {
     <div className="flex h-full bg-background text-foreground overflow-hidden">
       <div className="w-64 border-r border-border bg-card/30 flex flex-col">
         <div className="p-4 border-b border-border">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <div className="flex items-center w-full bg-background border border-border focus-within:ring-1 focus-within:ring-primary transition-all">
+            <div className="pl-3 pr-2 text-muted-foreground flex items-center justify-center shrink-0">
+              <Search className="w-4 h-4" />
+            </div>
             <input 
               type="text" 
               placeholder="Search settings..." 
-              className="w-full bg-background border border-border  py-1.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+              className="w-full bg-transparent py-1.5 pr-3 text-sm focus:outline-none border-0 text-foreground"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -1220,7 +1265,10 @@ function App() {
 
   const statusBar = [
     { id: 'acc', label: activeAccount ? `Account: ${activeAccount.name}` : 'No Account', alignment: 'left' as const, icon: Mail },
-    { id: 'unread', label: `${globalUnread} Unread`, alignment: 'left' as const },
+    // Account-wide, junk and trash included — which is a different number
+    // from the Inbox badge beside it. Saying which one it is stops the two
+    // from reading as a contradiction.
+    { id: 'unread', label: `${globalUnread} unread, all folders`, alignment: 'left' as const },
     { id: 'status', label: `Sync: ${syncStatus}`, alignment: 'center' as const, icon: RefreshCw },
     { id: 'error', label: lastError || 'System OK', alignment: 'right' as const, icon: lastError ? AlertCircle : Check },
     { id: 'chat', label: 'Chat', alignment: 'right' as const, icon: MessageSquare, onClick: () => commandRegistry.executeCommand('view.toggleChat') },

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Archive, AlertOctagon, Trash, Mail, MoreVertical,
-  CornerUpLeft, CornerUpRight, Inbox, Paperclip,
+  CornerUpLeft, CornerUpRight, Inbox, Paperclip, FileText,
 } from 'lucide-react';
 import { useViewerStore } from '../lib/tabs';
 
@@ -31,6 +31,11 @@ export const MessageViewer = () => {
     return () => { cancelled = true; };
   }, [message?.id]);
 
+  // A draft is not received mail: it has no sender, it was never delivered,
+  // and offering Reply on it would be nonsense. It reaches this viewer through
+  // the Drafts folder, which maps drafts into the message shape.
+  const isDraft = message?.flags?.includes('\\Draft');
+
   if (!message) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
@@ -44,14 +49,21 @@ export const MessageViewer = () => {
   return (
     <div className="flex flex-col h-full bg-background text-foreground">
       <div className="h-12 border-b border-border flex items-center px-4 gap-2 shrink-0 bg-background/80 backdrop-blur-md">
-        <span className="text-xs text-muted-foreground truncate flex-1">
-          {message.from}
+        <span className="text-xs text-muted-foreground truncate flex-1 flex items-center gap-2">
+          {isDraft && (
+            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400">
+              Draft
+            </span>
+          )}
+          <span className="truncate">{isDraft ? 'Not sent' : message.from}</span>
         </span>
-        <button className="p-2 hover:bg-accent text-muted-foreground" title="Archive"><Archive className="w-4 h-4" /></button>
-        <button className="p-2 hover:bg-accent text-muted-foreground" title="Report spam"><AlertOctagon className="w-4 h-4" /></button>
+        {!isDraft && <>
+          <button className="p-2 hover:bg-accent text-muted-foreground" title="Archive"><Archive className="w-4 h-4" /></button>
+          <button className="p-2 hover:bg-accent text-muted-foreground" title="Report spam"><AlertOctagon className="w-4 h-4" /></button>
+        </>}
         <button className="p-2 hover:bg-accent text-muted-foreground" title="Delete"><Trash className="w-4 h-4" /></button>
         <div className="w-px h-6 bg-border mx-1" />
-        <button className="p-2 hover:bg-accent text-muted-foreground" title="Mark unread"><Mail className="w-4 h-4" /></button>
+        {!isDraft && <button className="p-2 hover:bg-accent text-muted-foreground" title="Mark unread"><Mail className="w-4 h-4" /></button>}
         <button className="p-2 hover:bg-accent text-muted-foreground"><MoreVertical className="w-4 h-4" /></button>
       </div>
 
@@ -62,21 +74,23 @@ export const MessageViewer = () => {
 
         <div className="flex items-start gap-4 mb-8">
           <div className="w-10 h-10 bg-primary/20 flex items-center justify-center text-primary font-bold shrink-0">
-            {message.from?.[0]?.toUpperCase()}
+            {isDraft ? <FileText className="w-4 h-4" /> : message.from?.[0]?.toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-center mb-1 gap-4">
-              <div className="font-bold truncate">{message.from}</div>
+              <div className="font-bold truncate">
+                {isDraft ? <span className="italic font-normal text-muted-foreground">Draft — never sent</span> : message.from}
+              </div>
               <div className="text-xs text-muted-foreground shrink-0">
-                {message.date ? new Date(message.date).toLocaleString() : ''}
+                {message.date ? `${isDraft ? 'Edited ' : ''}${new Date(message.date).toLocaleString()}` : ''}
               </div>
             </div>
             <div className="text-xs text-muted-foreground truncate">
-              to {message.to?.join(', ') || '(undisclosed)'}
+              to {message.to?.join(', ') || (isDraft ? '(no recipient yet)' : '(undisclosed)')}
             </div>
           </div>
           <div className="flex gap-2 shrink-0">
-            <button className="p-2 hover:bg-accent transition-colors" title="Reply"><CornerUpLeft className="w-4 h-4" /></button>
+            {!isDraft && <button className="p-2 hover:bg-accent transition-colors" title="Reply"><CornerUpLeft className="w-4 h-4" /></button>}
             <button className="p-2 hover:bg-accent transition-colors"><MoreVertical className="w-4 h-4" /></button>
           </div>
         </div>
@@ -106,14 +120,25 @@ export const MessageViewer = () => {
           {message.body || <span className="italic text-muted-foreground">No text content available.</span>}
         </div>
 
-        <div className="mt-12 flex gap-3">
-          <button className="px-6 py-2 border border-border flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
-            <CornerUpLeft className="w-4 h-4" /> Reply
-          </button>
-          <button className="px-6 py-2 border border-border flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
-            <CornerUpRight className="w-4 h-4" /> Forward
-          </button>
-        </div>
+        {isDraft ? (
+          /* Sending is gated on a person approving it at a terminal, so the
+             viewer states the command rather than offering a button that
+             cannot do what it says. */
+          <div className="mt-12 border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+            This draft has not been sent. Queue it with{' '}
+            <code className="font-mono text-foreground">uea send {message.id}</code>, then approve it with{' '}
+            <code className="font-mono text-foreground">uea outbox approve {message.id}</code> from a terminal.
+          </div>
+        ) : (
+          <div className="mt-12 flex gap-3">
+            <button className="px-6 py-2 border border-border flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
+              <CornerUpLeft className="w-4 h-4" /> Reply
+            </button>
+            <button className="px-6 py-2 border border-border flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
+              <CornerUpRight className="w-4 h-4" /> Forward
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

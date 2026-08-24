@@ -43,6 +43,7 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/accounts", auth.Middleware(http.HandlerFunc(handleAccounts)))
 	mux.Handle("/api/accounts/", auth.Middleware(apiMux))
 	mux.Handle("/api/messages", auth.Middleware(http.HandlerFunc(handleMessages)))
+	mux.Handle("/api/messages/counts", auth.Middleware(http.HandlerFunc(handleFolderCounts)))
 	mux.Handle("/api/message", auth.Middleware(http.HandlerFunc(handleMessage)))
 	mux.Handle("/api/message/attachments", auth.Middleware(http.HandlerFunc(handleMessageAttachments)))
 	mux.Handle("/api/profile", auth.Middleware(http.HandlerFunc(handleProfile)))
@@ -255,26 +256,42 @@ func handleAccountSync(w http.ResponseWriter, r *http.Request) {
 
 func handleMessages(w http.ResponseWriter, r *http.Request) {
 	accountID := r.URL.Query().Get("accountId")
-	limitStr := r.URL.Query().Get("limit")
-	offsetStr := r.URL.Query().Get("offset")
+	folder := r.URL.Query().Get("folder")
 
-	filter := store.AnalyticsFilter{
-		Date:  r.URL.Query().Get("date"),
-		From:  r.URL.Query().Get("from"),
-		Topic: r.URL.Query().Get("topic"),
+	if !store.ValidFolder(folder) {
+		http.Error(w, "unknown folder", http.StatusBadRequest)
+		return
 	}
 
 	limit := 50
 	offset := 0
-
-	if limitStr != "" {
-		fmt.Sscanf(limitStr, "%d", &limit)
+	if v := r.URL.Query().Get("limit"); v != "" {
+		fmt.Sscanf(v, "%d", &limit)
 	}
-	if offsetStr != "" {
-		fmt.Sscanf(offsetStr, "%d", &offset)
+	if v := r.URL.Query().Get("offset"); v != "" {
+		fmt.Sscanf(v, "%d", &offset)
 	}
 
-	msgs, err := store.ListMessagesFiltered(accountID, filter, limit, offset)
+	var msgs []*message.Message
+	var err error
+
+	switch {
+	case store.IsDraftFolder(folder):
+		// Drafts live in their own table — they are outgoing and unsent, and
+		// have never been part of the message store.
+		msgs, err = store.DraftsAsMessages(accountID, limit, offset)
+
+	default:
+		// One path for both, so a folder and a dashboard cross-filter compose:
+		// picking Sent while a date is selected means "sent, on that date".
+		msgs, err = store.ListMessagesFiltered(accountID, store.AnalyticsFilter{
+			Date:   r.URL.Query().Get("date"),
+			From:   r.URL.Query().Get("from"),
+			Topic:  r.URL.Query().Get("topic"),
+			Folder: folder,
+		}, limit, offset)
+	}
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -284,6 +301,21 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(msgs)
+}
+
+// handleFolderCounts backs the mailbox sidebar.
+//
+// All folders in one response: six round trips to render one list would be
+// silly, and the counts have to agree with each other at a single moment or
+// the sidebar contradicts itself.
+func handleFolderCounts(w http.ResponseWriter, r *http.Request) {
+	counts, err := store.FolderCounts(r.URL.Query().Get("accountId"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(counts)
 }
 
 // handleMessage serves a single message by id, backing the Thread Focus view.

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"time"
@@ -11,19 +12,21 @@ import (
 // messageColumns is the canonical column list for scanMessage.
 const messageColumns = `id, account_id, uid, message_id, content_hash, normalized_body,
 	from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body,
-	header, flags, size, internal_date`
+	header, flags, size, internal_date, mailbox`
 
 // scanMessage reads one row selected with messageColumns.
 func scanMessage(scan func(dest ...any) error) (*message.Message, error) {
 	m := &message.Message{}
 	var to, cc, bcc, flags string
 	var date, internalDate int64
+	var mailbox sql.NullString
 
 	if err := scan(&m.ID, &m.AccountID, &m.UID, &m.MessageID, &m.ContentHash,
 		&m.NormalizedBody, &m.From, &to, &cc, &bcc, &m.Subject, &date, &m.Body,
-		&m.HTMLBody, &m.Header, &flags, &m.Size, &internalDate); err != nil {
+		&m.HTMLBody, &m.Header, &flags, &m.Size, &internalDate, &mailbox); err != nil {
 		return nil, err
 	}
+	m.Mailbox = mailbox.String
 
 	json.Unmarshal([]byte(to), &m.To)
 	json.Unmarshal([]byte(cc), &m.Cc)
@@ -48,8 +51,11 @@ type SearchQuery struct {
 	Since     string // YYYY-MM-DD, inclusive
 	Until     string // YYYY-MM-DD, inclusive
 	Unread    bool
-	Limit     int
-	Offset    int
+	// Folder narrows to one of the mailbox views. Empty or "all" means every
+	// message. See folders.go for what each one means.
+	Folder string
+	Limit  int
+	Offset int
 }
 
 // SearchMessages returns messages matching the query, newest first.
@@ -87,6 +93,9 @@ func SearchMessages(q SearchQuery) ([]*message.Message, error) {
 	}
 	if q.Unread {
 		clauses = append(clauses, `flags NOT LIKE '%\Seen%'`)
+	}
+	if c := folderClause(q.Folder); c != "" {
+		clauses = append(clauses, c)
 	}
 
 	query := "SELECT " + messageColumns + " FROM messages"

@@ -162,6 +162,9 @@ func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailb
 			continue
 		}
 
+		// Which folder this came from is only known here, not in the parser.
+		parsed.Mailbox = mailboxName
+
 		if exists, _ := store.MessageExistsByMessageID(parsed.MessageID); exists {
 			continue
 		}

@@ -253,6 +253,7 @@ func runMailbox(ctx context.Context, src Source, mailboxID string, opts Options,
 
 		msg.ID = uuid.New().String()
 		msg.AccountID = opts.AccountID
+		msg.Mailbox = raw.Mailbox
 		msg.Flags = raw.Flags
 		msg.Size = uint32(len(raw.Raw))
 		if msg.InternalDate.IsZero() {

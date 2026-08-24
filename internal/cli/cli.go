@@ -126,11 +126,14 @@ func (c *Context) OpenStore() error {
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	ctx := &Context{Stdin: stdin, Stdout: stdout, Stderr: stderr}
 
+	var showVersion bool
 	fs := flag.NewFlagSet("uea", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&ctx.DataDir, "data", envOr("UEA_DATA", "./data"),
 		"path to the UEA data directory")
 	fs.BoolVar(&ctx.JSON, "json", false, "emit machine-readable JSON")
+	fs.BoolVar(&showVersion, "version", false, "print the UEA version")
+	fs.BoolVar(&showVersion, "v", false, "print the UEA version")
 	fs.Usage = func() { usage(stderr) }
 
 	// Plain Parse, deliberately: it stops at the first non-flag token, which is
@@ -139,6 +142,13 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// and rejected as unknown globals.
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
+	}
+
+	if showVersion {
+		if err := runVersion(ctx, nil); err != nil {
+			return ExitError
+		}
+		return ExitOK
 	}
 
 	rest := fs.Args()
@@ -202,8 +212,9 @@ Usage:
   uea [global flags] <command> [flags]
 
 Global flags:
-  --data <dir>   data directory (default "./data", or $UEA_DATA)
-  --json         emit machine-readable JSON where supported
+  --data <dir>    data directory (default "./data", or $UEA_DATA)
+  --json          emit machine-readable JSON where supported
+  --version, -v   print the UEA version
 
 `)
 	seen := map[string]bool{}

@@ -134,8 +134,22 @@ func TestMissingDataDirIsNotConfigured(t *testing.T) {
 }
 
 func TestVersionSucceeds(t *testing.T) {
-	if code := Run([]string{"version"}, nil, io.Discard, io.Discard); code != ExitOK {
-		t.Errorf("exit code = %d, want %d", code, ExitOK)
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"subcommand", []string{"version"}},
+		{"long flag", []string{"--version"}},
+		{"short flag", []string{"-v"}},
+		{"single dash version", []string{"-version"}},
+		{"json with flag", []string{"--json", "--version"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if code := Run(tc.args, nil, io.Discard, io.Discard); code != ExitOK {
+				t.Errorf("Run(%q) exit code = %d, want %d", tc.args, code, ExitOK)
+			}
+		})
 	}
 }
 

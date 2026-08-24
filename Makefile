@@ -16,9 +16,12 @@ frontend:
 	mkdir -p internal/embed/static
 	cp -r frontend/dist/* internal/embed/static/
 
+VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.7")
+LDFLAGS := -X github.com/user/uea/internal/cli.Version=$(VERSION)
+
 backend:
-	@echo "Building backend..."
-	go build -o bin/uea ./cmd/uea
+	@echo "Building backend (v$(VERSION))..."
+	go build -ldflags "$(LDFLAGS)" -o bin/uea ./cmd/uea
 
 install: build
 	@echo "Installing uea binary to $(BINDIR)..."

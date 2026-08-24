@@ -42,6 +42,10 @@ type Options struct {
 	// Blobs is where attachment bytes are written. Required when Attachments
 	// is set.
 	Blobs *blobstore.Store
+
+	// JobID ties recorded errors to an import job. Empty for a CLI run, which
+	// still logs its failures — they are worth keeping either way.
+	JobID string
 }
 
 // Result accounts for every message an import touched.
@@ -81,11 +85,36 @@ type Result struct {
 
 const maxReportedErrors = 20
 
+// fail records a per-message failure in the result.
+//
+// The in-memory list is capped so a systematically broken mailbox cannot
+// produce a million-line report; the database keeps them all, which is what
+// the error log reads.
 func (r *Result) fail(sourceID string, err error) {
 	r.Failed++
 	if len(r.Errors) < maxReportedErrors {
 		r.Errors = append(r.Errors, fmt.Sprintf("%s: %v", sourceID, err))
 	}
+}
+
+// recordFailure counts a failure and persists it.
+//
+// A count with no detail is not actionable — "3 failed" says nothing about
+// which three or why — so every failure gets a row, capped only by what
+// actually went wrong rather than by a display limit.
+func recordFailure(res *Result, opts Options, mailbox, ref string, err error) {
+	res.fail(ref, err)
+
+	// Best effort: the caller is already handling something that went wrong,
+	// and losing the record must not escalate into losing the import.
+	_ = store.LogError(&store.LoggedError{
+		Category:  store.ErrorCategoryImport,
+		JobID:     opts.JobID,
+		AccountID: opts.AccountID,
+		Context:   mailbox,
+		Reference: ref,
+		Message:   err.Error(),
+	})
 }
 
 func (r *Result) add(other *Result) {
@@ -207,13 +236,13 @@ func runMailbox(ctx context.Context, src Source, mailboxID string, opts Options,
 
 		msg, parseErr := message.ParseRFC822(raw.Raw)
 		if msg == nil {
-			res.fail(raw.SourceID, parseErr)
+			recordFailure(res, opts, raw.Mailbox, raw.SourceID, parseErr)
 			continue
 		}
 		// A parse error still yields headers and raw bytes often enough to be
 		// worth keeping; only a message with nothing usable is a failure.
 		if parseErr != nil && msg.Subject == "" && msg.From == "" && msg.Body == "" {
-			res.fail(raw.SourceID, parseErr)
+			recordFailure(res, opts, raw.Mailbox, raw.SourceID, parseErr)
 			continue
 		}
 
@@ -236,7 +265,7 @@ func runMailbox(ctx context.Context, src Source, mailboxID string, opts Options,
 
 		exists, err := store.MessageExistsByContentHash(opts.AccountID, msg.ContentHash)
 		if err != nil {
-			res.fail(raw.SourceID, err)
+			recordFailure(res, opts, raw.Mailbox, raw.SourceID, err)
 			continue
 		}
 		if exists {
@@ -252,7 +281,7 @@ func runMailbox(ctx context.Context, src Source, mailboxID string, opts Options,
 		}
 
 		if err := store.SaveMessage(msg); err != nil {
-			res.fail(raw.SourceID, err)
+			recordFailure(res, opts, raw.Mailbox, raw.SourceID, err)
 			continue
 		}
 		res.Imported++
@@ -263,7 +292,7 @@ func runMailbox(ctx context.Context, src Source, mailboxID string, opts Options,
 		// message — the text is the part people came for.
 		if opts.Attachments {
 			if err := storeAttachments(msg.ID, raw.Raw, opts, res); err != nil {
-				res.fail(raw.SourceID, fmt.Errorf("attachments: %w", err))
+				recordFailure(res, opts, raw.Mailbox, raw.SourceID, fmt.Errorf("attachments: %w", err))
 			}
 		}
 	}

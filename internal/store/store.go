@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "uea.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 12
+	SchemaVersion = 13
 )
 
 var (
@@ -543,6 +543,36 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 12
+	}
+
+	if currentVersion < 13 {
+		log.Println("Applying schema migration v13 (error log)...")
+		// Per-item failures were only ever counted in memory and printed once.
+		// A count with no detail is not actionable: "3 failed" tells you
+		// nothing about which three, or why.
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS error_log (
+				id         TEXT PRIMARY KEY,
+				category   TEXT NOT NULL,
+				job_id     TEXT,
+				account_id TEXT,
+				context    TEXT,
+				reference  TEXT,
+				message    TEXT NOT NULL,
+				created_at INTEGER NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_error_log_created  ON error_log(created_at DESC);
+			CREATE INDEX IF NOT EXISTS idx_error_log_job      ON error_log(job_id);
+			CREATE INDEX IF NOT EXISTS idx_error_log_category ON error_log(category);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v13: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 13;"); err != nil {
+			return err
+		}
+		currentVersion = 13
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

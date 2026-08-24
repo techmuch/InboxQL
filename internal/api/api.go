@@ -44,6 +44,7 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/accounts/", auth.Middleware(apiMux))
 	mux.Handle("/api/messages", auth.Middleware(http.HandlerFunc(handleMessages)))
 	mux.Handle("/api/message", auth.Middleware(http.HandlerFunc(handleMessage)))
+	mux.Handle("/api/message/attachments", auth.Middleware(http.HandlerFunc(handleMessageAttachments)))
 	mux.Handle("/api/profile", auth.Middleware(http.HandlerFunc(handleProfile)))
 	mux.Handle("/api/analytics", auth.Middleware(http.HandlerFunc(handleAnalytics)))
 	mux.Handle("/api/settings", auth.Middleware(http.HandlerFunc(handleSettings)))
@@ -54,6 +55,10 @@ func Router() (http.Handler, error) {
 	importMux := http.NewServeMux()
 	registerImportRoutes(importMux)
 	mux.Handle("/api/import/", auth.Middleware(importMux))
+
+	errorMux := http.NewServeMux()
+	registerErrorRoutes(errorMux)
+	mux.Handle("/api/errors", auth.Middleware(errorMux))
 
 	// Frontend Static Assets
 	content, err := embed.Content()
@@ -438,4 +443,29 @@ func handleAgents(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleMessageAttachments lists what a message carried.
+//
+// A row with no storagePath is a record that the message had an attachment UEA
+// chose not to keep — too large, or attachments disabled for that import —
+// rather than a broken reference. The viewer renders the distinction.
+func handleMessageAttachments(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "missing id parameter", http.StatusBadRequest)
+		return
+	}
+
+	list, err := store.ListAttachments(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if list == nil {
+		list = []*store.Attachment{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
 }

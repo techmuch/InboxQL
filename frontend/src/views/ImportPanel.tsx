@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { openErrorLog } from '../lib/tabs';
 import {
   AlertTriangle, ChevronDown, ChevronRight, Download, Folder, HardDrive,
   Loader2, RefreshCw, Search, ShieldAlert, XCircle, CheckCircle2,
@@ -91,6 +92,10 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
   const [loadingBoxes, setLoadingBoxes] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
+  // Covers the gap between the click and the server returning a job. Without
+  // it there is no feedback during the POST, and — worse — the button stays
+  // enabled, so a double-click starts two imports.
+  const [starting, setStarting] = useState(false);
   const [history, setHistory] = useState<Job[]>([]);
 
   const [accountId, setAccountId] = useState('');
@@ -201,8 +206,9 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
   };
 
   const startImport = async () => {
-    if (!selectedBoxes.length || !accountId) return;
+    if (!selectedBoxes.length || !accountId || starting) return;
     setError(null);
+    setStarting(true);
     try {
       const res = await fetch('/api/import/jobs', {
         method: 'POST',
@@ -227,6 +233,8 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
       subscribe(created.id);
     } catch (e: any) {
       setError(`Could not start the import: ${e.message ?? e}`);
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -305,6 +313,9 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
   };
 
   const running = job && (job.status === 'running' || job.status === 'pending');
+  // One flag for "the user is waiting on us", covering both the request that
+  // creates the job and the job itself.
+  const busy = starting || !!running;
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -474,7 +485,7 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
             </label>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} className="accent-primary" />
-              Dry run — report what would happen, write nothing
+              Dry run — report what would happen, import nothing
             </label>
             {attachments && (
               <p className="text-[10px] text-muted-foreground">
@@ -484,14 +495,31 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
             )}
           </div>
 
-          <button
-            onClick={startImport}
-            disabled={!selectedBoxes.length || !accountId || !!running}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold shadow hover:opacity-90 disabled:opacity-40"
-          >
-            <Download className="w-4 h-4" />
-            {dryRun ? 'Preview import' : 'Start import'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={startImport}
+              disabled={!selectedBoxes.length || !accountId || starting || !!running}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold shadow hover:opacity-90 disabled:opacity-40"
+            >
+              {busy
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Download className="w-4 h-4" />}
+              {starting ? 'Starting…' : running ? 'Importing…' : dryRun ? 'Preview import' : 'Start import'}
+            </button>
+
+            {busy && (
+              <span
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+                role="status"
+                aria-live="polite"
+              >
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                {starting
+                  ? 'Contacting the server…'
+                  : `Reading ${totals.messages.toLocaleString()} message${totals.messages === 1 ? '' : 's'}…`}
+              </span>
+            )}
+          </div>
         </section>
       )}
 
@@ -574,6 +602,15 @@ const JobProgress = ({ job, onCancel }: { job: Job; onCancel: () => void }) => {
         <Metric label="Failed" value={job.failed} tone={job.failed > 0 ? 'bad' : undefined} />
       </div>
 
+      {job.failed > 0 && (
+        <button
+          onClick={() => openErrorLog(job.id)}
+          className="flex items-center gap-2 text-xs border border-destructive/40 text-destructive px-3 py-1.5 hover:bg-destructive/10"
+        >
+          <AlertTriangle className="w-3.5 h-3.5" />
+          View {job.failed} error{job.failed === 1 ? '' : 's'}
+        </button>
+      )}
       {job.attachments > 0 && (
         <p className="text-xs text-muted-foreground">{job.attachments} attachment(s) stored.</p>
       )}
@@ -585,7 +622,9 @@ const JobProgress = ({ job, onCancel }: { job: Job; onCancel: () => void }) => {
       )}
       {job.dryRun && !running && job.status === 'done' && (
         <p className="text-xs text-amber-600 dark:text-amber-400">
-          This was a dry run — nothing was written. Untick “Dry run” to import for real.
+          This was a dry run — no messages were imported. Any errors above were
+          still recorded, which is the point of running one. Untick “Dry run” to
+          import for real.
         </p>
       )}
     </section>

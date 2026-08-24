@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { ShellLayout, AppTitle, chatPanel, componentRegistry, useLayoutStore, menuRegistry, commandRegistry, useThemeStore, UserProfile } from 'nexus-shell';
-import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, Inbox, Star, Send, File, AlertOctagon, Archive, MoreVertical, ChevronLeft, ChevronRight, CornerUpLeft, CornerUpRight, Trash, User, Lock, Download } from 'lucide-react';
+import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, UserProfile } from 'nexus-shell';
+import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, Inbox, Star, Send, File, AlertOctagon, MoreVertical, ChevronLeft, ChevronRight, User, Lock, Download } from 'lucide-react';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { create } from 'zustand';
 import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
+import { MessageViewer } from './views/MessageViewer';
+import { ErrorLog } from './views/ErrorLog';
+import { openTool, openMessage, openErrorLog, useViewerStore } from './lib/tabs';
 import 'nexus-shell/style.css';
 import './App.css';
 
@@ -274,7 +277,7 @@ const Dashboard = () => {
 // --- Gmail-like Mail Client Tool ---
 const MailClient = () => {
   const [messages, setMessages] = useState<any[]>([]);
-  const [selectedMessage, setSelectedMessage] = useState<any>(null);
+  const openMessageId = useViewerStore(s => s.messageId);
   const [loading, setLoading] = useState(true);
   const [folder, setFolder] = useState('inbox');
   const { date, from, topic, clearAll } = useFilterStore();
@@ -324,55 +327,9 @@ const MailClient = () => {
     { id: 'trash', label: 'Trash', icon: Trash2 },
   ];
 
-  if (selectedMessage) {
-    return (
-      <div className="flex flex-col h-full bg-background text-foreground animate-in slide-in-from-right-4 duration-200">
-        <div className="h-12 border-b border-border flex items-center px-4 gap-4 sticky top-0 bg-background/80 backdrop-blur-md z-10">
-          <button onClick={() => setSelectedMessage(null)} className="p-2 hover:bg-accent  transition-colors">
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <div className="flex-1" />
-          <button className="p-2 hover:bg-accent  text-muted-foreground"><Archive className="w-4 h-4" /></button>
-          <button className="p-2 hover:bg-accent  text-muted-foreground"><AlertOctagon className="w-4 h-4" /></button>
-          <button className="p-2 hover:bg-accent  text-muted-foreground"><Trash className="w-4 h-4" /></button>
-          <div className="w-px h-6 bg-border mx-1" />
-          <button className="p-2 hover:bg-accent  text-muted-foreground"><Mail className="w-4 h-4" /></button>
-          <button className="p-2 hover:bg-accent  text-muted-foreground"><MoreVertical className="w-4 h-4" /></button>
-        </div>
-
-        <div className="flex-1 overflow-auto p-8 max-w-5xl mx-auto w-full">
-          <h1 className="text-2xl font-normal mb-8 text-foreground/90">{selectedMessage.subject || '(No Subject)'}</h1>
-          <div className="flex items-start gap-4 mb-8">
-            <div className="w-10 h-10  bg-primary/20 flex items-center justify-center text-primary font-bold">
-              {selectedMessage.from?.[0]?.toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex justify-between items-center mb-1">
-                <div className="font-bold truncate">{selectedMessage.from}</div>
-                <div className="text-xs text-muted-foreground">{new Date(selectedMessage.date).toLocaleString()}</div>
-              </div>
-              <div className="text-xs text-muted-foreground">to {selectedMessage.to?.join(', ')}</div>
-            </div>
-            <div className="flex gap-2">
-              <button className="p-2 hover:bg-accent  transition-colors"><CornerUpLeft className="w-4 h-4" /></button>
-              <button className="p-2 hover:bg-accent  transition-colors"><MoreVertical className="w-4 h-4" /></button>
-            </div>
-          </div>
-          <div className="prose prose-sm dark:prose-invert max-w-none border-t border-border pt-8 font-sans leading-relaxed whitespace-pre-wrap text-foreground/90">
-            {selectedMessage.body || <span className="italic text-muted-foreground">No text content available.</span>}
-          </div>
-          <div className="mt-12 flex gap-3">
-            <button className="px-6 py-2 border border-border  flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
-              <CornerUpLeft className="w-4 h-4" /> Reply
-            </button>
-            <button className="px-6 py-2 border border-border  flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
-              <CornerUpRight className="w-4 h-4" /> Forward
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // The detail view used to live here, replacing the list and requiring a
+  // back button to escape. It is a tab of its own now, so the list stays put
+  // and reading the next message does not mean navigating backwards first.
 
   return (
     <div className="flex h-full bg-background text-foreground overflow-hidden">
@@ -434,8 +391,11 @@ const MailClient = () => {
             return (
               <div 
                 key={msg.id}
-                onClick={() => setSelectedMessage(msg)}
-                className={`flex items-center px-4 py-2 border-b border-border/50 cursor-pointer transition-colors group ${isUnread ? 'bg-accent/20' : 'hover:bg-accent/40'}`}
+                onClick={() => openMessage(msg)}
+                className={`flex items-center px-4 py-2 border-b border-border/50 cursor-pointer transition-colors group ${
+                  msg.id === openMessageId ? 'bg-primary/10 ring-1 ring-inset ring-primary/40'
+                  : isUnread ? 'bg-accent/20' : 'hover:bg-accent/40'
+                }`}
               >
                 <div className="flex items-center gap-3 mr-4">
                   <input type="checkbox" onClick={(e) => e.stopPropagation()} className="border-border" />
@@ -1077,6 +1037,8 @@ componentRegistry.register('mail', MailClient);
 componentRegistry.register('search', () => <div className="p-8 text-muted-foreground italic text-center mt-20 font-medium">Search functionality coming soon...</div>);
 componentRegistry.register('settings', SettingsView);
 componentRegistry.register('agents', AgentManager);
+componentRegistry.register('message', MessageViewer);
+componentRegistry.register('errors', ErrorLog);
 
 function App() {
   const [user, setUser] = useState<any>(null);
@@ -1086,45 +1048,10 @@ function App() {
   const [syncStatus] = useState('Idle');
   const [lastError, setLastError] = useState<string | null>(null);
 
-  const openTool = useCallback((id: string, label: string) => {
-    console.log(`[UEA] Opening tool: ${id} (${label})`);
-    const layoutStore = useLayoutStore.getState();
-    const model = layoutStore.model;
-    
-    if (!model) {
-      console.warn('[UEA] No layout model found');
-      return;
-    }
-
-    let existingTabId = null;
-    model.visitNodes((node: any) => {
-      if (node.getType() === 'tab' && node.getComponent() === id) {
-        existingTabId = node.getId();
-      }
-    });
-
-    if (existingTabId) {
-      console.log(`[UEA] Selecting existing tab: ${existingTabId}`);
-      try {
-        const Actions = (window as any).FlexLayout?.Actions || (model as any).Actions;
-        if (Actions) {
-          model.doAction(Actions.selectTab(existingTabId));
-        } else {
-          model.doAction({ type: 'FlexLayout_SelectTab', data: { tabId: existingTabId } } as any);
-        }
-      } catch (e) {
-        console.error('[UEA] Error selecting tab', e);
-        layoutStore.addTab(id, label);
-      }
-    } else {
-      console.log('[UEA] Creating new tab via addTab');
-      try {
-        layoutStore.addTab(id, label);
-      } catch (e) {
-        console.error('[UEA] Error adding tab', e);
-      }
-    }
-  }, []);
+  // Tab opening moved to lib/tabs so components deeper in the tree — the mail
+  // list, the importer — can open one too. App keeps a stable reference for
+  // the effects and commands below.
+  const openToolCb = useCallback((id: string, label: string) => openTool(id, label), []);
 
   const checkAuth = async () => {
     try {
@@ -1184,31 +1111,37 @@ function App() {
       id: 'uea.open-dashboard',
       label: 'Analytics Dashboard',
       keybinding: 'Control+Shift+D',
-      execute: () => openTool('dashboard', 'Analytics Dashboard'),
+      execute: () => openToolCb('dashboard', 'Analytics Dashboard'),
     });
     commandRegistry.registerCommand({
       id: 'uea.open-mail',
       label: 'Mailbox',
       keybinding: 'Control+Shift+M',
-      execute: () => openTool('mail', 'Mailbox'),
+      execute: () => openToolCb('mail', 'Mailbox'),
     });
     commandRegistry.registerCommand({
       id: 'uea.open-search',
       label: 'Search Email',
       keybinding: 'Control+Shift+F',
-      execute: () => openTool('search', 'Search'),
+      execute: () => openToolCb('search', 'Search'),
     });
     commandRegistry.registerCommand({
       id: 'uea.open-agents',
       label: 'AI Agents',
       keybinding: 'Control+Shift+A',
-      execute: () => openTool('agents', 'AI Agents'),
+      execute: () => openToolCb('agents', 'AI Agents'),
     });
+    commandRegistry.registerCommand({
+      id: 'uea.open-errors',
+      label: 'View: Error Log',
+      execute: () => openErrorLog(),
+    });
+
     commandRegistry.registerCommand({
       id: 'uea.open-settings',
       label: 'Settings',
       keybinding: 'Control+,',
-      execute: () => openTool('settings', 'Settings'),
+      execute: () => openToolCb('settings', 'Settings'),
     });
     commandRegistry.registerCommand({
       id: 'uea.logout',
@@ -1227,6 +1160,7 @@ function App() {
         { id: 'tools.mail', label: 'Mailbox', commandId: 'uea.open-mail' },
         { id: 'tools.search', label: 'Search Email', commandId: 'uea.open-search' },
         { id: 'tools.agents', label: 'AI Agents', commandId: 'uea.open-agents' },
+        { id: 'tools.errors', label: 'Error Log', commandId: 'uea.open-errors' },
       ],
       'View': [
         { id: 'view.toggle-chat', label: 'Toggle Chat', commandId: 'view.toggleChat', keybinding: 'Control+I' },
@@ -1258,7 +1192,7 @@ function App() {
   useEffect(() => {
     if (user && !loading) {
       // Auto-open mailbox on login
-      setTimeout(() => openTool('mail', 'Mailbox'), 500);
+      setTimeout(() => openToolCb('mail', 'Mailbox'), 500);
     }
   }, [user, loading, openTool]);
 

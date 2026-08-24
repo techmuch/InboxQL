@@ -161,6 +161,7 @@ func (m *Manager) execute(ctx context.Context, src Source, sel Selection, req Re
 	})
 
 	opts := Options{
+		JobID:              run.snapshot().ID,
 		AccountID:          req.AccountID,
 		Selection:          sel,
 		DryRun:             req.DryRun,

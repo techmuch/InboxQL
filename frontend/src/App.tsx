@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ShellLayout, AppTitle, chatPanel, componentRegistry, useLayoutStore, menuRegistry, commandRegistry, useThemeStore, UserProfile } from 'nexus-shell';
-import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, Inbox, Star, Send, File, AlertOctagon, Archive, MoreVertical, ChevronLeft, ChevronRight, CornerUpLeft, CornerUpRight, Trash, User, Lock } from 'lucide-react';
+import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, Inbox, Star, Send, File, AlertOctagon, Archive, MoreVertical, ChevronLeft, ChevronRight, CornerUpLeft, CornerUpRight, Trash, User, Lock, Download } from 'lucide-react';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { create } from 'zustand';
 import { AgentManager } from './AgentManager';
+import { ImportPanel } from './views/ImportPanel';
 import 'nexus-shell/style.css';
 import './App.css';
 
@@ -647,6 +648,7 @@ const SettingsView = () => {
 
   const categories = [
     { id: 'accounts', label: 'Mail Accounts', icon: Mail },
+    { id: 'import', label: 'Import Mail', icon: Download },
     { id: 'profile', label: 'User Profile', icon: User },
     { id: 'appearance', label: 'Appearance', icon: Eye },
     { id: 'ai', label: 'AI Configuration', icon: Cpu },
@@ -997,6 +999,10 @@ const SettingsView = () => {
                 </div>
               </form>
             </div>
+          )}
+
+          {activeCategory === 'import' && (
+            <ImportPanel accounts={accounts} />
           )}
 
           {activeCategory === 'appearance' && (

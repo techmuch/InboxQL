@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "uea.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 10
+	SchemaVersion = 12
 )
 
 var (
@@ -460,6 +460,89 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 10
+	}
+
+	if currentVersion < 11 {
+		log.Println("Applying schema migration v11 (attachments)...")
+		// storage_path is NULL for a part that was not kept — too large, or
+		// attachments disabled for that import. The row still exists so the
+		// message records what it carried rather than appearing to have had
+		// nothing.
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS attachments (
+				id            TEXT PRIMARY KEY,
+				message_id    TEXT NOT NULL,
+				filename      TEXT NOT NULL DEFAULT '',
+				mime_type     TEXT NOT NULL DEFAULT '',
+				size          INTEGER NOT NULL DEFAULT 0,
+				content_hash  TEXT NOT NULL DEFAULT '',
+				storage_path  TEXT,
+				inline        BOOLEAN NOT NULL DEFAULT 0,
+				content_id    TEXT,
+				skipped       TEXT,
+				created_at    INTEGER NOT NULL,
+				FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
+			CREATE INDEX IF NOT EXISTS idx_attachments_hash    ON attachments(content_hash);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v11: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 11;"); err != nil {
+			return err
+		}
+		currentVersion = 11
+	}
+
+	if currentVersion < 12 {
+		log.Println("Applying schema migration v12 (import jobs)...")
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS import_jobs (
+				id            TEXT PRIMARY KEY,
+				source        TEXT NOT NULL,
+				account_id    TEXT NOT NULL,
+				mailboxes     TEXT NOT NULL DEFAULT '[]',
+				options       TEXT NOT NULL DEFAULT '{}',
+				status        TEXT NOT NULL DEFAULT 'pending',
+				dry_run       BOOLEAN NOT NULL DEFAULT 0,
+				total         INTEGER,
+				scanned       INTEGER NOT NULL DEFAULT 0,
+				imported      INTEGER NOT NULL DEFAULT 0,
+				duplicates    INTEGER NOT NULL DEFAULT 0,
+				skipped       INTEGER NOT NULL DEFAULT 0,
+				failed        INTEGER NOT NULL DEFAULT 0,
+				attachments   INTEGER NOT NULL DEFAULT 0,
+				bytes         INTEGER NOT NULL DEFAULT 0,
+				current       TEXT,
+				last_error    TEXT,
+				created_at    INTEGER NOT NULL,
+				started_at    INTEGER,
+				finished_at   INTEGER
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_import_jobs_status ON import_jobs(status);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v12: %w", err)
+		}
+		// A job left running is a job whose process died. Nothing is going to
+		// finish it, so mark it rather than letting the UI wait forever on
+		// progress that will never arrive.
+		if _, err := db.Exec(`
+			UPDATE import_jobs
+			SET status = 'interrupted',
+			    last_error = 'the server stopped while this import was running',
+			    finished_at = ?
+			WHERE status IN ('running', 'pending');
+		`, time.Now().UnixMilli()); err != nil {
+			return fmt.Errorf("failed to reconcile interrupted import jobs: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 12;"); err != nil {
+			return err
+		}
+		currentVersion = 12
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

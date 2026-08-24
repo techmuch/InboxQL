@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/user/uea/internal/blobstore"
 	"github.com/user/uea/internal/importer"
 	"github.com/user/uea/internal/importer/applemail"
 	"github.com/user/uea/internal/importer/emlfiles"
@@ -37,13 +38,20 @@ Common flags:
   --until <YYYY-MM-DD> only messages on or before this date
   --deep               scan: parse every message for attachments and contacts
   --dry-run            run: report what would happen, write nothing
+  --attachments        run: also store attachment files on disk
+  --max-attachment-mb  skip attachments larger than this (default 25)
 
 On macOS, reading ~/Library/Mail needs Full Disk Access. ` + "`uea import sources`" + `
 says so explicitly when that is what is missing.
 
 Imported mail belongs to the --account you choose, and messages cascade on
 account deletion — so an archive you want to keep belongs in its own account
-rather than a live IMAP one.`,
+rather than a live IMAP one.
+
+Attachments are off by default: storing them can multiply the size of the data
+directory. With --attachments they are written to <data>/attachments/, addressed
+by content so the same file sent to several people is stored once. Remember that
+` + "`uea backup`" + ` copies only the database — see ` + "`uea help backup`" + `.`,
 		Run: runImport,
 	})
 }
@@ -230,13 +238,15 @@ func importScan(ctx *Context, args []string) error {
 // flagsets is how `--account` ended up rejected by `run` and accepted by the
 // code behind it.
 type importFlags struct {
-	source  string
-	mailbox string
-	account string
-	since   string
-	until   string
-	limit   int
-	dryRun  bool
+	source      string
+	mailbox     string
+	account     string
+	since       string
+	until       string
+	limit       int
+	dryRun      bool
+	attachments bool
+	maxAttach   int64
 }
 
 func (f *importFlags) bind(fs *flag.FlagSet) {
@@ -247,6 +257,8 @@ func (f *importFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&f.since, "since", "", "on or after YYYY-MM-DD")
 	fs.StringVar(&f.until, "until", "", "on or before YYYY-MM-DD")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "report only, write nothing")
+	fs.BoolVar(&f.attachments, "attachments", false, "also store attachment files")
+	fs.Int64Var(&f.maxAttach, "max-attachment-mb", 25, "skip attachments larger than this, in MB")
 }
 
 // selection converts the date and limit flags into an importer.Selection.
@@ -331,9 +343,19 @@ func doImport(ctx *Context, src importer.Source, mailboxIDs []string, f *importF
 	}
 	defer store.CloseDB()
 
+	opts := importer.Options{
+		AccountID:          f.account,
+		Selection:          sel,
+		DryRun:             f.dryRun,
+		Attachments:        f.attachments,
+		MaxAttachmentBytes: f.maxAttach << 20,
+	}
+	if f.attachments {
+		opts.Blobs = blobstore.New(ctx.DataDir)
+	}
+
 	progress := ctx.importProgress()
-	result, runErr := importer.Run(context.Background(), src, mailboxIDs,
-		importer.Options{AccountID: f.account, Selection: sel, DryRun: f.dryRun}, progress)
+	result, runErr := importer.Run(context.Background(), src, mailboxIDs, opts, progress)
 	ctx.clearProgress(progress)
 
 	if runErr != nil && result == nil {
@@ -405,6 +427,13 @@ func printImportResult(ctx *Context, r *importer.Result) {
 		for _, e := range r.Errors {
 			ctx.Printf("                %s\n", e)
 		}
+	}
+	if r.AttachmentsStored > 0 || r.AttachmentsSkipped > 0 {
+		ctx.Printf("  attachments %d stored (%s)", r.AttachmentsStored, humanBytes(r.AttachmentBytes))
+		if r.AttachmentsSkipped > 0 {
+			ctx.Printf(", %d too large or not kept", r.AttachmentsSkipped)
+		}
+		ctx.Printf("\n")
 	}
 	ctx.Printf("  read        %s in %s\n", humanBytes(r.Bytes), r.Duration.Round(time.Millisecond))
 

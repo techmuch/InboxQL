@@ -84,6 +84,9 @@ func runServe(ctx *Context, args []string) error {
 	}
 	defer store.CloseDB()
 
+	// The API needs the data directory for the attachment blob store.
+	api.SetDataDir(ctx.DataDir)
+
 	handler, err := api.Router()
 	if err != nil {
 		return Fail(ExitError, "%v", err)

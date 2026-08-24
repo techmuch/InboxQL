@@ -79,6 +79,7 @@ The `Makefile` is the primary tool for managing the development lifecycle.
 | `make test` | Runs both backend (`go test`) and frontend (`vitest`) tests. |
 | `make start` | Runs the backend in the background (logs to `uea.log`). |
 | `make start --foreground` | Runs the backend in the foreground. |
+| `./bin/uea` | Lists every CLI subcommand. The server is `uea serve`. |
 | `make stop` | Stops any running backend instances. |
 | `make restart` | Restarts the backend. |
 | `make clean` | Removes build artifacts (`bin/`, `frontend/dist/`, etc.). |

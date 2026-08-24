@@ -40,13 +40,16 @@ UEA is distributed as a single, zero-dependency binary.
 
 ### Download Release
 
-Download the latest release for your operating system and run the executable:
+Download the latest release for your operating system, prepare a data directory,
+then start the server:
 
 ```bash
-./uea
+./uea init      # creates ./data with the database and encryption key
+./uea serve
 ```
 
-This will start the web server. You can then access the UEA dashboard by opening your web browser and navigating to `http://localhost:8080`.
+`./uea` on its own lists every subcommand — it is an administrative CLI as well
+as a server. You can then access the UEA dashboard by opening your web browser and navigating to `http://localhost:8080`.
 
 ### Build from Source
 

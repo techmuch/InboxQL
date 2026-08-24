@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"archive/tar"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode"
@@ -58,4 +62,58 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// tarDirectory writes a directory tree into an uncompressed tar archive.
+//
+// Uncompressed on purpose: attachment blobs are overwhelmingly already-
+// compressed formats — PDFs, JPEGs, zips — so gzip would burn CPU across
+// gigabytes to save very little, and an uncompressed tar can be inspected and
+// extracted with anything.
+func tarDirectory(root, dest string) error {
+	if _, err := os.Stat(dest); err == nil {
+		return fmt.Errorf("%s already exists", dest)
+	}
+
+	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	writer := tar.NewWriter(out)
+	defer writer.Close()
+
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+
+		header, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		header.Name = filepath.ToSlash(rel)
+		if err := writer.WriteHeader(header); err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = io.Copy(writer, f)
+		return err
+	})
 }

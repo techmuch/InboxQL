@@ -264,8 +264,9 @@ Do not promise the user any of this; none of it exists:
 - Topic modelling or clustering. The dashboard's "topics" is the first word of
   the subject line.
 - Sentiment analysis.
-- Attachment extraction. Bodies are stored, and `import scan --deep` will *count*
-  attachments, but nothing extracts or stores them yet.
+- Attachment extraction over IMAP. Sync stores bodies only. `uea import
+  --attachments` does extract and store attachments from a desktop client, and
+  `import scan --deep` counts them, but a synced mailbox has none.
 - Agent execution. The Visual AI Agent Builder in the web UI saves graph JSON
   and cannot run it — there is no Eino runtime.
 - Reading mail as HTML. `body` is the plain-text part; `htmlBody` exists in the

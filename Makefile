@@ -44,13 +44,16 @@ clean:
 
 # Default to background. Use --foreground for foreground.
 # Example: make start --foreground
+# `uea init` is safe to re-run and only fills in what is missing, so a fresh
+# clone boots in one step while an existing data directory is left alone.
 start: stop backend
+	@./bin/uea init --data ./data >/dev/null 2>&1 || ./bin/uea init --data ./data --force >/dev/null 2>&1 || true
 ifneq (,$(filter --foreground,$(MAKECMDGOALS)))
 	@echo "Running backend in foreground..."
-	./bin/uea
+	./bin/uea serve --data ./data
 else
 	@echo "Running backend in background..."
-	nohup ./bin/uea > uea.log 2>&1 &
+	nohup ./bin/uea serve --data ./data > uea.log 2>&1 &
 	@echo "Backend started. Check uea.log for output."
 	@echo "Access the frontend at http://localhost:8080"
 endif

@@ -49,6 +49,12 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/settings", auth.Middleware(http.HandlerFunc(handleSettings)))
 	mux.Handle("/api/agents", auth.Middleware(http.HandlerFunc(handleAgents)))
 
+	// Import routes are authenticated as a group: they read the user's mail
+	// client and start jobs that write to the database.
+	importMux := http.NewServeMux()
+	registerImportRoutes(importMux)
+	mux.Handle("/api/import/", auth.Middleware(importMux))
+
 	// Frontend Static Assets
 	content, err := embed.Content()
 	if err != nil {

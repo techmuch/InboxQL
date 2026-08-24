@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/user/uea/internal/auth"
+	"github.com/user/uea/internal/blobstore"
 	"github.com/user/uea/internal/llm"
 	"github.com/user/uea/internal/store"
 	"github.com/user/uea/internal/vault"
@@ -90,11 +91,16 @@ Stop the server before vacuum: it needs exclusive access.`,
 Uses SQLite's online backup API, so it is safe to run while the server is up.
 With no path, writes into <data>/backups/ with a timestamped name.
 
-  --include-key   also copy vault.key beside the backup
+  --include-key           also copy vault.key beside the backup
+  --include-attachments   also archive <data>/attachments/ beside the backup
 
 Without the vault key a backup cannot decrypt any account password. Store the
 key separately if the backup goes somewhere less trusted than this machine —
-together they are equivalent to the plaintext passwords.`,
+together they are equivalent to the plaintext passwords.
+
+Attachment bytes live on disk, not in the database, so a plain backup does not
+contain them. When attachments exist and are being left out, this says so
+rather than letting you discover it at restore time.`,
 		Run: runBackup,
 	})
 
@@ -461,6 +467,7 @@ func runBackup(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	includeKey := fs.Bool("include-key", false, "also copy vault.key beside the backup")
+	includeAttachments := fs.Bool("include-attachments", false, "also archive the attachment blobs")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -472,8 +479,19 @@ func runBackup(ctx *Context, args []string) error {
 
 	dest := fs.Arg(0)
 	if dest == "" {
-		dest = filepath.Join(ctx.DataDir, "backups",
-			"uea-"+time.Now().UTC().Format("20060102T150405Z")+".db")
+		// The timestamp is only second-granular, so two backups a moment apart
+		// would collide and the second would be refused. An auto-generated name
+		// steps aside; an explicit path still refuses, because overwriting a
+		// backup someone named is never what they meant.
+		base := filepath.Join(ctx.DataDir, "backups",
+			"uea-"+time.Now().UTC().Format("20060102T150405Z"))
+		dest = base + ".db"
+		for i := 2; ; i++ {
+			if _, err := os.Stat(dest); os.IsNotExist(err) {
+				break
+			}
+			dest = fmt.Sprintf("%s-%d.db", base, i)
+		}
 	}
 
 	if err := store.BackupTo(dest); err != nil {
@@ -494,10 +512,40 @@ func runBackup(ctx *Context, args []string) error {
 		result["vaultKey"] = keyDest
 	}
 
+	// Attachment bytes are not in the database. Either archive them, or say
+	// clearly that this backup is not self-sufficient.
+	blobs := blobstore.New(ctx.DataDir)
+	blobCount, blobBytes, _ := blobs.Usage()
+	switch {
+	case blobCount == 0:
+		// Nothing to say.
+	case *includeAttachments:
+		archive := dest + ".attachments.tar"
+		if err := tarDirectory(blobs.Root(), archive); err != nil {
+			return Fail(ExitError, "database was backed up but the attachments could not be archived: %v", err)
+		}
+		result["attachments"] = archive
+		result["attachmentCount"] = blobCount
+	default:
+		result["attachmentsOmitted"] = blobCount
+	}
+
 	if ctx.JSON {
 		return ctx.EmitJSON(result)
 	}
 	ctx.Printf("Backed up to %s\n", dest)
+	switch {
+	case blobCount == 0:
+	case *includeAttachments:
+		ctx.Printf("Archived %d attachment blob(s), %s, to %s\n",
+			blobCount, humanBytes(blobBytes), result["attachments"])
+	default:
+		ctx.Printf("\nWARNING: %d attachment blob(s), %s, are NOT in this backup.\n",
+			blobCount, humanBytes(blobBytes))
+		ctx.Printf("Attachment bytes live in %s, outside the database.\n", blobs.Root())
+		ctx.Printf("Re-run with --include-attachments, or back that directory up separately.\n\n")
+	}
+
 	if *includeKey {
 		ctx.Printf("Vault key copied to %s — this pair is equivalent to the plaintext passwords.\n", result["vaultKey"])
 	} else {

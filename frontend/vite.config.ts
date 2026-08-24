@@ -25,5 +25,11 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/setupTests.ts'],
+    css: true,
+    server: {
+      deps: {
+        inline: ['nexus-shell', 'flexlayout-react'],
+      },
+    },
   }
 })

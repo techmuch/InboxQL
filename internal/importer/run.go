@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/user/uea/internal/blobstore"
 	"github.com/user/uea/internal/message"
 	"github.com/user/uea/internal/store"
 )
@@ -27,6 +28,20 @@ type Options struct {
 	// DryRun reads and parses everything and reports what would happen,
 	// without writing a single row.
 	DryRun bool
+
+	// Attachments stores attachment bytes as well as message text. Off by
+	// default: a first import should be fast and small, and turning it on can
+	// multiply the data directory by an order of magnitude.
+	Attachments bool
+
+	// MaxAttachmentBytes caps a single attachment. Parts over the cap are
+	// recorded with their real size and a reason, never silently dropped.
+	// Zero means the package default.
+	MaxAttachmentBytes int64
+
+	// Blobs is where attachment bytes are written. Required when Attachments
+	// is set.
+	Blobs *blobstore.Store
 }
 
 // Result accounts for every message an import touched.
@@ -44,6 +59,13 @@ type Result struct {
 	// Partial counts messages the client never fully downloaded. They are
 	// skipped rather than stored as empty.
 	Partial int `json:"partial"`
+
+	// AttachmentsStored and AttachmentsSkipped account for parts separately
+	// from messages: an import can succeed while an oversized attachment is
+	// deliberately left behind.
+	AttachmentsStored  int   `json:"attachmentsStored"`
+	AttachmentsSkipped int   `json:"attachmentsSkipped"`
+	AttachmentBytes    int64 `json:"attachmentBytes"`
 
 	Bytes    int64         `json:"bytes"`
 	Duration time.Duration `json:"-"`
@@ -73,6 +95,9 @@ func (r *Result) add(other *Result) {
 	r.Skipped += other.Skipped
 	r.Failed += other.Failed
 	r.Partial += other.Partial
+	r.AttachmentsStored += other.AttachmentsStored
+	r.AttachmentsSkipped += other.AttachmentsSkipped
+	r.AttachmentBytes += other.AttachmentBytes
 	r.Bytes += other.Bytes
 	for _, e := range other.Errors {
 		if len(r.Errors) < maxReportedErrors {
@@ -95,6 +120,9 @@ func (r *Result) Total() int {
 func Run(ctx context.Context, src Source, mailboxIDs []string, opts Options, progress ProgressFunc) (*Result, error) {
 	if opts.AccountID == "" {
 		return nil, fmt.Errorf("an account is required to import into")
+	}
+	if opts.Attachments && opts.Blobs == nil {
+		return nil, fmt.Errorf("attachment import requires a blob store")
 	}
 	acc, err := store.GetAccount(opts.AccountID)
 	if err != nil {
@@ -229,12 +257,65 @@ func runMailbox(ctx context.Context, src Source, mailboxID string, opts Options,
 		}
 		res.Imported++
 		taken++
+
+		// Attachments come after the message row exists, because they are
+		// foreign-keyed to it. A failure here costs the attachments, not the
+		// message — the text is the part people came for.
+		if opts.Attachments {
+			if err := storeAttachments(msg.ID, raw.Raw, opts, res); err != nil {
+				res.fail(raw.SourceID, fmt.Errorf("attachments: %w", err))
+			}
+		}
 	}
 
 	if err := iter.Err(); err != nil {
 		return res, fmt.Errorf("mailbox %s: %w", mailboxID, err)
 	}
 	return res, nil
+}
+
+// storeAttachments extracts and persists a message's attachment parts.
+func storeAttachments(messageID string, raw []byte, opts Options, res *Result) error {
+	parts, err := message.ExtractAttachments(raw, opts.MaxAttachmentBytes)
+	if err != nil {
+		// A message whose MIME structure will not re-walk has no attachments
+		// as far as we are concerned; the body was already stored.
+		return nil //nolint:nilerr
+	}
+
+	for _, part := range parts {
+		record := &store.Attachment{
+			ID:        uuid.New().String(),
+			MessageID: messageID,
+			Filename:  part.Filename,
+			MimeType:  part.ContentType,
+			Size:      part.Size,
+			Inline:    part.Inline,
+			ContentID: part.ContentID,
+			Skipped:   part.Skipped,
+		}
+
+		if part.Data != nil && opts.Blobs != nil {
+			hash, err := opts.Blobs.Put(part.Data)
+			if err != nil {
+				return err
+			}
+			record.ContentHash = hash
+			record.StoragePath = opts.Blobs.Path(hash)
+			res.AttachmentsStored++
+			res.AttachmentBytes += part.Size
+		} else {
+			if record.Skipped == "" {
+				record.Skipped = "attachment storage unavailable"
+			}
+			res.AttachmentsSkipped++
+		}
+
+		if err := store.SaveAttachment(record); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SortMailboxes orders mailboxes by display path so listings are stable.

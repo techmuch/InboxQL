@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.2",
+  "version": "0.0.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,7 @@
   "dependencies": {
     "@nivo/calendar": "^0.99.0",
     "@nivo/core": "^0.99.0",
-    "nexus-shell": "^0.1.2",
+    "nexus-shell": "^0.2.11",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "reactflow": "^11.11.4",

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, UserProfile } from 'nexus-shell';
+import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile } from 'nexus-shell';
 import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, Inbox, Star, Send, File, AlertOctagon, MoreVertical, ChevronLeft, ChevronRight, User, Lock, Download } from 'lucide-react';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { create } from 'zustand';
@@ -1072,6 +1072,11 @@ componentRegistry.register('message', MessageViewer);
 componentRegistry.register('errors', ErrorLog);
 
 function App() {
+  // Every menu advertises a shortcut — Control+Shift+D and the rest — but the
+  // shell only binds them when this hook is mounted, and it never was. The
+  // menus were displaying keystrokes that did nothing.
+  useKeyboardShortcuts();
+
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeAccount, setActiveAccount] = useState<any>(null);
@@ -1165,6 +1170,7 @@ function App() {
     commandRegistry.registerCommand({
       id: 'uea.open-errors',
       label: 'View: Error Log',
+      keybinding: 'Control+Shift+E',
       execute: () => openErrorLog(),
     });
 
@@ -1191,13 +1197,13 @@ function App() {
         { id: 'tools.mail', label: 'Mailbox', commandId: 'uea.open-mail' },
         { id: 'tools.search', label: 'Search Email', commandId: 'uea.open-search' },
         { id: 'tools.agents', label: 'AI Agents', commandId: 'uea.open-agents' },
-        { id: 'tools.errors', label: 'Error Log', commandId: 'uea.open-errors' },
       ],
       'View': [
         { id: 'view.toggle-chat', label: 'Toggle Chat', commandId: 'view.toggleChat', keybinding: 'Control+I' },
       ],
       'Help': [
         { id: 'help.settings', label: 'Settings', commandId: 'uea.open-settings' },
+        { id: 'help.errors', label: 'Error Log', commandId: 'uea.open-errors' },
         { id: 'help.divider', label: '---' },
         { id: 'help.about', label: 'About Email UEA', commandId: 'nexus.about' },
         { id: 'help.logout', label: 'Sign Out', commandId: 'uea.logout' },

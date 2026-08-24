@@ -14,7 +14,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/uea/internal/cli.Version=1.2.3"
-var Version = "0.0.7"
+var Version = "0.0.8"
 
 func init() {
 	register(&Command{

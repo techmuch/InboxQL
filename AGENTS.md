@@ -166,6 +166,51 @@ returns a draft to `draft` status and is safe for you to call.
 
 ---
 
+## `import` — bring in mail from a desktop client
+
+```
+uea --json import sources
+uea --json import mailboxes --source apple-mail
+uea --json import scan --mailbox <id> --deep
+uea --json import run --mailbox <id> --account <id> --limit 100 --dry-run
+uea --json import eml <folder> --account <id>
+```
+
+Sources are **read-only**. Nothing is written, moved or deleted in the user's mail
+client, and you should say so if they ask.
+
+`sources` reports each client as ready, blocked or absent. **Blocked is the common
+one on macOS**: `~/Library/Mail` needs Full Disk Access, and the `remedy` field
+carries the exact instructions including which binary needs the grant. Relay that
+verbatim rather than paraphrasing — the usual mistake is granting access to the
+wrong program.
+
+`scan` is fast by default and returns only counts, sizes and the mailbox tree. Pass
+`--deep` for attachments, contacts and the date range; that parses every message and
+takes minutes on a large mailbox, so tell the user before starting one. The `depth`
+field in the response says which you got — a `0` after a fast scan means *not
+measured*, not *none*.
+
+`run` reports `scanned / imported / duplicates / skipped / failed`, and those buckets
+sum to `scanned`. Duplicates are messages already in that account, matched on content
+hash; they are expected on a re-run and are not an error. `partial` counts messages
+the client never finished downloading, which are skipped rather than stored empty.
+
+**Always offer `--dry-run` first** for anything but a small `--limit`. It parses
+everything and reports exactly what would happen without writing a row.
+
+`--limit` spans the whole run, not each mailbox: 100 across three folders is 100.
+
+Imported mail belongs to `--account` and cascades on account deletion, so an archive
+belongs in its own account rather than a live IMAP one. If the user has no suitable
+account, say so rather than picking one of their real mailboxes.
+
+`import eml` needs no special permission and is the fallback whenever `sources`
+reports blocked: the user drags messages out of Mail.app into a folder, and you
+import that.
+
+---
+
 ## Administrative commands
 
 You will not usually need these, but they are available and all support
@@ -219,7 +264,8 @@ Do not promise the user any of this; none of it exists:
 - Topic modelling or clustering. The dashboard's "topics" is the first word of
   the subject line.
 - Sentiment analysis.
-- Attachment extraction. Bodies are stored; attachments are not surfaced.
+- Attachment extraction. Bodies are stored, and `import scan --deep` will *count*
+  attachments, but nothing extracts or stores them yet.
 - Agent execution. The Visual AI Agent Builder in the web UI saves graph JSON
   and cannot run it — there is no Eino runtime.
 - Reading mail as HTML. `body` is the plain-text part; `htmlBody` exists in the

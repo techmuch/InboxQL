@@ -61,9 +61,13 @@ func SearchMessages(q SearchQuery) ([]*message.Message, error) {
 		// Scanned across the fields a person would expect "search" to cover.
 		// Without an index this is a table scan; acceptable at the scale UEA
 		// currently reaches, and the place FTS5 should slot in later.
-		clauses = append(clauses, "(subject LIKE ? OR body LIKE ? OR from_addr LIKE ?)")
+		// normalized_body is included because it is where HTML-only mail keeps
+		// its searchable text: body holds the plain part, which such a message
+		// does not have, so without this an imported newsletter is findable
+		// only by its subject line.
+		clauses = append(clauses, "(subject LIKE ? OR body LIKE ? OR normalized_body LIKE ? OR from_addr LIKE ?)")
 		like := "%" + q.Text + "%"
-		args = append(args, like, like, like)
+		args = append(args, like, like, like, like)
 	}
 	if q.AccountID != "" {
 		clauses = append(clauses, "account_id = ?")
@@ -174,4 +178,31 @@ func NormalizeSubject(subject string) string {
 			return s
 		}
 	}
+}
+
+// MessageExistsByContentHash reports whether an account already holds a message
+// with this content hash.
+//
+// Scoped to the account because the unique index is (account_id, content_hash):
+// the same message legitimately exists in two mailboxes, and cross-account
+// duplication is something to report rather than prevent.
+func MessageExistsByContentHash(accountID, contentHash string) (bool, error) {
+	var n int
+	err := db.QueryRow(
+		"SELECT COUNT(*) FROM messages WHERE account_id = ? AND content_hash = ?",
+		accountID, contentHash).Scan(&n)
+	return n > 0, err
+}
+
+// MessageExistsByMessageIDForAccount reports whether an account already holds a
+// message with this RFC822 Message-ID.
+//
+// Used for the import duplicate preview, which needs a cheap answer from
+// headers alone rather than a full content hash.
+func MessageExistsByMessageIDForAccount(accountID, messageID string) (bool, error) {
+	var n int
+	err := db.QueryRow(
+		"SELECT COUNT(*) FROM messages WHERE account_id = ? AND message_id = ?",
+		accountID, messageID).Scan(&n)
+	return n > 0, err
 }

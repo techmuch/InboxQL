@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { ShellLayout, componentRegistry, useLayoutStore, menuRegistry, commandRegistry, useThemeStore, UserProfile } from 'nexus-shell';
+import { ShellLayout, AppTitle, chatPanel, componentRegistry, useLayoutStore, menuRegistry, commandRegistry, useThemeStore, UserProfile } from 'nexus-shell';
 import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, Inbox, Star, Send, File, AlertOctagon, Archive, MoreVertical, ChevronLeft, ChevronRight, CornerUpLeft, CornerUpRight, Trash, User, Lock } from 'lucide-react';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { create } from 'zustand';
@@ -1223,7 +1223,7 @@ function App() {
         { id: 'tools.agents', label: 'AI Agents', commandId: 'uea.open-agents' },
       ],
       'View': [
-        { id: 'view.toggle-chat', label: 'Toggle Chat', commandId: 'nexus.toggle-chat', keybinding: 'Control+I' },
+        { id: 'view.toggle-chat', label: 'Toggle Chat', commandId: 'view.toggleChat', keybinding: 'Control+I' },
       ],
       'Help': [
         { id: 'help.settings', label: 'Settings', commandId: 'uea.open-settings' },
@@ -1233,26 +1233,12 @@ function App() {
       ]
     });
 
-    const brandingTimer = setInterval(() => {
-      const el = document.querySelector('.font-semibold.mr-6.text-sm');
-      if (el && el.innerHTML === 'Nexus Shell') {
-        el.innerHTML = 'Email UEA';
-      }
-      
-      const mainContainer = document.querySelector('.flex-1.flex.overflow-hidden');
-      if (mainContainer) {
-        Array.from(mainContainer.children).forEach((child) => {
-          const htmlChild = child as HTMLElement;
-          // Hide standard Nexus sidebar specifically by its width class
-          if (htmlChild.classList.contains('w-12')) {
-            if (htmlChild.style.display !== 'none') {
-              htmlChild.style.display = 'none';
-            }
-          }
-        });
-      }
-    }, 100);
-    return () => clearInterval(brandingTimer);
+    // Branding and the activity bar used to be forced here by polling the DOM
+    // every 100ms: nexus-shell 0.1.x had no way to set a title, and no way to
+    // suppress the activity bar, so the shell's own markup was rewritten from
+    // outside. 0.2.x makes both declarative — the `title` prop on ShellLayout,
+    // and ConnectedPaneRail rendering nothing when no panels are registered —
+    // so the interval is gone rather than merely tidied.
   }, [user, openTool]);
 
   const statusBar = [
@@ -1260,7 +1246,7 @@ function App() {
     { id: 'unread', label: `${globalUnread} Unread`, alignment: 'left' as const },
     { id: 'status', label: `Sync: ${syncStatus}`, alignment: 'center' as const, icon: RefreshCw },
     { id: 'error', label: lastError || 'System OK', alignment: 'right' as const, icon: lastError ? AlertCircle : Check },
-    { id: 'chat', label: 'Chat', alignment: 'right' as const, icon: MessageSquare, onClick: () => commandRegistry.executeCommand('nexus.toggle-chat') },
+    { id: 'chat', label: 'Chat', alignment: 'right' as const, icon: MessageSquare, onClick: () => commandRegistry.executeCommand('view.toggleChat') },
   ];
 
   useEffect(() => {
@@ -1275,13 +1261,23 @@ function App() {
 
   return (
     <div className="h-screen w-screen overflow-hidden uea-workbench">
-      <ShellLayout 
-        panels={[]} 
-        statusBarConfig={statusBar} 
+      <ShellLayout
+        title={<AppTitle title="Email UEA" />}
+        // Chat was a fixture of the shell in 0.1.x, toggled by a built-in
+        // command. In 0.2.x it is an ordinary registered panel, so passing no
+        // panels left `view.toggleChat` with nothing to toggle. Registering it
+        // on the bottom edge restores the View menu and status-bar buttons —
+        // and the bottom edge specifically, because it is the one side with no
+        // icon rail, which keeps the activity bar hidden as before.
+        panels={[chatPanel({ side: 'bottom' })]}
+        statusBarConfig={statusBar}
         rightMenuBarContent={
-          <UserProfile 
-            name={user.displayName} 
-            avatarUrl={user.profileImageUrl}
+          <UserProfile
+            profile={{
+              name: user.displayName,
+              email: user.email,
+              avatarUrl: user.profileImageUrl,
+            }}
             onClick={() => commandRegistry.executeCommand('uea.open-settings')}
           />
         }

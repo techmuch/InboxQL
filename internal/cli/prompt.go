@@ -9,6 +9,14 @@ import (
 	"golang.org/x/term"
 )
 
+// IsStdoutTerminal reports whether stdout is attached to a terminal.
+//
+// Progress lines rewrite themselves with carriage returns, which is right on a
+// terminal and garbage in a pipe or a log file.
+func IsStdoutTerminal() bool {
+	return term.IsTerminal(int(os.Stdout.Fd()))
+}
+
 // IsTerminal reports whether stdin is attached to a terminal.
 //
 // This is the mechanism behind the outbox approval gate: an agent invoking uea

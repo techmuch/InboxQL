@@ -191,7 +191,7 @@ var groups = []struct {
 	Names []string
 }{
 	{"Getting started", []string{"init", "serve", "version", "doctor"}},
-	{"Administration", []string{"account", "user", "vault", "llm", "maintenance", "backup", "restore", "export"}},
+	{"Administration", []string{"account", "user", "vault", "llm", "maintenance", "backup", "restore", "import", "export"}},
 	{"Agent tools", []string{"search", "read", "analyze", "draft", "send", "outbox"}},
 }
 

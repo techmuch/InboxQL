@@ -13,6 +13,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/user/uea/internal/account"
+	"github.com/user/uea/internal/hasher"
 	"github.com/user/uea/internal/message"
 	"github.com/user/uea/internal/vault"
 )
@@ -21,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "uea.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 9
+	SchemaVersion = 10
 )
 
 var (
@@ -427,6 +428,38 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 9
+	}
+
+	if currentVersion < 10 {
+		log.Println("Applying schema migration v10 (per-account content hash)...")
+		// The old index was UNIQUE(content_hash) across every account, and the
+		// hash covered only the body. Every body-less message therefore hashed
+		// to SHA-256 of the empty string, so the first calendar invite stored
+		// and INSERT OR IGNORE silently discarded the rest. Rehashing has to
+		// happen with no unique index in place, since rows pass through
+		// intermediate states as they are rewritten one at a time.
+		if _, err := db.Exec(`DROP INDEX IF EXISTS idx_messages_content_hash;`); err != nil {
+			return fmt.Errorf("failed to drop the old content hash index: %w", err)
+		}
+		if err := rehashMessages(db); err != nil {
+			return fmt.Errorf("failed to recompute content hashes: %w", err)
+		}
+		// Rehashing separates messages that used to collide, but rows lost to
+		// the old index are gone and genuine duplicates may remain; clear them
+		// before asking SQLite to enforce uniqueness.
+		if _, err := db.Exec(`
+			DELETE FROM messages
+			WHERE rowid NOT IN (SELECT MIN(rowid) FROM messages GROUP BY account_id, content_hash);
+
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_account_content
+				ON messages(account_id, content_hash);
+		`); err != nil {
+			return fmt.Errorf("failed to apply schema v10: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 10;"); err != nil {
+			return err
+		}
+		currentVersion = 10
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)
@@ -954,4 +987,66 @@ func ListUsers() ([]*User, error) {
 func DeleteSessionsForUser(userID string) error {
 	_, err := db.Exec("DELETE FROM sessions WHERE user_id = ?", userID)
 	return err
+}
+
+// rehashMessages recomputes content_hash for every stored message using
+// [hasher.MessageHash].
+//
+// Run once by migration v10. Rows are read in full first and written in a
+// single transaction: rewriting while a cursor is open on the same table risks
+// the read seeing its own writes, and one failed row should not leave the table
+// half-rehashed.
+func rehashMessages(db *sql.DB) error {
+	type row struct {
+		id, messageID, from, subject, body string
+	}
+
+	rows, err := db.Query("SELECT id, message_id, from_addr, subject, body FROM messages")
+	if err != nil {
+		return err
+	}
+
+	var all []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.messageID, &r.from, &r.subject, &r.body); err != nil {
+			rows.Close()
+			return err
+		}
+		all = append(all, r)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	if len(all) == 0 {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare("UPDATE messages SET content_hash = ? WHERE id = ?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, r := range all {
+		h := hasher.MessageHash(r.messageID, r.from, r.subject, r.body)
+		if _, err := stmt.Exec(h, r.id); err != nil {
+			return fmt.Errorf("message %s: %w", r.id, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	log.Printf("Recomputed content hashes for %d message(s).", len(all))
+	return nil
 }

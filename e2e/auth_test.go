@@ -22,49 +22,99 @@ var protectedEndpoints = []string{
 	"/api/settings",
 }
 
-// The default posture: a password is required, including from this machine.
-//
-// The regression this pins: loopback connections were auto-authenticated as
-// the administrator. A reverse proxy on the same host relays every request
-// over loopback, so that published every endpoint below to anyone who could
-// reach the proxy — and a proxy is what `iql start` recommends, because
-// InboxQL terminates no TLS of its own.
-func TestUnauthenticatedByDefault(t *testing.T) {
+// The default: localhost is served without a password. InboxQL binds loopback
+// unless told otherwise, so reaching the port already means being on this
+// machine, and prompting the owner of the machine protects nothing.
+func TestLocalhostNeedsNoPasswordByDefault(t *testing.T) {
 	e := newEnv(t)
 	s := e.startServer()
 
 	for _, path := range protectedEndpoints {
 		code, _ := s.get(t, path, nil)
-		if code != http.StatusUnauthorized {
-			t.Errorf("GET %s returned %d without credentials, want 401", path, code)
+		if code == http.StatusUnauthorized {
+			t.Errorf("GET %s from localhost returned 401; local access should need no password", path)
 		}
 	}
 
-	if !strings.Contains(s.Output(), "password required") {
+	if !strings.Contains(s.Output(), "passwordless on this machine") {
 		t.Errorf("the startup banner did not state the auth posture:\n%s", s.Output())
 	}
 }
 
-// The same request, relayed by a proxy that adds no headers at all. The peer
-// address is loopback; the client is not. Without --trust-local this must be
-// refused exactly as a direct external request is.
-func TestProxiedRequestIsRefusedByDefault(t *testing.T) {
+// Serving beyond localhost withdraws it. The audience is no longer the person
+// at the keyboard, so the password comes back without anyone having to ask.
+func TestPublicBindRequiresAPassword(t *testing.T) {
 	e := newEnv(t)
-	s := e.startServer()
-	proxy := startTCPProxy(t, s.Addr)
+	s := e.startServerAt(":" + itoa(freePort(t)))
 
 	for _, path := range protectedEndpoints {
-		code := getStatus(t, "http://"+proxy+path, nil)
+		code, _ := s.get(t, path, nil)
 		if code != http.StatusUnauthorized {
-			t.Errorf("GET %s through a same-host proxy returned %d, want 401", path, code)
+			t.Errorf("GET %s on a public bind returned %d, want 401", path, code)
+		}
+	}
+
+	if !strings.Contains(s.Output(), "password required") {
+		t.Errorf("the banner did not explain why a password is required:\n%s", s.Output())
+	}
+}
+
+// --require-password puts it back even on localhost.
+func TestRequirePasswordOverridesLocalTrust(t *testing.T) {
+	e := newEnv(t)
+	s := e.startServer("--require-password")
+
+	if code, _ := s.get(t, "/api/messages", nil); code != http.StatusUnauthorized {
+		t.Errorf("GET /api/messages with --require-password returned %d, want 401", code)
+	}
+}
+
+// The header check is what protects the default. A real proxy — nginx with a
+// forwarding header, Caddy, Traefik — relays requests over loopback, and the
+// peer address then says nothing about who sent them.
+func TestForwardedRequestsNeverGetLocalTrust(t *testing.T) {
+	e := newEnv(t)
+	s := e.startServer() // default: passwordless locally
+
+	for _, header := range []string{"X-Forwarded-For", "X-Real-Ip", "Forwarded", "X-Forwarded-Host"} {
+		for _, path := range protectedEndpoints {
+			code, _ := s.get(t, path, map[string]string{header: "203.0.113.9"})
+			if code != http.StatusUnauthorized {
+				t.Errorf("GET %s carrying %s returned %d, want 401", path, header, code)
+			}
 		}
 	}
 }
 
-// --trust-local is the opt-in for a single-user desktop install.
-func TestTrustLocalAllowsLocalRequests(t *testing.T) {
+// A bare TCP forwarder that sets no headers is the one case the header check
+// cannot see, and it is why the listen address matters: a loopback bind is not
+// reachable from off the machine in the first place, so a forwarder has to be
+// running here, put there deliberately by whoever owns the machine.
+//
+// This test documents the boundary rather than asserting a refusal.
+func TestHeaderlessProxyIsTheKnownLimit(t *testing.T) {
 	e := newEnv(t)
-	s := e.startServer("--trust-local")
+	s := e.startServer()
+	proxy := startTCPProxy(t, s.Addr)
+
+	code := getStatus(t, "http://"+proxy+"/api/messages", nil)
+	if code != http.StatusOK {
+		t.Logf("a headerless forwarder was refused (%d); the protection is stronger than documented", code)
+	}
+
+	// What must hold: the same deployment with a public listen address is
+	// refused, which is the configuration someone would actually reach.
+	public := e.startServerAt(":" + itoa(freePort(t)))
+	if got := getStatus(t, "http://"+startTCPProxy(t, public.Addr)+"/api/messages", nil); got != http.StatusUnauthorized {
+		t.Errorf("a proxied request to a public bind returned %d, want 401", got)
+	}
+}
+
+// --trust-local forces passwordless access on where the listen address would
+// otherwise withdraw it.
+func TestTrustLocalForcesItOnAPublicBind(t *testing.T) {
+	e := newEnv(t)
+	s := e.startServerAt(":"+itoa(freePort(t)), "--trust-local")
 
 	// The assertion is that authentication passed, not that a bare GET is a
 	// valid request for every route — /api/settings answers 400 to one, which
@@ -76,18 +126,15 @@ func TestTrustLocalAllowsLocalRequests(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(s.Output(), "--trust-local") {
-		t.Errorf("the startup banner did not disclose passwordless access:\n%s", s.Output())
+	if !strings.Contains(s.Output(), "warning") {
+		t.Errorf("forcing passwordless access onto a public address did not warn:\n%s", s.Output())
 	}
 }
 
-// Defence in depth: even with the flag on, a request that arrived through a
-// proxy is refused. Real proxies set these headers; a bare TCP forwarder does
-// not, which is precisely why passwordless access is opt-in rather than
-// something InboxQL tries to detect its way out of.
+// Nothing overrides the forwarded-header check, including --trust-local.
 func TestTrustLocalStillRefusesForwardedRequests(t *testing.T) {
 	e := newEnv(t)
-	s := e.startServer("--trust-local")
+	s := e.startServerAt(":"+itoa(freePort(t)), "--trust-local")
 
 	for _, header := range []string{"X-Forwarded-For", "X-Real-Ip", "Forwarded", "X-Forwarded-Host"} {
 		code, _ := s.get(t, "/api/messages", map[string]string{header: "203.0.113.9"})
@@ -97,43 +144,21 @@ func TestTrustLocalStillRefusesForwardedRequests(t *testing.T) {
 	}
 }
 
-// The environment variable is the ergonomic path for a desktop install: set it
-// once rather than remembering a flag. It must behave exactly like the flag,
-// and an explicit flag must still win over it.
-func TestTrustLocalFromEnvironment(t *testing.T) {
+// A deployment can demand a password from the environment, which is how you
+// set it in a service unit or a container without editing a command line.
+func TestRequirePasswordFromEnvironment(t *testing.T) {
 	e := newEnv(t)
 
-	withEnv := e.startServerEnv([]string{"INBOXQL_TRUST_LOCAL=1"})
-	if code, _ := withEnv.get(t, "/api/messages", nil); code == 401 {
-		t.Error("INBOXQL_TRUST_LOCAL=1 did not enable passwordless local access")
-	}
-	if !strings.Contains(withEnv.Output(), "INBOXQL_TRUST_LOCAL") {
-		t.Errorf("the banner did not say where the setting came from:\n%s", withEnv.Output())
+	required := e.startServerEnv([]string{"INBOXQL_REQUIRE_PASSWORD=1"})
+	if code, _ := required.get(t, "/api/messages", nil); code != 401 {
+		t.Errorf("INBOXQL_REQUIRE_PASSWORD=1 returned %d, want 401", code)
 	}
 
-	// An explicit flag beats the environment, so the login flow stays testable
-	// on a machine that has the variable set.
-	overridden := e.startServerEnv([]string{"INBOXQL_TRUST_LOCAL=1"}, "--trust-local=false")
-	if code, _ := overridden.get(t, "/api/messages", nil); code != 401 {
-		t.Errorf("--trust-local=false returned %d; the flag must override the environment", code)
-	}
-
-	// Anything not clearly true leaves it off.
-	garbage := e.startServerEnv([]string{"INBOXQL_TRUST_LOCAL=banana"})
-	if code, _ := garbage.get(t, "/api/messages", nil); code != 401 {
-		t.Errorf("an unrecognised value returned %d; it must fail closed", code)
-	}
-}
-
-// Binding publicly while trusting local is a combination worth shouting about,
-// since a tunnel or proxy then reaches the passwordless path.
-func TestTrustLocalWarnsOnPublicBind(t *testing.T) {
-	e := newEnv(t)
-	port := freePort(t)
-	s := e.startServerAt(":"+itoa(port), "--trust-local")
-
-	if !strings.Contains(s.Output(), "warning") {
-		t.Errorf("no warning for --trust-local with a public bind:\n%s", s.Output())
+	// Anything not clearly true leaves the default alone rather than being
+	// read as an instruction nobody gave.
+	garbage := e.startServerEnv([]string{"INBOXQL_REQUIRE_PASSWORD=banana"})
+	if code, _ := garbage.get(t, "/api/messages", nil); code == 401 {
+		t.Error("an unrecognised value was read as true")
 	}
 }
 

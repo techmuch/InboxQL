@@ -85,10 +85,14 @@ The `Makefile` is the primary tool for managing the development lifecycle.
 | `make restart` | Restarts the backend. |
 | `make clean` | Removes build artifacts (`bin/`, `frontend/dist/`, etc.). |
 
-**`make start` runs passwordless.** It passes `--trust-local`, because a local
-development loop is exactly the single-user case that flag exists for. The
-binary's own default is password-required, so nothing you deploy inherits it.
-Run `make start TRUST_LOCAL=` to exercise the login flow.
+**`make start` runs passwordless**, because that is the default: InboxQL binds
+`127.0.0.1` and does not ask for a password there. Run
+`make start AUTH=--require-password` to exercise the login flow.
+
+The auth model lives in `trustDecision` in `internal/cli/serve.go`, decided
+once at startup from the listen address, plus the per-request forwarded-header
+check in `internal/auth`. `TestTrustDecision` is the table version of it;
+change one without the other and it fails.
 
 ### 3.2. How the CLI is assembled
 

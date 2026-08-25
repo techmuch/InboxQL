@@ -430,3 +430,62 @@ func TestEnvBoolFailsClosed(t *testing.T) {
 		t.Error("an unset variable read as true")
 	}
 }
+
+// The auth posture is decided once at startup from the listen address, so this
+// table is the whole security model in one place.
+func TestTrustDecision(t *testing.T) {
+	cases := []struct {
+		name            string
+		addr            string
+		requirePassword bool
+		forceTrust      bool
+		wantTrust       bool
+	}{
+		// A desktop install: localhost only, so reaching the port means being
+		// at the machine. No password.
+		{"default loopback bind", "127.0.0.1:8080", false, false, true},
+		{"loopback by name", "localhost:8080", false, false, true},
+		{"IPv6 loopback", "[::1]:8080", false, false, true},
+
+		// Serving beyond localhost widens the audience past the person at the
+		// keyboard, so the password comes back.
+		{"all interfaces", ":8080", false, false, false},
+		{"explicit public address", "0.0.0.0:8080", false, false, false},
+		{"a LAN address", "192.168.1.10:8080", false, false, false},
+
+		// Both overrides, in both directions.
+		{"forced on a public address", ":8080", false, true, true},
+		{"required on loopback", "127.0.0.1:8080", true, false, false},
+		// require-password wins; it is the safer of the two.
+		{"both flags", ":8080", true, true, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, reason := trustDecision(tc.addr, tc.requirePassword, tc.forceTrust)
+			if got != tc.wantTrust {
+				t.Errorf("trustDecision(%q, requirePassword=%v, forceTrust=%v) = %v, want %v",
+					tc.addr, tc.requirePassword, tc.forceTrust, got, tc.wantTrust)
+			}
+			if reason == "" {
+				t.Error("no reason given; the startup banner would say nothing")
+			}
+		})
+	}
+}
+
+func TestBoundToLoopback(t *testing.T) {
+	loopback := []string{"127.0.0.1:8080", "localhost:8080", "[::1]:8080", "127.0.0.42:9000"}
+	public := []string{":8080", "0.0.0.0:8080", "192.168.1.10:8080", "10.0.0.5:80", "[::]:8080"}
+
+	for _, addr := range loopback {
+		if !boundToLoopback(addr) {
+			t.Errorf("boundToLoopback(%q) = false, want true", addr)
+		}
+	}
+	for _, addr := range public {
+		if boundToLoopback(addr) {
+			t.Errorf("boundToLoopback(%q) = true; a public bind must withdraw passwordless access", addr)
+		}
+	}
+}

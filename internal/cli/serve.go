@@ -19,7 +19,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.17"
+var Version = "0.0.18"
 
 func init() {
 	register(&Command{
@@ -42,19 +42,25 @@ Serves the dashboard and API. The data directory must already exist; run
 ` + "`iql init`" + ` first.
 
 Flags:
-  --addr <host:port>   listen address (default ":8080", or $INBOXQL_ADDR)
+  --addr <host:port>   listen address (default "127.0.0.1:8080", or $INBOXQL_ADDR)
   --open               automatically open the dashboard in your default browser
-  --trust-local        skip the password for connections from this machine
-                       (or set INBOXQL_TRUST_LOCAL=1)
+  --require-password   always ask for a password, even on this machine
+  --trust-local        keep passwordless access when serving beyond localhost
 
-Binding to :8080 exposes InboxQL on every interface. It has no TLS of its own, so
-put it behind a reverse proxy before exposing it beyond localhost.
+By default InboxQL listens on localhost only and does not ask for a password
+there: it is your machine, and you are already the only one who can reach it.
 
---trust-local is for a single-user desktop install and must not be combined with
-a reverse proxy. A proxy relays every request over loopback, so with this on,
-everyone reaching the proxy is signed in as the administrator. InboxQL cannot
-tell the two deployments apart — it is bound to loopback in both — which is why
-this is a flag you set rather than something detected.`,
+Serving beyond localhost changes that. Give --addr a public address and the
+password is required, because the audience is no longer just you. InboxQL has
+no TLS of its own, so put it behind a reverse proxy first.
+
+A password is also required for any request that arrived through a proxy,
+whatever the listen address, since a proxy on this host relays every request
+over loopback — its peer address says nothing about who sent it.
+
+--trust-local forces passwordless access on anyway. Do not use it with a
+reverse proxy: everyone who can reach the proxy would be signed in as the
+administrator.`,
 		Run: runStart,
 	})
 }
@@ -105,11 +111,36 @@ func openBrowser(url string) error {
 	return cmd.Start()
 }
 
-// trustFlagSet records whether --trust-local was passed explicitly, so the
-// startup banner can name the environment variable when that is what enabled
-// it. A person who cannot see why they are not being asked for a password
-// needs to be told where the setting came from.
-var trustFlagSet *bool
+// trustDecision works out whether loopback clients may skip the password, and
+// returns a phrase explaining why for the startup banner.
+//
+// Passwordless local access is the default because InboxQL is a desktop
+// application: it listens on localhost, so reaching it means being on the
+// machine already, and prompting the owner of the machine for a password
+// protects nothing.
+//
+// Two situations withdraw it, and both are about the audience widening beyond
+// the person at the keyboard:
+//
+//   - The listen address is not loopback, so the port is reachable from the
+//     network and "whoever can connect" is no longer "whoever is here".
+//   - The request arrived through a proxy, checked per-request in the auth
+//     middleware. A proxy on this host relays everything over loopback, so its
+//     peer address describes the proxy, not the client.
+//
+// --trust-local overrides the first; nothing overrides the second.
+func trustDecision(addr string, requirePassword, forceTrust bool) (bool, string) {
+	switch {
+	case requirePassword:
+		return false, "password required (--require-password)"
+	case boundToLoopback(addr):
+		return true, "passwordless on this machine"
+	case forceTrust:
+		return true, "passwordless, forced on a public address (--trust-local)"
+	default:
+		return false, "password required (listening beyond localhost)"
+	}
+}
 
 // boundToLoopback reports whether a listen address accepts only local
 // connections. An address with no host — ":8080" — listens on every
@@ -129,27 +160,24 @@ func boundToLoopback(addr string) bool {
 func runStart(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
-	addr := fs.String("addr", envOr("INBOXQL_ADDR", ":8080"), "listen address")
+	// Loopback by default. A desktop application has no business listening on
+	// every interface unasked, and binding locally is also what makes
+	// passwordless access defensible: reaching the port at all means being on
+	// this machine.
+	addr := fs.String("addr", envOr("INBOXQL_ADDR", "127.0.0.1:8080"), "listen address")
 	openFlag := fs.Bool("open", false, "open browser on start")
-	// Settable from the environment like --addr and --data, so a single-user
-	// desktop install can opt in once in a shell profile instead of on every
-	// invocation. The default stays off either way: a deployment that never
-	// mentions it never gets it.
-	trust := fs.Bool("trust-local", envBool("INBOXQL_TRUST_LOCAL"),
-		"skip the password for connections from this machine")
+	requirePassword := fs.Bool("require-password", envBool("INBOXQL_REQUIRE_PASSWORD"),
+		"always ask for a password, even on this machine")
+	// Only needed to force passwordless access on when the listen address
+	// would otherwise switch it off.
+	forceTrust := fs.Bool("trust-local", envBool("INBOXQL_TRUST_LOCAL"),
+		"keep passwordless access when serving beyond localhost")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
 
-	explicit := false
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "trust-local" {
-			explicit = true
-		}
-	})
-	trustFlagSet = &explicit
-
-	auth.SetTrustLocal(*trust)
+	local, reason := trustDecision(*addr, *requirePassword, *forceTrust)
+	auth.SetTrustLocal(local)
 
 	if err := ctx.OpenStore(); err != nil {
 		return err
@@ -164,11 +192,13 @@ func runStart(ctx *Context, args []string) error {
 		return Fail(ExitError, "%v", err)
 	}
 
-	var displayURL string
-	if strings.HasPrefix(*addr, ":") {
-		displayURL = "http://localhost" + *addr
-	} else {
-		displayURL = "http://" + *addr
+	// Show the name people type. A loopback bind is reached as localhost, and
+	// printing 127.0.0.1 just invites someone to wonder whether it differs.
+	displayURL := "http://" + *addr
+	if host, port, err := net.SplitHostPort(*addr); err == nil {
+		if host == "" || auth.IsLoopback(host) {
+			displayURL = "http://localhost:" + port
+		}
 	}
 
 	p := ctx.Printer()
@@ -179,24 +209,19 @@ func runStart(ctx *Context, args []string) error {
 	p.Printf("  %-12s %s\n", p.Dim("Data dir:"), ctx.DataDir)
 	p.Printf("  %-12s %s\n", p.Dim("Status:"), p.Green("Ready & listening"))
 
-	// State the auth posture on every start. It is the one setting whose
-	// wrong value is invisible until someone else is reading the mail.
-	if *trust {
-		source := "--trust-local"
-		if !*trustFlagSet && envBool("INBOXQL_TRUST_LOCAL") {
-			source = "INBOXQL_TRUST_LOCAL"
-		}
-		p.Printf("  %-12s %s\n", p.Dim("Auth:"),
-			p.Yellow("passwordless for this machine ("+source+")"))
-		if !boundToLoopback(*addr) {
-			p.Printf("\n  %s %s\n", p.Yellow("warning:"),
-				"--trust-local with a non-loopback listen address.")
-			p.Printf("  %s\n", p.Dim("Anyone who can reach "+displayURL+" over loopback — a reverse"))
-			p.Printf("  %s\n", p.Dim("proxy on this host, or an SSH tunnel — is signed in as the"))
-			p.Printf("  %s\n", p.Dim("administrator. Drop --trust-local, or bind to 127.0.0.1."))
-		}
+	// State the auth posture on every start. It is the one setting whose wrong
+	// value is invisible until someone else is reading the mail.
+	if local {
+		p.Printf("  %-12s %s\n", p.Dim("Auth:"), p.Green(reason))
 	} else {
-		p.Printf("  %-12s %s\n", p.Dim("Auth:"), "password required")
+		p.Printf("  %-12s %s\n", p.Dim("Auth:"), reason)
+	}
+
+	if local && !boundToLoopback(*addr) {
+		p.Printf("\n  %s %s\n", p.Yellow("warning:"),
+			"passwordless access is forced on a public address.")
+		p.Printf("  %s\n", p.Dim("Anyone who can reach this port is signed in as the administrator."))
+		p.Printf("  %s\n", p.Dim("Drop --trust-local unless you are certain."))
 	}
 	p.Printf("\n")
 

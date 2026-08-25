@@ -37,24 +37,26 @@ iql init  --data ~/.inboxql
 iql start --data ~/.inboxql
 ```
 
-Sign in with the administrator account `init` created.
+InboxQL listens on `localhost` only and does not ask for a password there. It
+is your machine; you are already the only one who can reach it.
 
-On a single-user desktop machine you can skip the password entirely:
+That changes as soon as you serve it to anyone else:
 
-```bash
-iql start --trust-local              # once
-export INBOXQL_TRUST_LOCAL=1         # or set it and forget it
-```
+| How you start it | Password |
+|---|---|
+| `iql start` | not required — localhost only |
+| `iql start --addr :8080` | required — reachable from the network |
+| behind a reverse proxy | required — the request was relayed |
+| `iql start --require-password` | required — always |
 
-`make start` already passes `--trust-local`, since that is a local development
-loop on your own machine.
+The reverse-proxy row is not configurable away, and it is the one worth
+understanding: a proxy on this host relays every request over loopback, so the
+connection *looks* local no matter who sent it. InboxQL refuses passwordless
+access for any request carrying `X-Forwarded-For`, `X-Real-Ip`, `Forwarded` or
+`X-Forwarded-Host`.
 
-**Do not combine `--trust-local` with a reverse proxy.** A proxy on the same
-host relays every request over loopback, so with the flag on, everyone who can
-reach the proxy is signed in as the administrator. InboxQL cannot distinguish
-the two deployments — it is bound to loopback in both — which is why this is a
-flag you set rather than something detected. It is off by default, and `iql
-start` warns if you combine it with a non-loopback listen address.
+`--trust-local` forces passwordless access on despite a public listen address.
+It prints a warning, and you should not need it.
 
 ## Security Notes
 

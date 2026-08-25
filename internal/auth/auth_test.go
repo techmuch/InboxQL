@@ -113,16 +113,15 @@ func status(h http.Handler, remoteAddr string, headers map[string]string) int {
 	return rec.Code
 }
 
-// The default must require a password. Auto-authenticating loopback out of the
-// box published every protected endpoint to anyone who could reach a reverse
-// proxy on the same host — and a proxy is what `iql start` recommends, because
-// InboxQL terminates no TLS of its own.
-func TestPasswordRequiredByDefault(t *testing.T) {
+// Passwordless local access is a decision the server makes at startup from the
+// listen address; the middleware just honours it. When it is off, a loopback
+// peer earns nothing.
+func TestLoopbackIsNotTrustedWhenDisabled(t *testing.T) {
 	newTestStore(t)
 	SetTrustLocal(false)
 
 	if code := status(okHandler(), "127.0.0.1:54321", nil); code != http.StatusUnauthorized {
-		t.Errorf("loopback request got %d without --trust-local, want 401", code)
+		t.Errorf("loopback request got %d with trust disabled, want 401", code)
 	}
 }
 

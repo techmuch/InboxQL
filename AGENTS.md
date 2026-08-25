@@ -295,19 +295,23 @@ Do not promise the user any of this; none of it exists:
 
 ## Authentication
 
-The web API requires a session, obtained by posting credentials to
-`/api/login`. There is no unauthenticated access by default, including from
-localhost.
+`iql start` listens on `127.0.0.1:8080` and serves it without a password, so a
+local tool driving the API needs no credentials in the default configuration.
 
-`iql start --trust-local`, or `INBOXQL_TRUST_LOCAL=1`, relaxes that for
-connections from the same machine, for a single-user desktop install. An
-explicit flag beats the environment variable, and any value other than
-1/true/yes/on leaves it off. It is off unless asked for, and it is
-refused for any request carrying `X-Forwarded-For`, `X-Real-Ip`, `Forwarded` or
-`X-Forwarded-Host` — a relayed request tells you about the proxy, not the
-client. Do not advise a user to combine `--trust-local` with a reverse proxy:
-a proxy on the same host makes every request look local, which would sign in
-anyone who can reach it.
+A password is required whenever the audience widens:
+
+- the listen address is not loopback (`--addr :8080`, a LAN address);
+- the request arrived through a proxy — any of `X-Forwarded-For`, `X-Real-Ip`,
+  `Forwarded`, `X-Forwarded-Host`. This one cannot be turned off;
+- `--require-password` or `INBOXQL_REQUIRE_PASSWORD=1` is set.
+
+Then authenticate by posting credentials to `/api/login` and keeping the
+`session_id` cookie.
+
+`--trust-local` forces passwordless access on despite a public listen address.
+Do not suggest it as a fix for a 401 without saying what it exposes: with a
+reverse proxy in front, everyone reaching the proxy is signed in as the
+administrator.
 
 ---
 

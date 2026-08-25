@@ -205,7 +205,7 @@ func (e *env) start(addr string, extraEnv []string, extraArgs ...string) *server
 
 	args := append([]string{"start", "--addr", addr, "--data", e.dataDir}, extraArgs...)
 	cmd := exec.Command(e.bin, args...)
-	cmd.Env = append(os.Environ(), "INBOXQL_DATA=", "NO_COLOR=1", "INBOXQL_TRUST_LOCAL=")
+	cmd.Env = append(os.Environ(), "INBOXQL_DATA=", "NO_COLOR=1", "INBOXQL_TRUST_LOCAL=", "INBOXQL_REQUIRE_PASSWORD=")
 	cmd.Env = append(cmd.Env, extraEnv...)
 
 	out := &safeBuffer{}

@@ -287,6 +287,9 @@ const MailClient = () => {
   const [folder, setFolder] = useState('inbox');
   const { date, from, topic, clearAll } = useFilterStore();
 
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+
   const [counts, setCounts] = useState<Record<string, { total: number; unread: number }>>({});
 
   const fetchMessages = async () => {
@@ -309,6 +312,8 @@ const MailClient = () => {
       if (!res.ok) throw new Error();
       const data = await res.json();
       setMessages(data || []);
+      setFocusedIndex(-1);
+      setSelectedMessageIds(new Set());
     } catch (e) {
       console.error('Failed to fetch messages', e);
     }
@@ -382,6 +387,31 @@ const MailClient = () => {
   // back button to escape. It is a tab of its own now, so the list stays put
   // and reading the next message does not mean navigating backwards first.
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (messages.length === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      let newIndex = focusedIndex;
+      if (e.key === 'ArrowDown') {
+        newIndex = Math.min(focusedIndex + 1, messages.length - 1);
+      } else {
+        newIndex = Math.max(focusedIndex - 1, 0);
+      }
+      
+      setFocusedIndex(newIndex);
+      const msg = messages[newIndex];
+      
+      if (e.shiftKey) {
+        const newSelected = new Set(selectedMessageIds);
+        newSelected.add(msg.id);
+        setSelectedMessageIds(newSelected);
+      } else {
+        setSelectedMessageIds(new Set([msg.id]));
+      }
+      openMessage(msg);
+    }
+  };
+
   return (
     <div className="flex h-full bg-background text-foreground overflow-hidden">
       <div className="w-64 flex flex-col pt-4 border-r border-border/50 bg-card/20">
@@ -405,7 +435,7 @@ const MailClient = () => {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col" tabIndex={0} onKeyDown={handleKeyDown}>
         <div className="h-12 border-b border-border flex items-center px-4 gap-2 sticky top-0 bg-background/80 backdrop-blur-md z-10">
           <button className="p-2 hover:bg-accent  transition-colors"><input type="checkbox" className="border-border" /></button>
           <button onClick={() => { fetchMessages(); fetchCounts(); }} className={`p-2 hover:bg-accent  transition-colors ${loading ? 'animate-spin' : ''}`}>
@@ -450,7 +480,7 @@ const MailClient = () => {
               </div>
             );
           })()}
-          {messages.map(msg => {
+          {messages.map((msg, index) => {
             const isUnread = !msg.flags?.includes('\\Seen');
             // A draft has no sender — it has not been sent by anyone yet — so
             // the column that would show From shows who it is addressed to.
@@ -461,14 +491,40 @@ const MailClient = () => {
             return (
               <div 
                 key={msg.id}
-                onClick={() => openMessage(msg)}
+                onClick={(e) => {
+                  setFocusedIndex(index);
+                  if (e.shiftKey) {
+                    const newSelected = new Set(selectedMessageIds);
+                    newSelected.add(msg.id);
+                    setSelectedMessageIds(newSelected);
+                  } else if (e.metaKey || e.ctrlKey) {
+                    const newSelected = new Set(selectedMessageIds);
+                    if (newSelected.has(msg.id)) newSelected.delete(msg.id);
+                    else newSelected.add(msg.id);
+                    setSelectedMessageIds(newSelected);
+                  } else {
+                    setSelectedMessageIds(new Set([msg.id]));
+                  }
+                  openMessage(msg);
+                }}
                 className={`flex items-center px-4 py-2 border-b border-border/50 cursor-pointer transition-colors group ${
-                  msg.id === openMessageId ? 'bg-primary/10 ring-1 ring-inset ring-primary/40'
+                  selectedMessageIds.has(msg.id) || msg.id === openMessageId ? 'bg-primary/10 ring-1 ring-inset ring-primary/40'
                   : isUnread ? 'bg-accent/20' : 'hover:bg-accent/40'
                 }`}
               >
                 <div className="flex items-center gap-3 mr-4">
-                  <input type="checkbox" onClick={(e) => e.stopPropagation()} className="border-border" />
+                  <input 
+                    type="checkbox" 
+                    checked={selectedMessageIds.has(msg.id)} 
+                    onChange={(e) => {
+                      const newSelected = new Set(selectedMessageIds);
+                      if (e.target.checked) newSelected.add(msg.id);
+                      else newSelected.delete(msg.id);
+                      setSelectedMessageIds(newSelected);
+                    }}
+                    onClick={(e) => e.stopPropagation()} 
+                    className="border-border" 
+                  />
                   <Star className="w-4 h-4 text-muted-foreground/40 hover:text-yellow-500 transition-colors" />
                 </div>
                 <div className={`w-48 truncate mr-4 text-sm flex items-center gap-2 ${isUnread ? 'font-bold' : 'text-foreground/70'}`}>

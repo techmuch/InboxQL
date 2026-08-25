@@ -624,6 +624,21 @@ const SettingsView = () => {
     } catch (e) {}
   };
 
+  const handleEraseData = async () => {
+    if (!confirm('Are you sure you want to permanently erase all synchronized data from the local database? This cannot be undone.')) return;
+    try {
+      const res = await fetch('/api/data', { method: 'DELETE' });
+      if (res.ok) {
+        alert('All synchronized data has been erased from the local database.');
+        window.location.reload();
+      } else {
+        alert('Failed to erase data. Check logs for details.');
+      }
+    } catch (e) {
+      alert('Network error while erasing data.');
+    }
+  };
+
   const fetchIgnoreWords = async () => {
     try {
       const res = await fetch('/api/settings?key=ignore_words');
@@ -1208,7 +1223,7 @@ const SettingsView = () => {
                       You will need to re-sync or re-import your accounts to populate the inbox again.
                     </p>
                     <button 
-                      onClick={() => alert('Data deletion API not yet implemented')}
+                      onClick={handleEraseData}
                       className="bg-destructive hover:bg-destructive/90 text-destructive-foreground px-4 py-2 text-sm font-semibold transition-colors flex items-center gap-2"
                     >
                       <Trash2 className="w-4 h-4" />

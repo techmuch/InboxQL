@@ -1248,3 +1248,22 @@ func rehashMessages(db *sql.DB) error {
 	log.Printf("Recomputed content hashes for %d message(s).", len(all))
 	return nil
 }
+
+// EraseSyncedData removes all synchronized messages, mailboxes, attachments, and import jobs.
+// Accounts, user profiles, settings, and local drafts are preserved.
+func EraseSyncedData() error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	tables := []string{"attachments", "messages", "mailboxes", "import_jobs", "error_log"}
+	for _, table := range tables {
+		if _, err := tx.Exec("DELETE FROM " + table); err != nil {
+			return fmt.Errorf("failed to delete from %s: %w", table, err)
+		}
+	}
+
+	return tx.Commit()
+}

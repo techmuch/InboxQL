@@ -50,6 +50,7 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/analytics", auth.Middleware(http.HandlerFunc(handleAnalytics)))
 	mux.Handle("/api/settings", auth.Middleware(http.HandlerFunc(handleSettings)))
 	mux.Handle("/api/agents", auth.Middleware(http.HandlerFunc(handleAgents)))
+	mux.Handle("/api/data", auth.Middleware(http.HandlerFunc(handleData)))
 
 	// Import routes are authenticated as a group: they read the user's mail
 	// client and start jobs that write to the database.
@@ -500,4 +501,19 @@ func handleMessageAttachments(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(list)
+}
+
+func handleData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := store.EraseSyncedData(); err != nil {
+		log.Printf("Failed to erase synced data: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

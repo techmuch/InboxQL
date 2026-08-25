@@ -2,10 +2,10 @@ package cli
 
 import (
 	"flag"
-	"log"
 	"net/http"
 	"runtime"
 	"runtime/debug"
+	"strings"
 
 	"github.com/user/inboxql/internal/api"
 	"github.com/user/inboxql/internal/store"
@@ -71,6 +71,12 @@ func runVersion(ctx *Context, args []string) error {
 	return nil
 }
 
+const banner = `    ____       __               ____    __ 
+   /  _/____  / /_  ____  _  __/ __ \  / / 
+   / / / __ \/ __ \/ __ \| |/_/ / / / / /  
+ _/ / / / / / /_/ / /_/ />  </ /_/ / / /___
+/___//_/ /_/_.___/\____/_/|_|\___\_\/_____/`
+
 func runServe(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
@@ -92,8 +98,20 @@ func runServe(ctx *Context, args []string) error {
 		return Fail(ExitError, "%v", err)
 	}
 
-	log.Printf("Data directory: %s", ctx.DataDir)
-	ctx.Printf("InboxQL %s listening on http://localhost%s\n", Version, *addr)
+	var displayURL string
+	if strings.HasPrefix(*addr, ":") {
+		displayURL = "http://localhost" + *addr
+	} else {
+		displayURL = "http://" + *addr
+	}
+
+	p := ctx.Printer()
+	p.Printf("\n%s\n\n", p.Cyan(banner))
+	p.Printf("  %s %s — %s\n", p.Bold("InboxQL"), p.Dim("v"+Version), p.Dim("Email for Engineers"))
+	p.Printf("  %s\n", p.Dim("──────────────────────────────────────────────────"))
+	p.Printf("  %-12s %s\n", p.Dim("Web UI:"), p.Bold(displayURL))
+	p.Printf("  %-12s %s\n", p.Dim("Data dir:"), ctx.DataDir)
+	p.Printf("  %-12s %s\n\n", p.Dim("Status:"), p.Green("Ready & listening"))
 
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		return Fail(ExitError, "server stopped: %v", err)

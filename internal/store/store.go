@@ -1154,6 +1154,23 @@ func ListUsers() ([]*User, error) {
 	return users, rows.Err()
 }
 
+// GetDefaultUser returns the primary administrator user, or the first available user.
+func GetDefaultUser() (*User, error) {
+	users, err := ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+	for _, u := range users {
+		if strings.HasPrefix(u.Username, "admin") {
+			return u, nil
+		}
+	}
+	return users[0], nil
+}
+
 // DeleteSessionsForUser invalidates every session belonging to a user.
 func DeleteSessionsForUser(userID string) error {
 	_, err := db.Exec("DELETE FROM sessions WHERE user_id = ?", userID)

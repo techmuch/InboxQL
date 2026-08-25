@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +18,20 @@ import (
 type contextKey string
 
 const UserContextKey contextKey = "user"
+
+// IsLoopback reports whether the given remote address represents localhost/loopback.
+func IsLoopback(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	host = strings.Trim(host, "[]")
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
 
 // Authenticate verifies user credentials and returns a new session.
 func Authenticate(username, password string) (*store.Session, error) {
@@ -47,29 +63,33 @@ func Authenticate(username, password string) (*store.Session, error) {
 }
 
 // Middleware protects routes and injects the authenticated user into the context.
+// Local connections (localhost / loopback) are authenticated automatically as the
+// default administrator without requiring a password. Connections arriving from external
+// network interfaces require a valid session cookie.
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("session_id")
-		if err != nil {
-			if errors.Is(err, http.ErrNoCookie) {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+		var user *store.User
 
-		session, err := store.GetSession(cookie.Value)
-		if err != nil || session == nil || time.Now().After(session.ExpiresAt) {
-			if session != nil {
+		cookie, err := r.Cookie("session_id")
+		if err == nil && cookie != nil && cookie.Value != "" {
+			session, err := store.GetSession(cookie.Value)
+			if err == nil && session != nil && !time.Now().After(session.ExpiresAt) {
+				if u, err := store.GetUserByID(session.UserID); err == nil && u != nil {
+					user = u
+				}
+			} else if session != nil {
 				store.DeleteSession(session.ID)
 			}
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
 		}
 
-		user, err := store.GetUserByID(session.UserID)
-		if err != nil || user == nil {
+		// Localhost / loopback requests bypass the password requirement
+		if user == nil && IsLoopback(r.RemoteAddr) {
+			if defaultUser, err := store.GetDefaultUser(); err == nil && defaultUser != nil {
+				user = defaultUser
+			}
+		}
+
+		if user == nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

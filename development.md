@@ -85,6 +85,11 @@ The `Makefile` is the primary tool for managing the development lifecycle.
 | `make restart` | Restarts the backend. |
 | `make clean` | Removes build artifacts (`bin/`, `frontend/dist/`, etc.). |
 
+**`make start` runs passwordless.** It passes `--trust-local`, because a local
+development loop is exactly the single-user case that flag exists for. The
+binary's own default is password-required, so nothing you deploy inherits it.
+Run `make start TRUST_LOCAL=` to exercise the login flow.
+
 ### 3.2. How the CLI is assembled
 
 Commands register themselves into `cli.Commands` from each file's `init`, and

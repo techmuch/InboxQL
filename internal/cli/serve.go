@@ -19,7 +19,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.16"
+var Version = "0.0.17"
 
 func init() {
 	register(&Command{
@@ -45,6 +45,7 @@ Flags:
   --addr <host:port>   listen address (default ":8080", or $INBOXQL_ADDR)
   --open               automatically open the dashboard in your default browser
   --trust-local        skip the password for connections from this machine
+                       (or set INBOXQL_TRUST_LOCAL=1)
 
 Binding to :8080 exposes InboxQL on every interface. It has no TLS of its own, so
 put it behind a reverse proxy before exposing it beyond localhost.
@@ -104,6 +105,12 @@ func openBrowser(url string) error {
 	return cmd.Start()
 }
 
+// trustFlagSet records whether --trust-local was passed explicitly, so the
+// startup banner can name the environment variable when that is what enabled
+// it. A person who cannot see why they are not being asked for a password
+// needs to be told where the setting came from.
+var trustFlagSet *bool
+
 // boundToLoopback reports whether a listen address accepts only local
 // connections. An address with no host — ":8080" — listens on every
 // interface, which is the case worth warning about.
@@ -124,10 +131,23 @@ func runStart(ctx *Context, args []string) error {
 	fs.SetOutput(ctx.Stderr)
 	addr := fs.String("addr", envOr("INBOXQL_ADDR", ":8080"), "listen address")
 	openFlag := fs.Bool("open", false, "open browser on start")
-	trust := fs.Bool("trust-local", false, "skip the password for connections from this machine")
+	// Settable from the environment like --addr and --data, so a single-user
+	// desktop install can opt in once in a shell profile instead of on every
+	// invocation. The default stays off either way: a deployment that never
+	// mentions it never gets it.
+	trust := fs.Bool("trust-local", envBool("INBOXQL_TRUST_LOCAL"),
+		"skip the password for connections from this machine")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
+
+	explicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "trust-local" {
+			explicit = true
+		}
+	})
+	trustFlagSet = &explicit
 
 	auth.SetTrustLocal(*trust)
 
@@ -162,7 +182,12 @@ func runStart(ctx *Context, args []string) error {
 	// State the auth posture on every start. It is the one setting whose
 	// wrong value is invisible until someone else is reading the mail.
 	if *trust {
-		p.Printf("  %-12s %s\n", p.Dim("Auth:"), p.Yellow("passwordless for this machine (--trust-local)"))
+		source := "--trust-local"
+		if !*trustFlagSet && envBool("INBOXQL_TRUST_LOCAL") {
+			source = "INBOXQL_TRUST_LOCAL"
+		}
+		p.Printf("  %-12s %s\n", p.Dim("Auth:"),
+			p.Yellow("passwordless for this machine ("+source+")"))
 		if !boundToLoopback(*addr) {
 			p.Printf("\n  %s %s\n", p.Yellow("warning:"),
 				"--trust-local with a non-loopback listen address.")

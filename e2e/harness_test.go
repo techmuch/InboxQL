@@ -183,17 +183,30 @@ type server struct {
 // startServer launches the web server on a free loopback port.
 func (e *env) startServer(extraArgs ...string) *server {
 	e.t.Helper()
-	return e.startServerAt(fmt.Sprintf("127.0.0.1:%d", freePort(e.t)), extraArgs...)
+	return e.start(fmt.Sprintf("127.0.0.1:%d", freePort(e.t)), nil, extraArgs...)
+}
+
+// startServerEnv launches the web server with extra environment variables, for
+// the settings that can come from the environment as well as from a flag.
+func (e *env) startServerEnv(env []string, extraArgs ...string) *server {
+	e.t.Helper()
+	return e.start(fmt.Sprintf("127.0.0.1:%d", freePort(e.t)), env, extraArgs...)
 }
 
 // startServerAt launches the web server on an explicit listen address, for the
 // cases where the address itself is what is under test.
 func (e *env) startServerAt(addr string, extraArgs ...string) *server {
 	e.t.Helper()
+	return e.start(addr, nil, extraArgs...)
+}
+
+func (e *env) start(addr string, extraEnv []string, extraArgs ...string) *server {
+	e.t.Helper()
 
 	args := append([]string{"start", "--addr", addr, "--data", e.dataDir}, extraArgs...)
 	cmd := exec.Command(e.bin, args...)
-	cmd.Env = append(os.Environ(), "INBOXQL_DATA=", "NO_COLOR=1")
+	cmd.Env = append(os.Environ(), "INBOXQL_DATA=", "NO_COLOR=1", "INBOXQL_TRUST_LOCAL=")
+	cmd.Env = append(cmd.Env, extraEnv...)
 
 	out := &safeBuffer{}
 	cmd.Stdout = out

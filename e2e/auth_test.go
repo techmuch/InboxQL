@@ -97,6 +97,34 @@ func TestTrustLocalStillRefusesForwardedRequests(t *testing.T) {
 	}
 }
 
+// The environment variable is the ergonomic path for a desktop install: set it
+// once rather than remembering a flag. It must behave exactly like the flag,
+// and an explicit flag must still win over it.
+func TestTrustLocalFromEnvironment(t *testing.T) {
+	e := newEnv(t)
+
+	withEnv := e.startServerEnv([]string{"INBOXQL_TRUST_LOCAL=1"})
+	if code, _ := withEnv.get(t, "/api/messages", nil); code == 401 {
+		t.Error("INBOXQL_TRUST_LOCAL=1 did not enable passwordless local access")
+	}
+	if !strings.Contains(withEnv.Output(), "INBOXQL_TRUST_LOCAL") {
+		t.Errorf("the banner did not say where the setting came from:\n%s", withEnv.Output())
+	}
+
+	// An explicit flag beats the environment, so the login flow stays testable
+	// on a machine that has the variable set.
+	overridden := e.startServerEnv([]string{"INBOXQL_TRUST_LOCAL=1"}, "--trust-local=false")
+	if code, _ := overridden.get(t, "/api/messages", nil); code != 401 {
+		t.Errorf("--trust-local=false returned %d; the flag must override the environment", code)
+	}
+
+	// Anything not clearly true leaves it off.
+	garbage := e.startServerEnv([]string{"INBOXQL_TRUST_LOCAL=banana"})
+	if code, _ := garbage.get(t, "/api/messages", nil); code != 401 {
+		t.Errorf("an unrecognised value returned %d; it must fail closed", code)
+	}
+}
+
 // Binding publicly while trusting local is a combination worth shouting about,
 // since a tunnel or proxy then reaches the passwordless path.
 func TestTrustLocalWarnsOnPublicBind(t *testing.T) {

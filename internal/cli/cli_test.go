@@ -406,3 +406,27 @@ func TestSubcommandListsAreComplete(t *testing.T) {
 		}
 	}
 }
+
+// A setting that switches off an authentication requirement must never be
+// enabled by a value nobody meant as true.
+func TestEnvBoolFailsClosed(t *testing.T) {
+	truthy := []string{"1", "true", "TRUE", "yes", "on", " 1 "}
+	falsy := []string{"", "0", "false", "no", "off", "banana", "2", "trueish", "y"}
+
+	for _, v := range truthy {
+		t.Setenv("INBOXQL_TEST_BOOL", v)
+		if !envBool("INBOXQL_TEST_BOOL") {
+			t.Errorf("envBool(%q) = false, want true", v)
+		}
+	}
+	for _, v := range falsy {
+		t.Setenv("INBOXQL_TEST_BOOL", v)
+		if envBool("INBOXQL_TEST_BOOL") {
+			t.Errorf("envBool(%q) = true; an unrecognised value must not enable a security setting", v)
+		}
+	}
+
+	if envBool("INBOXQL_DEFINITELY_UNSET_VARIABLE") {
+		t.Error("an unset variable read as true")
+	}
+}

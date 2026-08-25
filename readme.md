@@ -37,8 +37,17 @@ iql init  --data ~/.inboxql
 iql start --data ~/.inboxql
 ```
 
-Sign in with the administrator account `init` created. On a single-user desktop
-machine you can skip the password with `iql start --trust-local`.
+Sign in with the administrator account `init` created.
+
+On a single-user desktop machine you can skip the password entirely:
+
+```bash
+iql start --trust-local              # once
+export INBOXQL_TRUST_LOCAL=1         # or set it and forget it
+```
+
+`make start` already passes `--trust-local`, since that is a local development
+loop on your own machine.
 
 **Do not combine `--trust-local` with a reverse proxy.** A proxy on the same
 host relays every request over loopback, so with the flag on, everyone who can

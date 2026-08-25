@@ -299,8 +299,10 @@ The web API requires a session, obtained by posting credentials to
 `/api/login`. There is no unauthenticated access by default, including from
 localhost.
 
-`iql start --trust-local` relaxes that for connections from the same machine,
-for a single-user desktop install. It is off unless asked for, and it is
+`iql start --trust-local`, or `INBOXQL_TRUST_LOCAL=1`, relaxes that for
+connections from the same machine, for a single-user desktop install. An
+explicit flag beats the environment variable, and any value other than
+1/true/yes/on leaves it off. It is off unless asked for, and it is
 refused for any request carrying `X-Forwarded-For`, `X-Real-Ip`, `Forwarded` or
 `X-Forwarded-Host` — a relayed request tells you about the proxy, not the
 client. Do not advise a user to combine `--trust-local` with a reverse proxy:

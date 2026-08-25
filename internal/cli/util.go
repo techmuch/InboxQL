@@ -136,3 +136,17 @@ func plural[T ~int | ~int64](n T, one, many string) string {
 func count[T ~int | ~int64](n T, one, many string) string {
 	return fmt.Sprintf("%d %s", n, plural(n, one, many))
 }
+
+// envBool reads a boolean setting from the environment.
+//
+// Accepts the spellings people actually type. Anything unrecognised is false:
+// a setting that turns off an authentication requirement must never be enabled
+// by a typo.
+func envBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}

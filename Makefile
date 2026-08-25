@@ -1,4 +1,4 @@
-.PHONY: all build frontend backend install uninstall clean run stop start restart test
+.PHONY: all build frontend backend install uninstall clean run stop start restart test e2e test-all
 
 PREFIX ?= $(shell go env GOPATH)
 BINDIR ?= $(PREFIX)/bin
@@ -9,14 +9,14 @@ build: frontend backend
 
 frontend:
 	@echo "Building frontend..."
-	npm --prefix frontend install
+	npm --prefix frontend ci
 	npm --prefix frontend run build
 	@echo "Copying assets to embedded static directory..."
 	rm -rf internal/embed/static/*
 	mkdir -p internal/embed/static
 	cp -r frontend/dist/* internal/embed/static/
 
-VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.15")
+VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.16")
 LDFLAGS := -X github.com/user/inboxql/internal/cli.Version=$(VERSION)
 
 backend:
@@ -37,6 +37,14 @@ test:
 	go test ./...
 	@echo "Running frontend tests..."
 	npm --prefix frontend test -- --run
+
+# End-to-end tests build the binary and bind ports, so they sit behind a build
+# tag and stay out of `make test`. CI runs both.
+e2e:
+	@echo "Running end-to-end tests..."
+	go test -race -tags e2e -count=1 ./e2e/... -v
+
+test-all: test e2e
 
 clean:
 	@echo "Cleaning up build artifacts..."

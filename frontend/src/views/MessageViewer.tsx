@@ -123,14 +123,14 @@ export const MessageViewer = () => {
         </span>
 
         {/* View Mode Toggle: HTML / Text / Raw */}
-        <div className="flex items-center bg-muted/60 p-0.5 border border-border text-xs rounded">
+        <div className="flex items-center bg-black/25 dark:bg-black/40 p-1 border border-border text-xs rounded-md gap-1">
           <button
             type="button"
             onClick={() => setViewMode('html')}
-            className={`px-2.5 py-1 flex items-center gap-1.5 font-medium rounded transition-all ${
+            className={`px-3 py-1 flex items-center gap-1.5 font-medium rounded transition-all ${
               viewMode === 'html'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'bg-blue-600 text-white shadow-sm font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
             }`}
             title="Rendered HTML View"
           >
@@ -140,10 +140,10 @@ export const MessageViewer = () => {
           <button
             type="button"
             onClick={() => setViewMode('text')}
-            className={`px-2.5 py-1 flex items-center gap-1.5 font-medium rounded transition-all ${
+            className={`px-3 py-1 flex items-center gap-1.5 font-medium rounded transition-all ${
               viewMode === 'text'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'bg-emerald-600 text-white shadow-sm font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
             }`}
             title="Plain Text View"
           >
@@ -153,10 +153,10 @@ export const MessageViewer = () => {
           <button
             type="button"
             onClick={() => setViewMode('raw')}
-            className={`px-2.5 py-1 flex items-center gap-1.5 font-medium rounded transition-all ${
+            className={`px-3 py-1 flex items-center gap-1.5 font-medium rounded transition-all ${
               viewMode === 'raw'
-                ? 'bg-purple-600 text-white shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'bg-purple-600 text-white shadow-sm font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
             }`}
             title="Raw Source & Headers"
           >

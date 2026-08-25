@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"runtime/debug"
@@ -19,7 +20,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.22"
+var Version = "0.0.23"
 
 func init() {
 	register(&Command{
@@ -36,7 +37,7 @@ toolchain used. Include this in bug reports.`,
 		Name:    "start",
 		Aliases: []string{"serve"},
 		Summary: "run the web server",
-		Usage: `iql start [--addr <host:port>] [--open] [--data <dir>]
+		Usage: `iql start [--addr <host:port>] [--open] [--dev] [--data <dir>]
 
 Serves the dashboard and API. The data directory must already exist; run
 ` + "`iql init`" + ` first.
@@ -44,6 +45,7 @@ Serves the dashboard and API. The data directory must already exist; run
 Flags:
   --addr <host:port>   listen address (default "127.0.0.1:8080", or $INBOXQL_ADDR)
   --open               automatically open the dashboard in your default browser
+  --dev                monitor the executable for changes and restart automatically
   --require-password   always ask for a password, even on this machine
   --trust-local        keep passwordless access when serving beyond localhost
 
@@ -157,6 +159,65 @@ func boundToLoopback(addr string) bool {
 	return auth.IsLoopback(host)
 }
 
+func runDevSupervisor(ctx *Context) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return Fail(ExitError, "could not determine executable path: %v", err)
+	}
+
+	initialStat, err := os.Stat(exe)
+	if err != nil {
+		return Fail(ExitError, "could not stat executable: %v", err)
+	}
+
+	p := ctx.Printer()
+	p.Printf("\n%s\n", p.Yellow("Started in --dev mode. Watching binary for changes..."))
+
+	for {
+		cmd := exec.Command(exe, os.Args[1:]...)
+		cmd.Env = append(os.Environ(), "INBOXQL_DEV_CHILD=1")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+
+		if err := cmd.Start(); err != nil {
+			return Fail(ExitError, "failed to start child: %v", err)
+		}
+
+		done := make(chan error, 1)
+		go func() {
+			done <- cmd.Wait()
+		}()
+
+		restart := false
+	WatchLoop:
+		for {
+			select {
+			case <-done:
+				break WatchLoop
+			case <-time.After(500 * time.Millisecond):
+				stat, err := os.Stat(exe)
+				if err != nil {
+					continue
+				}
+				if stat.Size() != initialStat.Size() || stat.ModTime() != initialStat.ModTime() {
+					p.Printf("\n%s\n", p.Yellow("Binary changed, restarting server..."))
+					initialStat = stat
+					restart = true
+					cmd.Process.Kill()
+					<-done
+					break WatchLoop
+				}
+			}
+		}
+
+		if !restart {
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond) // short pause before restarting
+	}
+}
+
 func runStart(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
@@ -166,6 +227,7 @@ func runStart(ctx *Context, args []string) error {
 	// this machine.
 	addr := fs.String("addr", envOr("INBOXQL_ADDR", "127.0.0.1:8080"), "listen address")
 	openFlag := fs.Bool("open", false, "open browser on start")
+	devFlag := fs.Bool("dev", false, "monitor the binary for changes and restart")
 	requirePassword := fs.Bool("require-password", envBool("INBOXQL_REQUIRE_PASSWORD"),
 		"always ask for a password, even on this machine")
 	// Only needed to force passwordless access on when the listen address
@@ -174,6 +236,10 @@ func runStart(ctx *Context, args []string) error {
 		"keep passwordless access when serving beyond localhost")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
+	}
+
+	if *devFlag && os.Getenv("INBOXQL_DEV_CHILD") == "" {
+		return runDevSupervisor(ctx)
 	}
 
 	local, reason := trustDecision(*addr, *requirePassword, *forceTrust)

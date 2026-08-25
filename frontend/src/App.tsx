@@ -8,6 +8,7 @@ import { ImportPanel } from './views/ImportPanel';
 import { MessageViewer } from './views/MessageViewer';
 import { ErrorLog } from './views/ErrorLog';
 import { openTool, openMessage, openErrorLog, useViewerStore } from './lib/tabs';
+import { version as appVersion } from '../package.json';
 import 'nexus-shell/style.css';
 import './App.css';
 
@@ -730,6 +731,12 @@ const SettingsView = () => {
             </button>
           ))}
         </div>
+        <div className="p-4 border-t border-border mt-auto opacity-50">
+          <div className="text-xs font-mono flex items-center justify-between text-muted-foreground">
+            <span>InboxQL</span>
+            <span>v{appVersion}</span>
+          </div>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-8">
@@ -1233,7 +1240,7 @@ function App() {
     commandRegistry.registerCommand({
       id: 'nexus.about',
       label: 'About InboxQL',
-      execute: () => alert('InboxQL v0.1.1\nInboxQL Workbench'),
+      execute: () => alert(`InboxQL v${appVersion}\nInboxQL Workbench`),
     });
 
     menuRegistry.setMenus({
@@ -1289,7 +1296,7 @@ function App() {
       <ShellLayout
         // `app-lockup` keeps the QL in InboxQL; see App.css for why a Tailwind
         // class could not do it.
-        title={<AppTitle title="InboxQL" subtitle="Email for Engineers" className="app-lockup" />}
+        title={<AppTitle title="InboxQL" subtitle={`v${appVersion} • Email for Engineers`} className="app-lockup" />}
         // Chat was a fixture of the shell in 0.1.x, toggled by a built-in
         // command. In 0.2.x it is an ordinary registered panel, so passing no
         // panels left `view.toggleChat` with nothing to toggle. Registering it

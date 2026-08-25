@@ -231,7 +231,7 @@ You will not usually need these, but they are available and all support
 `init` (prepare a data directory), `doctor` (health checks, non-zero on
 failure), `account` (add/list/remove/verify/sync), `user`, `vault`
 (status/rotate), `llm` (status/configure/test/disable), `maintenance`,
-`backup` / `restore`, `export`, `version`, `serve`.
+`backup` / `restore`, `export`, `version`, `start`.
 
 Two to avoid unless explicitly asked: `account remove` deletes every stored
 message for that account, and `vault rotate` re-encrypts every credential.

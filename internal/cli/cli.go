@@ -82,6 +82,7 @@ func (c *Context) resolve() {
 // Command is one iql subcommand.
 type Command struct {
 	Name    string
+	Aliases []string
 	Summary string
 	// Usage is printed under `iql help <name>`. The first line should be the
 	// invocation form.

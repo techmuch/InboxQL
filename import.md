@@ -14,7 +14,7 @@ are additions rather than rewrites.
 Four things drive nearly every decision below.
 
 **Reading is privileged.** `~/Library/Mail` is TCC-protected on macOS. Whichever
-process reads it — the CLI, or `iql serve` when the UI drives the scan — needs Full
+process reads it — the CLI, or `iql start` when the UI drives the scan — needs Full
 Disk Access, and without it the failure is a bare `EPERM`. A web UI makes this
 worse, not better: the user clicks a button in a browser and a background process
 they never think about is the thing that lacks permission.

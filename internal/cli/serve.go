@@ -28,9 +28,10 @@ toolchain used. Include this in bug reports.`,
 	})
 
 	register(&Command{
-		Name:    "serve",
+		Name:    "start",
+		Aliases: []string{"serve"},
 		Summary: "run the web server",
-		Usage: `iql serve [--addr <host:port>] [--data <dir>]
+		Usage: `iql start [--addr <host:port>] [--data <dir>]
 
 Serves the dashboard and API. The data directory must already exist; run
 ` + "`iql init`" + ` first.
@@ -40,7 +41,7 @@ Flags:
 
 Binding to :8080 exposes InboxQL on every interface. It has no TLS of its own, so
 put it behind a reverse proxy before exposing it beyond localhost.`,
-		Run: runServe,
+		Run: runStart,
 	})
 }
 
@@ -77,8 +78,8 @@ const banner = `    ____       __               ____    __
  _/ / / / / / /_/ / /_/ />  </ /_/ / / /___
 /___//_/ /_/_.___/\____/_/|_|\___\_\/_____/`
 
-func runServe(ctx *Context, args []string) error {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+func runStart(ctx *Context, args []string) error {
+	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	addr := fs.String("addr", envOr("INBOXQL_ADDR", ":8080"), "listen address")
 	if err := parseArgs(fs, args); err != nil {

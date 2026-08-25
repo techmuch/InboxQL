@@ -1,6 +1,6 @@
 // Command iql is the InboxQL server and administrative CLI.
 //
-// The same binary serves the dashboard (`iql serve`) and provides the command
+// The same binary serves the dashboard (`iql start`) and provides the command
 // surface documented in AGENTS.md. Everything of substance lives in
 // internal/cli; this is dispatch and nothing else.
 package main

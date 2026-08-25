@@ -53,10 +53,10 @@ start: stop backend
 	@./bin/iql init --data ./data >/dev/null 2>&1 || ./bin/iql init --data ./data --force >/dev/null 2>&1 || true
 ifneq (,$(filter --foreground,$(MAKECMDGOALS)))
 	@echo "Running backend in foreground..."
-	./bin/iql serve --data ./data
+	./bin/iql start --data ./data
 else
 	@echo "Running backend in background..."
-	nohup ./bin/iql serve --data ./data > iql.log 2>&1 &
+	nohup ./bin/iql start --data ./data > iql.log 2>&1 &
 	@echo "Backend started. Check iql.log for output."
 	@echo "Access the frontend at http://localhost:8080"
 endif

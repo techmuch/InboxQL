@@ -20,7 +20,7 @@ var (
 )
 
 // SetDataDir tells the API where the data directory is, for the blob store.
-// Called by `iql serve` before the listener starts.
+// Called by `iql start` before the listener starts.
 func SetDataDir(dir string) { importDataDir = dir }
 
 func manager() *importer.Manager {

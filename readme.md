@@ -47,7 +47,7 @@ then start the server:
 
 ```bash
 ./iql init      # creates ./data with the database and encryption key
-./iql serve
+./iql start
 ```
 
 `./iql` on its own lists every subcommand — it is an administrative CLI as well

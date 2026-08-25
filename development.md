@@ -79,7 +79,7 @@ The `Makefile` is the primary tool for managing the development lifecycle.
 | `make test` | Runs both backend (`go test`) and frontend (`vitest`) tests. |
 | `make start` | Runs the backend in the background (logs to `iql.log`). |
 | `make start --foreground` | Runs the backend in the foreground. |
-| `./bin/iql` | Lists every CLI subcommand. The server is `iql serve`. |
+| `./bin/iql` | Lists every CLI subcommand. The server is `iql start`. |
 | `./bin/iql <cmd> --help` | Detail on one command; identical to `iql help <cmd>`. |
 | `make stop` | Stops any running backend instances. |
 | `make restart` | Restarts the backend. |

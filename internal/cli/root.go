@@ -132,7 +132,7 @@ const (
 // commandOrder is the sequence commands appear in help, chosen to match the
 // order someone meets them rather than the alphabet.
 var commandOrder = []string{
-	"init", "serve", "version", "doctor",
+	"init", "start", "version", "doctor",
 	"account", "user", "vault", "llm", "maintenance", "backup", "restore",
 	"import", "export", "errors",
 	"search", "read", "analyze", "draft", "send", "outbox",
@@ -148,7 +148,7 @@ func listedInOrder(name string) bool {
 }
 
 var commandGroup = map[string]string{
-	"init": groupStart, "serve": groupStart, "version": groupStart, "doctor": groupStart,
+	"init": groupStart, "start": groupStart, "version": groupStart, "doctor": groupStart,
 	"account": groupAdmin, "user": groupAdmin, "vault": groupAdmin, "llm": groupAdmin,
 	"maintenance": groupAdmin, "backup": groupAdmin, "restore": groupAdmin,
 	"import": groupAdmin, "export": groupAdmin, "errors": groupAdmin,
@@ -245,6 +245,7 @@ func newCobraCommand(ctx *Context, c *Command) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     use,
+		Aliases: c.Aliases,
 		Short:   c.Summary,
 		Long:    strings.TrimSpace(c.Usage),
 		GroupID: commandGroup[c.Name],

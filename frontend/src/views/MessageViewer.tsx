@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Archive, AlertOctagon, Trash, Mail, MoreVertical,
   CornerUpLeft, CornerUpRight, Inbox, Paperclip, FileText,
+  Globe, Code, Copy, Check,
 } from 'lucide-react';
 import { useViewerStore } from '../lib/tabs';
 
@@ -18,6 +19,17 @@ import { useViewerStore } from '../lib/tabs';
 export const MessageViewer = () => {
   const message = useViewerStore(s => s.message);
   const [attachments, setAttachments] = useState<any[]>([]);
+  const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw'>('html');
+  const [copied, setCopied] = useState(false);
+
+  // Set default view mode based on message content
+  useEffect(() => {
+    if (message?.htmlBody) {
+      setViewMode('html');
+    } else {
+      setViewMode('text');
+    }
+  }, [message?.id]);
 
   useEffect(() => {
     if (!message?.id) { setAttachments([]); return; }
@@ -35,6 +47,58 @@ export const MessageViewer = () => {
   // and offering Reply on it would be nonsense. It reaches this viewer through
   // the Drafts folder, which maps drafts into the message shape.
   const isDraft = message?.flags?.includes('\\Draft');
+
+  const rawContent = useMemo(() => {
+    if (!message) return '';
+    let rawHeaders = '';
+    if (message.header) {
+      if (typeof message.header === 'string') {
+        try {
+          rawHeaders = atob(message.header);
+        } catch {
+          rawHeaders = message.header;
+        }
+      } else if (Array.isArray(message.header)) {
+        rawHeaders = String.fromCharCode(...message.header);
+      }
+    }
+
+    const lines: string[] = [];
+    if (rawHeaders) {
+      lines.push(rawHeaders.trimEnd());
+    } else {
+      lines.push(`Message-ID: <${message.messageId || message.id}>`);
+      if (message.date) lines.push(`Date: ${new Date(message.date).toUTCString()}`);
+      if (message.from) lines.push(`From: ${message.from}`);
+      if (message.to?.length) lines.push(`To: ${message.to.join(', ')}`);
+      if (message.cc?.length) lines.push(`Cc: ${message.cc.join(', ')}`);
+      if (message.bcc?.length) lines.push(`Bcc: ${message.bcc.join(', ')}`);
+      if (message.subject) lines.push(`Subject: ${message.subject}`);
+      if (message.mailbox) lines.push(`X-InboxQL-Mailbox: ${message.mailbox}`);
+    }
+
+    lines.push(''); // blank line separating headers and body
+
+    if (message.htmlBody && message.body) {
+      lines.push('--- Plain Text Body ---');
+      lines.push(message.body);
+      lines.push('');
+      lines.push('--- HTML Body ---');
+      lines.push(message.htmlBody);
+    } else if (message.htmlBody) {
+      lines.push(message.htmlBody);
+    } else {
+      lines.push(message.body || '');
+    }
+
+    return lines.join('\n');
+  }, [message]);
+
+  const handleCopyRaw = () => {
+    navigator.clipboard.writeText(rawContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   if (!message) {
     return (
@@ -57,6 +121,51 @@ export const MessageViewer = () => {
           )}
           <span className="truncate">{isDraft ? 'Not sent' : message.from}</span>
         </span>
+
+        {/* View Mode Toggle: HTML / Text / Raw */}
+        <div className="flex items-center bg-muted/60 p-0.5 border border-border text-xs">
+          <button
+            type="button"
+            onClick={() => setViewMode('html')}
+            className={`px-2.5 py-1 flex items-center gap-1.5 font-medium transition-colors ${
+              viewMode === 'html'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            title="Rendered HTML View"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>HTML</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('text')}
+            className={`px-2.5 py-1 flex items-center gap-1.5 font-medium transition-colors ${
+              viewMode === 'text'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            title="Plain Text View"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Text</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('raw')}
+            className={`px-2.5 py-1 flex items-center gap-1.5 font-medium transition-colors ${
+              viewMode === 'raw'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            title="Raw Source & Headers"
+          >
+            <Code className="w-3.5 h-3.5" />
+            <span>Raw</span>
+          </button>
+        </div>
+
+        <div className="w-px h-6 bg-border mx-1" />
         {!isDraft && <>
           <button className="p-2 hover:bg-accent text-muted-foreground" title="Archive"><Archive className="w-4 h-4" /></button>
           <button className="p-2 hover:bg-accent text-muted-foreground" title="Report spam"><AlertOctagon className="w-4 h-4" /></button>
@@ -116,9 +225,78 @@ export const MessageViewer = () => {
           </div>
         )}
 
-        <div className="prose prose-sm dark:prose-invert max-w-none border-t border-border pt-8 font-sans leading-relaxed whitespace-pre-wrap text-foreground/90">
-          {message.body || <span className="italic text-muted-foreground">No text content available.</span>}
-        </div>
+        {/* View Mode Content */}
+        {viewMode === 'html' && (
+          <div className="mt-2 border-t border-border pt-6">
+            {message.htmlBody ? (
+              <div className="border border-border bg-white rounded-sm overflow-hidden shadow-sm">
+                <iframe
+                  srcDoc={message.htmlBody}
+                  sandbox="allow-same-origin allow-popups"
+                  title="HTML Message"
+                  className="w-full min-h-[500px] border-0"
+                  style={{ display: 'block' }}
+                  onLoad={(e) => {
+                    try {
+                      const doc = e.currentTarget.contentWindow?.document;
+                      if (doc?.body) {
+                        const height = doc.body.scrollHeight;
+                        if (height > 0) {
+                          e.currentTarget.style.height = `${height + 40}px`;
+                        }
+                      }
+                    } catch {
+                      // cross-origin / sandboxed fallback
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-muted/40 border border-border px-3 py-2 text-xs text-muted-foreground flex items-center justify-between">
+                  <span>No HTML body available for this message. Showing plain text:</span>
+                  <button
+                    onClick={() => setViewMode('text')}
+                    className="text-primary hover:underline text-xs"
+                  >
+                    Switch to Text view
+                  </button>
+                </div>
+                <div className="prose prose-sm dark:prose-invert max-w-none font-sans leading-relaxed whitespace-pre-wrap text-foreground/90">
+                  {message.body || <span className="italic text-muted-foreground">No text content available.</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {viewMode === 'text' && (
+          <div className="prose prose-sm dark:prose-invert max-w-none border-t border-border pt-8 font-sans leading-relaxed whitespace-pre-wrap text-foreground/90">
+            {message.body || <span className="italic text-muted-foreground">No text content available.</span>}
+          </div>
+        )}
+
+        {viewMode === 'raw' && (
+          <div className="border-t border-border pt-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
+                RFC822 Message Source & Headers
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyRaw}
+                className="px-2.5 py-1 text-xs border border-border bg-background hover:bg-accent flex items-center gap-1.5 transition-colors font-mono"
+                title="Copy Raw Content"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? 'Copied' : 'Copy Raw'}</span>
+              </button>
+            </div>
+            <pre className="font-mono text-xs whitespace-pre bg-muted/30 p-4 border border-border overflow-x-auto text-foreground/90 leading-relaxed select-all">
+              {rawContent}
+            </pre>
+          </div>
+        )}
 
         {isDraft ? (
           /* Sending is gated on a person approving it at a terminal, so the

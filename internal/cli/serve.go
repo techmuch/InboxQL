@@ -2,10 +2,13 @@ package cli
 
 import (
 	"flag"
+	"log"
 	"net/http"
+	"os/exec"
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/user/inboxql/internal/api"
 	"github.com/user/inboxql/internal/store"
@@ -31,13 +34,14 @@ toolchain used. Include this in bug reports.`,
 		Name:    "start",
 		Aliases: []string{"serve"},
 		Summary: "run the web server",
-		Usage: `iql start [--addr <host:port>] [--data <dir>]
+		Usage: `iql start [--addr <host:port>] [--open] [--data <dir>]
 
 Serves the dashboard and API. The data directory must already exist; run
 ` + "`iql init`" + ` first.
 
 Flags:
   --addr <host:port>   listen address (default ":8080", or $INBOXQL_ADDR)
+  --open               automatically open the dashboard in your default browser
 
 Binding to :8080 exposes InboxQL on every interface. It has no TLS of its own, so
 put it behind a reverse proxy before exposing it beyond localhost.`,
@@ -78,10 +82,24 @@ const banner = `    ____       __               ____    __
  _/ / / / / / /_/ / /_/ />  </ /_/ / / /___
 /___//_/ /_/_.___/\____/_/|_|\___\_\/_____/`
 
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Start()
+}
+
 func runStart(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	addr := fs.String("addr", envOr("INBOXQL_ADDR", ":8080"), "listen address")
+	openFlag := fs.Bool("open", false, "open browser on start")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -113,6 +131,15 @@ func runStart(ctx *Context, args []string) error {
 	p.Printf("  %-12s %s\n", p.Dim("Web UI:"), p.Bold(displayURL))
 	p.Printf("  %-12s %s\n", p.Dim("Data dir:"), ctx.DataDir)
 	p.Printf("  %-12s %s\n\n", p.Dim("Status:"), p.Green("Ready & listening"))
+
+	if *openFlag {
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			if err := openBrowser(displayURL); err != nil {
+				log.Printf("Failed to open browser: %v", err)
+			}
+		}()
+	}
 
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		return Fail(ExitError, "server stopped: %v", err)

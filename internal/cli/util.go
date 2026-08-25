@@ -117,3 +117,22 @@ func tarDirectory(root, dest string) error {
 		return err
 	})
 }
+
+// plural picks the right noun for a count.
+//
+// Generic over the integer types actually in use, because the two call sites
+// had int and int64 and the alternative was a conversion at each one.
+func plural[T ~int | ~int64](n T, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// count renders a number with its noun: "1 message", "3 messages".
+//
+// Replaces the "%d message(s)" construction in output people see constantly;
+// the parenthesised plural reads as unfinished.
+func count[T ~int | ~int64](n T, one, many string) string {
+	return fmt.Sprintf("%d %s", n, plural(n, one, many))
+}

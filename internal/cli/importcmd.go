@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/user/inboxql/internal/blobstore"
+	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/importer"
 	"github.com/user/inboxql/internal/importer/applemail"
 	"github.com/user/inboxql/internal/importer/emlfiles"
@@ -103,18 +104,22 @@ func importSources(ctx *Context, args []string) error {
 	if ctx.JSON {
 		return ctx.EmitJSON(rows)
 	}
+	p := ctx.Printer()
 	for _, r := range rows {
 		switch {
 		case r.Readable:
-			ctx.Printf("[ ready ] %-12s %s\n", r.ID, r.Detail)
-			ctx.Printf("                      %s\n", r.Root)
+			p.Status(ui.OK, r.ID, r.Detail)
+			p.Printf("        %s\n", p.Dim(r.Root))
 		case r.Available:
-			ctx.Printf("[blocked] %-12s %s\n", r.ID, r.Detail)
+			// Blocked is the common case on macOS, and the remedy is the
+			// whole value of the command — it names the exact binary that
+			// needs Full Disk Access. It is printed verbatim, never wrapped.
+			p.Status(ui.Bad, r.ID, r.Detail)
 			for _, line := range strings.Split(r.Remedy, "\n") {
-				ctx.Printf("                      %s\n", line)
+				p.Printf("        %s\n", line)
 			}
 		default:
-			ctx.Printf("[ absent] %-12s %s\n", r.ID, r.Detail)
+			p.Status(ui.Absent, r.ID, r.Detail)
 		}
 	}
 	ctx.Printf("\nNo client detected, or blocked by permissions? Export messages from your\n")
@@ -146,12 +151,14 @@ func importMailboxes(ctx *Context, args []string) error {
 		ctx.Printf("No mailboxes found.\n")
 		return nil
 	}
-	ctx.Printf("%-10s %10s  %s\n", "MESSAGES", "SIZE", "MAILBOX")
+	// The id was on a second line under each mailbox, which made the listing
+	// twice as long and unpipeable — and the id is exactly what you copy into
+	// `iql import scan --mailbox`.
+	t := ctx.Printer().NewTable("ID", "MESSAGES", "SIZE", "MAILBOX")
 	for _, b := range boxes {
-		ctx.Printf("%-10d %10s  %s\n", b.Messages, humanBytes(b.Bytes), b.Path)
-		ctx.Printf("%23s  id: %s\n", "", b.ID)
+		t.Row(b.ID, itoa(b.Messages), humanBytes(b.Bytes), b.Path)
 	}
-	return nil
+	return t.Flush()
 }
 
 func importScan(ctx *Context, args []string) error {

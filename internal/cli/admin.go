@@ -140,11 +140,11 @@ func runUser(ctx *Context, args []string) error {
 			ctx.Printf("No logins exist. Create one with `iql user add <username>`.\n")
 			return nil
 		}
-		ctx.Printf("%-32s %s\n", "USERNAME", "DISPLAY NAME")
+		t := ctx.Printer().NewTable("USERNAME", "DISPLAY NAME")
 		for _, u := range users {
-			ctx.Printf("%-32s %s\n", u.Username, u.DisplayName)
+			t.Row(u.Username, u.DisplayName)
 		}
-		return nil
+		return t.Flush()
 
 	case "add", "passwd":
 		if len(rest) != 1 {
@@ -260,7 +260,7 @@ func runVault(ctx *Context, args []string) error {
 			}
 		}
 
-		if !*yes && !ctx.Confirm(sprintf("Re-encrypt %d account password(s) under a new key?", len(accounts))) {
+		if !*yes && !ctx.Confirm(sprintf("Re-encrypt %s under a new key?", count(len(accounts), "account password", "account passwords"))) {
 			return Fail(ExitError, "cancelled")
 		}
 
@@ -296,7 +296,7 @@ func runVault(ctx *Context, args []string) error {
 				"rotated": len(accounts), "previousKey": backupPath,
 			})
 		}
-		ctx.Printf("Rotated the vault key and re-encrypted %d account(s).\n", len(accounts))
+		ctx.Printf("Rotated the vault key and re-encrypted %s.\n", count(len(accounts), "account", "accounts"))
 		ctx.Printf("Previous key kept at %s — delete it once you have confirmed things work.\n", backupPath)
 		return nil
 
@@ -537,11 +537,11 @@ func runBackup(ctx *Context, args []string) error {
 	switch {
 	case blobCount == 0:
 	case *includeAttachments:
-		ctx.Printf("Archived %d attachment blob(s), %s, to %s\n",
-			blobCount, humanBytes(blobBytes), result["attachments"])
+		ctx.Printf("Archived %s, %s, to %s\n",
+			count(blobCount, "attachment blob", "attachment blobs"), humanBytes(blobBytes), result["attachments"])
 	default:
-		ctx.Printf("\nWARNING: %d attachment blob(s), %s, are NOT in this backup.\n",
-			blobCount, humanBytes(blobBytes))
+		ctx.Printf("\nWARNING: %s, %s, are NOT in this backup.\n",
+			count(blobCount, "attachment blob", "attachment blobs"), humanBytes(blobBytes))
 		ctx.Printf("Attachment bytes live in %s, outside the database.\n", blobs.Root())
 		ctx.Printf("Re-run with --include-attachments, or back that directory up separately.\n\n")
 	}

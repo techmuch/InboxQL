@@ -80,11 +80,38 @@ The `Makefile` is the primary tool for managing the development lifecycle.
 | `make start` | Runs the backend in the background (logs to `iql.log`). |
 | `make start --foreground` | Runs the backend in the foreground. |
 | `./bin/iql` | Lists every CLI subcommand. The server is `iql serve`. |
+| `./bin/iql <cmd> --help` | Detail on one command; identical to `iql help <cmd>`. |
 | `make stop` | Stops any running backend instances. |
 | `make restart` | Restarts the backend. |
 | `make clean` | Removes build artifacts (`bin/`, `frontend/dist/`, etc.). |
 
-### 3.2. Local Development (Hot Reloading)
+### 3.2. How the CLI is assembled
+
+Commands register themselves into `cli.Commands` from each file's `init`, and
+`internal/cli/root.go` builds a Cobra tree from that registry. Cobra owns the
+command tree, help routing, completion and typo suggestions; it does **not**
+parse subcommand flags. Each command still parses its own with the stdlib
+`flag` package, which is why every command sets `DisableFlagParsing`.
+
+Two consequences worth knowing before editing:
+
+*   Global flags are stripped by `splitGlobals`, not by Cobra, so they work in
+    any position. Anything after a bare `--` is left alone.
+*   Because Cobra does no flag parsing for these commands, it also hands the
+    globals to completion functions as if they were positional arguments.
+    `positional()` in `completion.go` exists for exactly that.
+
+Human output goes through `internal/cli/ui`. Do not hand-roll column widths
+with `%-20s`; build a `Printer` from the context and use `NewTable`, whose
+columns size themselves. Colour is decided once, from whether the destination
+is a terminal, and a table styled through `Cell`/`Emphasise` is guaranteed to
+lay out identically with colour on or off — there is a test that asserts it.
+
+Adding a command means: register it, put its name in `commandOrder` and
+`commandGroup` (a test fails otherwise), and add its subcommand verbs to
+`subcommands` so completion offers them.
+
+### 3.3. Local Development (Hot Reloading)
 
 For a faster development loop with hot-module replacement (HMR), you can run the components separately:
 
@@ -103,7 +130,7 @@ For a faster development loop with hot-module replacement (HMR), you can run the
 
 The frontend dev server will proxy API requests to the backend.
 
-### 3.3. Backend Development
+### 3.4. Backend Development
 
 The backend code is located in `internal/`.
 
@@ -111,7 +138,7 @@ The backend code is located in `internal/`.
 *   **Sync Engine**: Implemented in `internal/sync/`.
 *   **Storage**: Database logic is in `internal/store/`.
 
-### 3.4. Frontend Development
+### 3.5. Frontend Development
 
 The frontend code is located in the `frontend/src` directory.
 

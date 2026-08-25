@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/store"
 	"github.com/user/inboxql/internal/sync"
 	"github.com/user/inboxql/internal/vault"
@@ -55,6 +57,10 @@ type check struct {
 // everything that is wrong in one pass, not the first thing.
 type report struct {
 	Checks []check `json:"checks"`
+	// notConfigured means the data directory was never initialised, as
+	// opposed to initialised and unhealthy. The two deserve different exit
+	// codes: one is answered by running init, the other by investigating.
+	notConfigured bool
 }
 
 func (r *report) add(name string, status checkStatus, detail string, remedy ...string) {
@@ -88,6 +94,10 @@ func runDoctor(ctx *Context, args []string) error {
 	if info, err := os.Stat(ctx.DataDir); err != nil {
 		rep.add("data directory", statusFail, fmt.Sprintf("%s is not accessible: %v", ctx.DataDir, err),
 			fmt.Sprintf("iql init --data %s", ctx.DataDir))
+		// Nothing has been set up here, which the contract in AGENTS.md
+		// distinguishes from "set up and unhealthy": exit 5 tells a script to
+		// run init rather than to investigate a failure.
+		rep.notConfigured = true
 		return finishDoctor(ctx, rep)
 	} else if !info.IsDir() {
 		rep.add("data directory", statusFail, fmt.Sprintf("%s is not a directory", ctx.DataDir))
@@ -105,6 +115,10 @@ func runDoctor(ctx *Context, args []string) error {
 	// --- database ---------------------------------------------------------
 	if err := ctx.OpenStore(); err != nil {
 		rep.add("database", statusFail, err.Error(), fmt.Sprintf("iql init --data %s", ctx.DataDir))
+		var cliErr *Error
+		if errors.As(err, &cliErr) && cliErr.Code == ExitNotConfigured {
+			rep.notConfigured = true
+		}
 		return finishDoctor(ctx, rep)
 	}
 	defer store.CloseDB()
@@ -166,11 +180,11 @@ func runDoctor(ctx *Context, args []string) error {
 			"iql account add")
 	case undecryptable > 0:
 		rep.add("account credentials", statusFail,
-			fmt.Sprintf("%d of %d account password(s) could not be decrypted", undecryptable, len(accounts)),
+			fmt.Sprintf("%d of %s could not be decrypted", undecryptable, count(len(accounts), "account password", "account passwords")),
 			"the vault key does not match these rows; restore the original vault.key or re-enter the passwords with `iql account add`")
 	default:
 		rep.add("account credentials", statusOK,
-			fmt.Sprintf("%d account(s), all decryptable", len(accounts)))
+			fmt.Sprintf("%s, all decryptable", count(len(accounts), "account", "accounts")))
 	}
 
 	// --- IMAP reachability ------------------------------------------------
@@ -218,19 +232,25 @@ func finishDoctor(ctx *Context, rep *report) error {
 			return err
 		}
 	} else {
+		p := ctx.Printer()
 		for _, c := range rep.Checks {
-			marker := "  ok  "
+			state := ui.OK
 			switch c.Status {
 			case statusWarn:
-				marker = " warn "
+				state = ui.Warn
 			case statusFail:
-				marker = " FAIL "
+				state = ui.Bad
 			}
-			ctx.Printf("[%s] %-22s %s\n", marker, c.Name, c.Detail)
+			p.Status(state, c.Name, c.Detail)
 			if c.Remedy != "" && c.Status != statusOK {
-				ctx.Printf("                              -> %s\n", c.Remedy)
+				// The remedy is the actionable half, so it is indented under
+				// the finding rather than crammed onto the same line.
+				p.Printf("        %s %s\n", p.Dim("try:"), c.Remedy)
 			}
 		}
+	}
+	if rep.notConfigured {
+		return Fail(ExitNotConfigured, "not initialised — run `iql init --data %s`", ctx.DataDir)
 	}
 	if rep.failed() {
 		return &Error{Code: ExitError, Err: fmt.Errorf("one or more checks failed")}

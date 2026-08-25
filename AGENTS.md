@@ -6,10 +6,18 @@ described here, do not depend on it.
 
 ```
 iql [--data <dir>] [--json] <command> [flags]
+iql <command> [flags] [--data <dir>] [--json]
 ```
+
+Both forms are the same invocation: `--data`, `--json`, `--verbose` and
+`--no-color` are global and may appear anywhere, before or after the command.
 
 Always pass `--json`. Every command listed under **Agent tools** emits a JSON
 object or array on stdout and nothing else; diagnostics go to stderr.
+
+Routine database logging is suppressed unless you pass `--verbose`. Schema
+migrations and warnings are still written to stderr, because those change the
+user's database or need attention.
 
 ---
 
@@ -53,6 +61,10 @@ their own.
 
 Exit 5 has two common causes worth distinguishing: no data directory (the user
 must run `iql init`), and no LLM provider (fine — see below).
+
+`iql doctor` follows the same split: **5** means the data directory was never
+initialised, so the answer is `iql init`; **1** means it exists and one or more
+checks failed, so the answer is to read the findings.
 
 ---
 
@@ -249,7 +261,16 @@ process happened to be running.
 
 **Flags may follow positionals.** `iql read m1 --thread` and
 `iql read --thread m1` are equivalent. Use `--` before an argument that starts
-with a dash.
+with a dash; everything after `--` is passed through untouched, including
+anything that looks like a global flag.
+
+**Global flags work anywhere.** `iql doctor --data ./data` and
+`iql --data ./data doctor` are identical. This was not true before 0.1.0: the
+globals parsed only ahead of the command name, so the second form was the only
+one that worked.
+
+**`-flag` and `--flag` are both accepted** for multi-character names, as they
+always have been. `-v` remains the shorthand for `--version`.
 
 **Sync is synchronous.** `iql account sync <id>` returns only when the sync has
 finished, so it is safe in a script. It can take a while on a large mailbox.

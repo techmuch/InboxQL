@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/store"
 	"github.com/user/inboxql/internal/sync"
 )
@@ -143,20 +144,27 @@ func accountList(ctx *Context, args []string) error {
 		return nil
 	}
 
-	ctx.Printf("%-20s %-28s %-28s %s\n", "ID", "EMAIL", "IMAP", "LAST SYNC")
+	p := ctx.Printer()
+	t := p.NewTable("ID", "EMAIL", "IMAP", "LAST SYNC")
 	for _, a := range accounts {
 		imap := a.Host
 		if a.Port != 0 {
 			imap = a.Host + ":" + itoa(a.Port)
 		}
-		status := a.LastSyncStatus
+
+		// A failed sync is the one thing in this listing that wants the eye.
+		status, state := a.LastSyncStatus, ui.Note
 		if status == "" {
 			status = "never"
 		}
 		if a.LastSyncError != "" {
-			status += " (" + truncate(a.LastSyncError, 30) + ")"
+			status += " (" + ui.Truncate(a.LastSyncError, 30) + ")"
+			state = ui.Bad
 		}
-		ctx.Printf("%-20s %-28s %-28s %s\n", a.ID, truncate(a.Email, 28), truncate(imap, 28), status)
+		t.Row(a.ID, a.Email, imap, t.Cell(state, status))
+	}
+	if err := t.Flush(); err != nil {
+		return Fail(ExitError, "writing accounts: %v", err)
 	}
 	return nil
 }
@@ -190,11 +198,11 @@ func accountRemove(ctx *Context, args []string) error {
 	// forgetting a password: it deletes every synced message too.
 	if !*yes {
 		stats, _ := store.GetAccountStats(id)
-		count := 0
+		stored := 0
 		if stats != nil {
-			count = stats.TotalMessages
+			stored = stats.TotalMessages
 		}
-		if !ctx.Confirm(sprintf("Remove account %s and delete its %d stored message(s)?", id, count)) {
+		if !ctx.Confirm(sprintf("Remove account %s and delete its %s?", id, count(stored, "stored message", "stored messages"))) {
 			return Fail(ExitError, "cancelled")
 		}
 	}
@@ -241,13 +249,15 @@ func accountVerify(ctx *Context, args []string) error {
 	var results []verdict
 	failed := false
 
+	p := ctx.Printer()
+
 	for _, acc := range accounts {
 		c, err := sync.ConnectIMAP(acc)
 		if err == nil {
 			c.Logout()
 			results = append(results, verdict{ID: acc.ID, OK: true})
 			if !ctx.JSON {
-				ctx.Printf("[  ok  ] %-20s %s:%d\n", acc.ID, acc.Host, acc.Port)
+				p.Status(ui.OK, acc.ID, sprintf("%s:%d", acc.Host, acc.Port))
 			}
 			continue
 		}
@@ -258,8 +268,10 @@ func accountVerify(ctx *Context, args []string) error {
 		kind := classifyConnectError(err)
 		results = append(results, verdict{ID: acc.ID, OK: false, Kind: kind, Detail: err.Error()})
 		if !ctx.JSON {
-			ctx.Printf("[ FAIL ] %-20s %s:%d — %s\n", acc.ID, acc.Host, acc.Port, kind)
-			ctx.Printf("                              %v\n", err)
+			p.Status(ui.Bad, acc.ID, sprintf("%s:%d — %s", acc.Host, acc.Port, kind))
+			// The classification is the headline; the underlying error is the
+			// detail you need when the classification is not enough.
+			p.Printf("        %s\n", p.Dim(err.Error()))
 		}
 	}
 
@@ -348,7 +360,7 @@ func accountSync(ctx *Context, args []string) error {
 		ctx.Printf("  %s\n", updated.LastSyncError)
 	}
 	if stats != nil {
-		ctx.Printf("  %d message(s) stored\n", stats.TotalMessages)
+		ctx.Printf("  %s stored\n", count(stats.TotalMessages, "message", "messages"))
 	}
 	if updated.LastSyncStatus == "error" {
 		return &Error{Code: ExitError, Err: errString("sync failed")}

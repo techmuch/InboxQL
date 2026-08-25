@@ -4,6 +4,7 @@ import (
 	"flag"
 	"time"
 
+	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/store"
 )
 
@@ -53,7 +54,7 @@ func runErrors(ctx *Context, args []string) error {
 		if ctx.JSON {
 			return ctx.EmitJSON(map[string]any{"cleared": removed})
 		}
-		ctx.Printf("Cleared %d entr%s.\n", removed, plural(removed, "y", "ies"))
+		ctx.Printf("Cleared %s.\n", count(removed, "entry", "entries"))
 		return nil
 	}
 
@@ -77,22 +78,27 @@ func runErrors(ctx *Context, args []string) error {
 		return nil
 	}
 
+	// An error record is a paragraph, not a row: the message is free text and
+	// routinely long. The header line is tabulated so the timestamps and
+	// categories still line up down the page.
+	p := ctx.Printer()
+	t := p.NewTable("WHEN", "CATEGORY", "REFERENCE")
 	for _, e := range entries {
-		ctx.Printf("%s  %-8s %s\n", e.CreatedAt.Format(time.RFC3339), e.Category, e.Reference)
+		t.Row(e.CreatedAt.Format(time.RFC3339), t.Cell(ui.Bad, e.Category), e.Reference)
+	}
+	if err := t.Flush(); err != nil {
+		return Fail(ExitError, "writing errors: %v", err)
+	}
+	p.Printf("\n")
+	for _, e := range entries {
+		p.Printf("%s %s\n", p.Dim(e.CreatedAt.Format(time.RFC3339)), e.Reference)
 		if e.Context != "" {
-			ctx.Printf("  in %s\n", e.Context)
+			p.Printf("  in %s\n", e.Context)
 		}
-		ctx.Printf("  %s\n\n", e.Message)
+		p.Printf("  %s\n\n", e.Message)
 	}
 	if total > len(entries) {
 		ctx.Printf("Showing %d of %d. Raise --limit to see more.\n", len(entries), total)
 	}
 	return nil
-}
-
-func plural(n int64, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }

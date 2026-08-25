@@ -76,7 +76,31 @@ InboxQL also includes a powerful command-line interface (CLI) for managing your 
 *   `iql maintenance`: Perform maintenance tasks such as re-indexing your data.
 *   `iql backup`: Create and manage backups of your InboxQL data.
 
-For more information on the CLI, run `iql --help`.
+Run `iql --help` for the full list, and `iql help <command>` — or
+`iql <command> --help`, which is the same page — for detail on any one of them.
+
+Global flags (`--data`, `--json`, `--verbose`, `--no-color`) may appear before
+or after the command, so `iql doctor --data ./data` and
+`iql --data ./data doctor` are the same invocation.
+
+### Shell completion
+
+```bash
+iql completion bash > /usr/local/etc/bash_completion.d/iql   # bash
+iql completion zsh  > "${fpath[1]}/_iql"                     # zsh
+iql completion fish > ~/.config/fish/completions/iql.fish    # fish
+```
+
+Completion covers command and subcommand names, and resolves real values where
+it can — `iql account sync <TAB>` offers your configured account ids.
+
+### Output
+
+Human output is a plain aligned table, coloured only when writing to a
+terminal. Redirect it or pipe it and you get unstyled text, so
+`iql search --query invoice | awk '{print $1}'` gives you message ids. Set
+`NO_COLOR` or pass `--no-color` to turn colour off at a terminal too. For
+anything programmatic, prefer `--json`.
 
 ## Contributing
 

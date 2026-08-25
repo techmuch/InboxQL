@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/llm"
 	"github.com/user/inboxql/internal/message"
 	"github.com/user/inboxql/internal/store"
@@ -164,16 +165,31 @@ func runSearch(ctx *Context, args []string) error {
 		ctx.Printf("No messages matched.\n")
 		return nil
 	}
+
+	// One row per message. This used to print the id on its own indented
+	// second line, which made search the only listing in the tool that could
+	// not be piped into cut or awk — and the id is the thing you almost always
+	// want to feed to `iql read`.
+	p := ctx.Printer()
+	t := p.NewTable("ID", "DATE", "FROM", "SUBJECT")
 	for _, m := range msgs {
-		mark := " "
-		if !hasFlag(m.Flags, `\Seen`) {
-			mark = "*"
+		subject := m.Subject
+		if subject == "" {
+			subject = "(no subject)"
 		}
-		ctx.Printf("%s %s  %-28s  %s\n", mark, m.Date.Format("2006-01-02 15:04"),
-			truncate(m.From, 28), truncate(m.Subject, 60))
-		ctx.Printf("    %s\n", m.ID)
+		id, from := m.ID, ui.Truncate(m.From, 32)
+		if !hasFlag(m.Flags, `\Seen`) {
+			// Unread is carried by weight rather than by a marker column, so
+			// the row keeps its shape whether or not colour is available.
+			id, from = t.Emphasise(id), t.Emphasise(from)
+			subject = t.Emphasise(subject)
+		}
+		t.Row(id, m.Date.Format("2006-01-02 15:04"), from, ui.Truncate(subject, 60))
 	}
-	ctx.Printf("\n%d message(s).\n", len(msgs))
+	if err := t.Flush(); err != nil {
+		return Fail(ExitError, "writing results: %v", err)
+	}
+	ctx.Printf("\n%s\n", count(len(msgs), "message", "messages"))
 	return nil
 }
 
@@ -394,16 +410,23 @@ func renderThreadForLLM(bundle *analysisContext, question string) string {
 }
 
 func printContext(ctx *Context, bundle *analysisContext) error {
-	ctx.Printf("Thread: %s\n", bundle.Subject)
-	ctx.Printf("%d message(s)", bundle.MessageCount)
+	p := ctx.Printer()
+	p.Printf("%s %s\n", p.Dim("Thread:"), p.Bold(bundle.Subject))
+	p.Printf("%s", count(bundle.MessageCount, "message", "messages"))
 	if bundle.Span != nil {
-		ctx.Printf(" over %d day(s)", bundle.Span.Days)
+		p.Printf(" over %s", count(bundle.Span.Days, "day", "days"))
 	}
-	ctx.Printf("\n\nParticipants:\n")
-	for _, p := range bundle.Participants {
-		ctx.Printf("  %-40s %d message(s)\n", p.Address, p.Sent)
+	p.Printf("\n\nParticipants:\n")
+
+	t := p.NewTable("ADDRESS", "SENT")
+	for _, participant := range bundle.Participants {
+		t.Row(participant.Address, count(participant.Sent, "message", "messages"))
 	}
-	ctx.Printf("\n%s\n", bundle.Note)
-	ctx.Printf("\nRe-run with --json to get the full thread as a structured payload.\n")
+	if err := t.Flush(); err != nil {
+		return Fail(ExitError, "writing participants: %v", err)
+	}
+
+	p.Printf("\n%s\n", bundle.Note)
+	p.Printf("\nRe-run with --json to get the full thread as a structured payload.\n")
 	return nil
 }

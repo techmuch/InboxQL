@@ -16,13 +16,11 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/user/inboxql/internal/store"
@@ -58,10 +56,27 @@ func Fail(code int, format string, args ...any) *Error {
 type Context struct {
 	DataDir string
 	JSON    bool
+	// Verbose surfaces the database and migration logging that is otherwise
+	// suppressed. Off by default: three lines of schema chatter before every
+	// command's real output is noise for a person and clutter in a terminal.
+	Verbose bool
+	// NoColour forces plain output even on a terminal.
+	NoColour bool
 
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+}
+
+// resolve normalises the context once the global flags are known.
+//
+// The data directory becomes absolute so error messages and the vault key
+// path do not shift if something changes the working directory mid-run.
+func (c *Context) resolve() {
+	if abs, err := filepath.Abs(c.DataDir); err == nil {
+		c.DataDir = abs
+	}
+	configureLogging(c.Verbose, c.Stderr)
 }
 
 // Command is one iql subcommand.
@@ -122,143 +137,11 @@ func (c *Context) OpenStore() error {
 	return nil
 }
 
-// Run parses global flags, dispatches to a command, and returns an exit code.
-func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	ctx := &Context{Stdin: stdin, Stdout: stdout, Stderr: stderr}
-
-	var showVersion bool
-	fs := flag.NewFlagSet("iql", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.StringVar(&ctx.DataDir, "data", envOr("INBOXQL_DATA", "./data"),
-		"path to the InboxQL data directory")
-	fs.BoolVar(&ctx.JSON, "json", false, "emit machine-readable JSON")
-	fs.BoolVar(&showVersion, "version", false, "print the InboxQL version")
-	fs.BoolVar(&showVersion, "v", false, "print the InboxQL version")
-	fs.Usage = func() { usage(stderr) }
-
-	// Plain Parse, deliberately: it stops at the first non-flag token, which is
-	// the command name. The interleaving parseArgs used by subcommands must not
-	// be applied here, or a subcommand's own flags get hoisted to the top level
-	// and rejected as unknown globals.
-	if err := fs.Parse(args); err != nil {
-		return ExitUsage
-	}
-
-	if showVersion {
-		if err := runVersion(ctx, nil); err != nil {
-			return ExitError
-		}
-		return ExitOK
-	}
-
-	rest := fs.Args()
-	if len(rest) == 0 {
-		usage(stderr)
-		return ExitUsage
-	}
-
-	name := rest[0]
-	if name == "help" {
-		return help(ctx, rest[1:])
-	}
-
-	cmd, ok := Commands[name]
-	if !ok {
-		fmt.Fprintf(stderr, "iql: unknown command %q\n\n", name)
-		usage(stderr)
-		return ExitUsage
-	}
-
-	// Resolve to an absolute path once, so error messages and the vault key
-	// location do not shift with the working directory mid-run.
-	if abs, err := filepath.Abs(ctx.DataDir); err == nil {
-		ctx.DataDir = abs
-	}
-
-	if err := cmd.Run(ctx, rest[1:]); err != nil {
-		var cliErr *Error
-		if errors.As(err, &cliErr) {
-			fmt.Fprintf(stderr, "iql %s: %s\n", name, cliErr.Err)
-			return cliErr.Code
-		}
-		fmt.Fprintf(stderr, "iql %s: %v\n", name, err)
-		return ExitError
-	}
-	return ExitOK
-}
-
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
-}
-
-// groups orders the help output by what the reader is trying to do, rather
-// than alphabetically across twenty unrelated commands.
-var groups = []struct {
-	Title string
-	Names []string
-}{
-	{"Getting started", []string{"init", "serve", "version", "doctor"}},
-	{"Administration", []string{"account", "user", "vault", "llm", "maintenance", "backup", "restore", "import", "export", "errors"}},
-	{"Agent tools", []string{"search", "read", "analyze", "draft", "send", "outbox"}},
-}
-
-func usage(w io.Writer) {
-	fmt.Fprint(w, `iql — InboxQL: Email for Engineers
-
-Usage:
-  iql [global flags] <command> [flags]
-
-Global flags:
-  --data <dir>    data directory (default "./data", or $INBOXQL_DATA)
-  --json          emit machine-readable JSON where supported
-  --version, -v   print the InboxQL version
-
-`)
-	seen := map[string]bool{}
-	for _, g := range groups {
-		fmt.Fprintf(w, "%s:\n", g.Title)
-		for _, n := range g.Names {
-			if c, ok := Commands[n]; ok {
-				fmt.Fprintf(w, "  %-12s %s\n", c.Name, c.Summary)
-				seen[n] = true
-			}
-		}
-		fmt.Fprintln(w)
-	}
-
-	var other []string
-	for n := range Commands {
-		if !seen[n] {
-			other = append(other, n)
-		}
-	}
-	if len(other) > 0 {
-		sort.Strings(other)
-		fmt.Fprintf(w, "Other:\n")
-		for _, n := range other {
-			fmt.Fprintf(w, "  %-12s %s\n", n, Commands[n].Summary)
-		}
-		fmt.Fprintln(w)
-	}
-
-	fmt.Fprint(w, "Run `iql help <command>` for details.\nAgents: see AGENTS.md for the JSON contract and exit codes.\n")
-}
-
-func help(ctx *Context, args []string) int {
-	if len(args) == 0 {
-		usage(ctx.Stdout)
-		return ExitOK
-	}
-	cmd, ok := Commands[args[0]]
-	if !ok {
-		fmt.Fprintf(ctx.Stderr, "iql: unknown command %q\n", args[0])
-		return ExitUsage
-	}
-	fmt.Fprintf(ctx.Stdout, "%s\n", strings.TrimSpace(cmd.Usage))
-	return ExitOK
 }
 
 // subcommand pulls the leading verb from args, e.g. `account add`.

@@ -129,7 +129,7 @@ func runExport(ctx *Context, args []string) error {
 	if ctx.JSON {
 		return ctx.EmitJSON(map[string]any{"exported": written, "directory": *out, "format": *format})
 	}
-	ctx.Printf("Exported %d message(s) to %s\n", written, *out)
+	ctx.Printf("Exported %s to %s\n", count(written, "message", "messages"), *out)
 	return nil
 }
 

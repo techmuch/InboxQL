@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/llm"
 	"github.com/user/inboxql/internal/mailer"
 	"github.com/user/inboxql/internal/store"
@@ -291,12 +292,32 @@ func draftList(ctx *Context, args []string) error {
 		ctx.Printf("No drafts.\n")
 		return nil
 	}
-	ctx.Printf("%-38s %-9s %-8s %-24s %s\n", "ID", "STATUS", "ORIGIN", "TO", "SUBJECT")
+	t := ctx.Printer().NewTable("ID", "STATUS", "ORIGIN", "TO", "SUBJECT")
 	for _, d := range drafts {
-		ctx.Printf("%-38s %-9s %-8s %-24s %s\n", d.ID, d.Status, d.Origin,
-			truncate(strings.Join(d.To, ","), 24), truncate(d.Subject, 40))
+		// An agent-written draft is the one a human should read hardest, so
+		// the origin column says so in colour as well as in text.
+		origin := d.Origin
+		if origin == "agent" {
+			origin = t.Cell(ui.Warn, origin)
+		}
+		t.Row(d.ID, t.Cell(draftState(d.Status), d.Status), origin,
+			ui.Truncate(strings.Join(d.To, ","), 24), ui.Truncate(d.Subject, 40))
 	}
-	return nil
+	return t.Flush()
+}
+
+// draftState maps a draft's status onto the shared status vocabulary.
+func draftState(status string) ui.Status {
+	switch status {
+	case store.DraftStatusQueued:
+		return ui.Warn // waiting on a person
+	case store.DraftStatusSent:
+		return ui.OK
+	case store.DraftStatusFailed:
+		return ui.Bad
+	default:
+		return ui.Note
+	}
 }
 
 func draftShow(ctx *Context, args []string) error {
@@ -430,12 +451,18 @@ func runOutbox(ctx *Context, args []string) error {
 			ctx.Printf("Outbox is empty.\n")
 			return nil
 		}
-		ctx.Printf("%-38s %-8s %-24s %s\n", "ID", "ORIGIN", "TO", "SUBJECT")
+		t := ctx.Printer().NewTable("ID", "ORIGIN", "TO", "SUBJECT")
 		for _, d := range queued {
-			ctx.Printf("%-38s %-8s %-24s %s\n", d.ID, d.Origin,
-				truncate(strings.Join(d.To, ","), 24), truncate(d.Subject, 40))
+			origin := d.Origin
+			if origin == "agent" {
+				origin = t.Cell(ui.Warn, origin)
+			}
+			t.Row(d.ID, origin, ui.Truncate(strings.Join(d.To, ","), 24), ui.Truncate(d.Subject, 40))
 		}
-		ctx.Printf("\n%d message(s) awaiting approval.\n", len(queued))
+		if err := t.Flush(); err != nil {
+			return Fail(ExitError, "writing outbox: %v", err)
+		}
+		ctx.Printf("\n%s awaiting approval.\n", count(len(queued), "message", "messages"))
 		return nil
 
 	case "show":

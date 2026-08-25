@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"bytes"
 	"flag"
 	"io"
+	"log"
+	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // Go's flag package stops at the first positional, so `iql read m1 --thread`
@@ -106,20 +111,20 @@ func TestParseArgsRejectsUnknownFlag(t *testing.T) {
 // subcommand's flags to the top level is exactly the regression that broke
 // every subcommand flag during development.
 func TestGlobalParseStopsAtCommandName(t *testing.T) {
-	code := Run([]string{"--data", t.TempDir(), "search", "--unread"}, nil, io.Discard, io.Discard)
+	code := Execute([]string{"--data", t.TempDir(), "search", "--unread"}, nil, io.Discard, io.Discard)
 	if code == ExitUsage {
 		t.Error("subcommand flag --unread was rejected by the global parser")
 	}
 }
 
 func TestUnknownCommandIsUsageError(t *testing.T) {
-	if code := Run([]string{"nonsense"}, nil, io.Discard, io.Discard); code != ExitUsage {
+	if code := Execute([]string{"nonsense"}, nil, io.Discard, io.Discard); code != ExitUsage {
 		t.Errorf("exit code = %d, want %d", code, ExitUsage)
 	}
 }
 
 func TestNoArgsIsUsageError(t *testing.T) {
-	if code := Run(nil, nil, io.Discard, io.Discard); code != ExitUsage {
+	if code := Execute(nil, nil, io.Discard, io.Discard); code != ExitUsage {
 		t.Errorf("exit code = %d, want %d", code, ExitUsage)
 	}
 }
@@ -127,7 +132,7 @@ func TestNoArgsIsUsageError(t *testing.T) {
 // Commands that need a data directory must say so rather than silently
 // creating an empty database wherever they happen to be run.
 func TestMissingDataDirIsNotConfigured(t *testing.T) {
-	code := Run([]string{"--data", t.TempDir() + "/absent", "account", "list"}, nil, io.Discard, io.Discard)
+	code := Execute([]string{"--data", t.TempDir() + "/absent", "account", "list"}, nil, io.Discard, io.Discard)
 	if code != ExitNotConfigured {
 		t.Errorf("exit code = %d, want %d (ExitNotConfigured)", code, ExitNotConfigured)
 	}
@@ -146,7 +151,7 @@ func TestVersionSucceeds(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if code := Run(tc.args, nil, io.Discard, io.Discard); code != ExitOK {
+			if code := Execute(tc.args, nil, io.Discard, io.Discard); code != ExitOK {
 				t.Errorf("Run(%q) exit code = %d, want %d", tc.args, code, ExitOK)
 			}
 		})
@@ -169,18 +174,16 @@ func TestEveryCommandHasUsage(t *testing.T) {
 	}
 }
 
-// The help groups drive the top-level listing, so a command missing from them
-// is invisible to anyone reading `iql` with no arguments.
+// Every command must land in a help group and in the explicit ordering.
+// A command in neither is still reachable, but nobody reading `iql --help`
+// would ever discover it.
 func TestEveryCommandAppearsInAGroup(t *testing.T) {
-	grouped := map[string]bool{}
-	for _, g := range groups {
-		for _, n := range g.Names {
-			grouped[n] = true
-		}
-	}
 	for name := range Commands {
-		if !grouped[name] {
-			t.Errorf("command %q is not listed in any help group", name)
+		if commandGroup[name] == "" {
+			t.Errorf("command %q is not in any help group", name)
+		}
+		if !listedInOrder(name) {
+			t.Errorf("command %q is missing from commandOrder, so help lists it last and unsorted", name)
 		}
 	}
 }
@@ -228,5 +231,178 @@ func TestTruncate(t *testing.T) {
 	// Counted in runes, not bytes, so multi-byte text is not cut mid-character.
 	if got := truncate("héllo wörld", 7); len([]rune(got)) != 7 {
 		t.Errorf("truncate = %q, want 7 runes", got)
+	}
+}
+
+// Global flags used to work only before the command name, because dispatch
+// used the stdlib flag package, which stops at the first non-flag token. The
+// failure was not merely inconvenient: `iql init` printed three suggested next
+// commands, all of which put --data after the command, and all of which failed.
+func TestGlobalFlagsWorkAfterTheCommand(t *testing.T) {
+	dir := t.TempDir() + "/absent"
+
+	before := Execute([]string{"--data", dir, "account", "list"}, nil, io.Discard, io.Discard)
+	after := Execute([]string{"account", "list", "--data", dir}, nil, io.Discard, io.Discard)
+
+	if before != after {
+		t.Errorf("--data before the command exits %d but after it exits %d; they must be the same invocation", before, after)
+	}
+	if after != ExitNotConfigured {
+		t.Errorf("exit code = %d, want %d — the flag was not applied", after, ExitNotConfigured)
+	}
+}
+
+func TestGlobalFlagAcceptsEqualsForm(t *testing.T) {
+	dir := t.TempDir() + "/absent"
+	if code := Execute([]string{"account", "list", "--data=" + dir}, nil, io.Discard, io.Discard); code != ExitNotConfigured {
+		t.Errorf("exit code = %d, want %d", code, ExitNotConfigured)
+	}
+}
+
+// Everything after a bare -- belongs to the command, even when it looks like
+// a global flag.
+func TestDoubleDashEndsGlobalScanning(t *testing.T) {
+	ctx := &Context{}
+	rest := splitGlobals(ctx, []string{"--json", "--", "--data", "/should/not/apply"})
+	if !ctx.JSON {
+		t.Error("--json before -- was not applied")
+	}
+	if ctx.DataDir != "" {
+		t.Errorf("--data after -- was applied as a global: %q", ctx.DataDir)
+	}
+	if len(rest) != 3 || rest[0] != "--" {
+		t.Errorf("rest = %q, want the -- and everything after it", rest)
+	}
+}
+
+// The hand-written help was reachable only as `iql help <cmd>`; the spelling
+// people actually type fell through to the stdlib flag package and printed a
+// bare alphabetical flag dump instead.
+func TestHelpFlagReachesTheWrittenHelp(t *testing.T) {
+	for _, args := range [][]string{
+		{"search", "--help"},
+		{"search", "-h"},
+		{"help", "search"},
+	} {
+		var out bytes.Buffer
+		if code := Execute(args, nil, &out, &out); code != ExitOK {
+			t.Errorf("Execute(%q) exit code = %d, want 0", args, code)
+		}
+		// A line from the prose, which the stdlib flag dump does not contain.
+		if !strings.Contains(out.String(), "Substring matching over subject") {
+			t.Errorf("Execute(%q) did not print the written help:\n%s", args, out.String())
+		}
+	}
+}
+
+// stdlib flag treated -flag and --flag alike, so both spellings are in the
+// docs and in muscle memory. pflag reads -version as a cluster of shorthands.
+func TestSingleDashLongFlagsStillWork(t *testing.T) {
+	if got := normaliseSingleDash([]string{"-version"}); got[0] != "--version" {
+		t.Errorf("normaliseSingleDash(-version) = %q, want --version", got[0])
+	}
+	// Real shorthands must survive untouched.
+	if got := normaliseSingleDash([]string{"-v"}); got[0] != "-v" {
+		t.Errorf("a single-letter shorthand was rewritten: %q", got[0])
+	}
+	// Nothing after -- is rewritten.
+	got := normaliseSingleDash([]string{"--", "-literal"})
+	if got[1] != "-literal" {
+		t.Errorf("argument after -- was rewritten: %q", got[1])
+	}
+}
+
+// Routine database chatter is suppressed, but a schema migration changes the
+// user's database on disk and must never happen silently.
+func TestLoggingKeepsConsequentialLines(t *testing.T) {
+	cases := map[string]bool{
+		"Initializing database at: /tmp/x":                              false,
+		"Current database schema version: 14":                           false,
+		"Database schema is up to date (v14).":                          false,
+		"Applying schema migration v14 (mailbox)":                       true,
+		"WARN: vault key has permissions 0644":                          true,
+		"Encrypted 3 previously-plaintext account password(s) at rest.": true,
+		"PANIC during sync of account x":                                true,
+	}
+	for line, want := range cases {
+		if got := consequential(line + "\n"); got != want {
+			t.Errorf("consequential(%q) = %v, want %v", line, got, want)
+		}
+	}
+}
+
+func TestQuietLoggingFiltersButVerboseDoesNot(t *testing.T) {
+	var quiet, loud bytes.Buffer
+
+	configureLogging(false, &quiet)
+	log.Println("Current database schema version: 14")
+	log.Println("Applying schema migration v14")
+
+	configureLogging(true, &loud)
+	log.Println("Current database schema version: 14")
+
+	if strings.Contains(quiet.String(), "schema version") {
+		t.Errorf("routine chatter survived the quiet logger: %q", quiet.String())
+	}
+	if !strings.Contains(quiet.String(), "migration") {
+		t.Errorf("a migration was suppressed: %q", quiet.String())
+	}
+	if !strings.Contains(loud.String(), "schema version") {
+		t.Errorf("--verbose did not restore routine logging: %q", loud.String())
+	}
+}
+
+// Completion runs against commands that parse their own flags, so cobra hands
+// the completion function the global flags as though they were positional
+// arguments. Missing that made every completion position off by however many
+// globals the user had typed.
+func TestCompletionIgnoresGlobalFlags(t *testing.T) {
+	ctx := &Context{}
+	got := positional(ctx, []string{"--data", "/tmp/x", "sync", "--json"})
+	if len(got) != 1 || got[0] != "sync" {
+		t.Errorf("positional = %q, want [sync]", got)
+	}
+	if ctx.DataDir != "/tmp/x" {
+		t.Errorf("--data was not applied while completing: %q", ctx.DataDir)
+	}
+}
+
+func TestSubcommandCompletion(t *testing.T) {
+	ctx := &Context{}
+	root := NewRootCommand(ctx)
+
+	var account *cobra.Command
+	for _, c := range root.Commands() {
+		if c.Name() == "account" {
+			account = c
+		}
+	}
+	if account == nil {
+		t.Fatal("account command not registered")
+	}
+	if account.ValidArgsFunction == nil {
+		t.Fatal("account has no completion function")
+	}
+
+	got, _ := account.ValidArgsFunction(account, nil, "")
+	if len(got) != len(subcommands["account"]) {
+		t.Errorf("completion offered %q, want %q", got, subcommands["account"])
+	}
+
+	// A prefix must narrow the list.
+	got, _ = account.ValidArgsFunction(account, nil, "re")
+	if len(got) != 1 || got[0] != "remove" {
+		t.Errorf("prefix completion = %q, want [remove]", got)
+	}
+}
+
+// Every command that dispatches on a subcommand must advertise those names, or
+// completion silently offers nothing where it is most useful.
+func TestSubcommandListsAreComplete(t *testing.T) {
+	// Commands known to take a subcommand verb rather than positional args.
+	for _, name := range []string{"account", "user", "vault", "llm", "maintenance", "import", "draft", "outbox"} {
+		if len(subcommands[name]) == 0 {
+			t.Errorf("command %q has no subcommand list for completion", name)
+		}
 	}
 }

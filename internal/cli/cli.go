@@ -124,6 +124,7 @@ func (c *Context) dbPath() string {
 // misconfigured — the old behaviour, when the path was hardcoded relative to
 // the process's cwd.
 func (c *Context) OpenStore() error {
+	_ = store.MigrateLegacyDatabase(c.DataDir)
 	if _, err := os.Stat(c.dbPath()); err != nil {
 		if os.IsNotExist(err) {
 			return Fail(ExitNotConfigured,

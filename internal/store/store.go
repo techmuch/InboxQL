@@ -82,17 +82,42 @@ type AnalyticsFilter struct {
 	Folder string `json:"folder,omitempty"`
 }
 
+// MigrateLegacyDatabase automatically renames uea.db (and WAL/SHM) to inboxql.db if present.
+func MigrateLegacyDatabase(dataDir string) error {
+	newDB := filepath.Join(dataDir, DBNAME)
+	oldDB := filepath.Join(dataDir, "uea.db")
+
+	if _, err := os.Stat(newDB); os.IsNotExist(err) {
+		if _, errOld := os.Stat(oldDB); errOld == nil {
+			log.Printf("Migrating legacy database %s -> %s", oldDB, newDB)
+			if err := os.Rename(oldDB, newDB); err != nil {
+				return fmt.Errorf("failed to migrate %s to %s: %w", oldDB, newDB, err)
+			}
+			for _, ext := range []string{"-wal", "-shm"} {
+				oldAux := oldDB + ext
+				newAux := newDB + ext
+				if _, errAux := os.Stat(oldAux); errAux == nil {
+					_ = os.Rename(oldAux, newAux)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // InitDB initializes the SQLite database connection and sets up the schema.
 func InitDB(dataDir string) (*sql.DB, error) {
 	var err error
 	dbOnce.Do(func() {
-		dbPath := filepath.Join(dataDir, DBNAME)
-		log.Printf("Initializing database at: %s", dbPath)
-
 		if err = os.MkdirAll(dataDir, 0755); err != nil {
 			err = fmt.Errorf("failed to create data directory: %w", err)
 			return
 		}
+
+		_ = MigrateLegacyDatabase(dataDir)
+
+		dbPath := filepath.Join(dataDir, DBNAME)
+		log.Printf("Initializing database at: %s", dbPath)
 
 		// busy_timeout makes concurrent writers wait for the lock instead of
 		// failing instantly with "database is locked". WAL allows one writer at

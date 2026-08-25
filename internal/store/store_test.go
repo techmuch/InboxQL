@@ -1,6 +1,7 @@
 package store
 
 import (
+	"os"
 	"testing"
 )
 
@@ -39,5 +40,33 @@ func TestApplyFiltersEmpty(t *testing.T) {
 
 	if len(finalArgs) != 0 {
 		t.Errorf("Expected 0 arguments, got %d", len(finalArgs))
+	}
+}
+
+func TestMigrateLegacyDatabase(t *testing.T) {
+	tempDir := t.TempDir()
+	oldDB := tempDir + "/uea.db"
+	oldWAL := tempDir + "/uea.db-wal"
+	if err := os.WriteFile(oldDB, []byte("sqlite header"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldWAL, []byte("wal data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateLegacyDatabase(tempDir); err != nil {
+		t.Fatalf("MigrateLegacyDatabase failed: %v", err)
+	}
+
+	newDB := tempDir + "/" + DBNAME
+	newWAL := tempDir + "/" + DBNAME + "-wal"
+	if _, err := os.Stat(newDB); err != nil {
+		t.Errorf("expected %s to exist, got %v", newDB, err)
+	}
+	if _, err := os.Stat(newWAL); err != nil {
+		t.Errorf("expected %s to exist, got %v", newWAL, err)
+	}
+	if _, err := os.Stat(oldDB); !os.IsNotExist(err) {
+		t.Errorf("expected %s to be removed, got %v", oldDB, err)
 	}
 }

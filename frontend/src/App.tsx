@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile } from 'nexus-shell';
-import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, Inbox, Star, Send, File, AlertOctagon, MoreVertical, User, Lock, Download } from 'lucide-react';
+import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, Inbox, Star, Send, File, AlertOctagon, MoreVertical, User, Lock, Download, Database, AlertTriangle } from 'lucide-react';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { create } from 'zustand';
 import { AgentManager } from './AgentManager';
@@ -767,6 +767,7 @@ const SettingsView = () => {
     { id: 'appearance', label: 'Appearance', icon: Eye },
     { id: 'ai', label: 'AI Configuration', icon: Cpu },
     { id: 'security', label: 'Security', icon: Shield },
+    { id: 'data', label: 'Data Management', icon: Database },
   ];
 
   const filteredCategories = categories.filter(c => 
@@ -1185,6 +1186,37 @@ const SettingsView = () => {
               <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-10" />
               <h3 className="text-lg font-medium opacity-50">Security Configuration coming soon</h3>
               <p className="text-sm text-muted-foreground mt-2">We are hard at work bringing this feature to InboxQL.</p>
+            </div>
+          )}
+
+          {activeCategory === 'data' && (
+            <div className="animate-in fade-in duration-300">
+              <h2 className="text-2xl font-bold text-foreground mb-2 flex items-center gap-2">
+                <Database className="w-6 h-6 text-destructive" />
+                Data Management
+              </h2>
+              <p className="text-muted-foreground text-sm mb-8">Manage the data stored in your local InboxQL database.</p>
+              
+              <div className="border border-destructive/20 bg-destructive/5 p-6 space-y-4">
+                <div className="flex items-start gap-4">
+                  <AlertTriangle className="w-6 h-6 text-destructive shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="text-sm font-bold text-destructive mb-1">Delete All Stored Messages</h3>
+                    <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
+                      This will permanently erase all synchronized messages and attachments from your local database. 
+                      It will not affect mail on your remote IMAP server, but it cannot be undone locally. 
+                      You will need to re-sync or re-import your accounts to populate the inbox again.
+                    </p>
+                    <button 
+                      onClick={() => alert('Data deletion API not yet implemented')}
+                      className="bg-destructive hover:bg-destructive/90 text-destructive-foreground px-4 py-2 text-sm font-semibold transition-colors flex items-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Erase All Local Data
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/uea/internal/importer"
+	"github.com/user/inboxql/internal/importer"
 )
 
 const store = "/tmp/mailtest/Library/Mail"

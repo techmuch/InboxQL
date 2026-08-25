@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/user/uea/internal/blobstore"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/blobstore"
+	"github.com/user/inboxql/internal/store"
 )
 
 // Manager runs imports in the background and reports on them.

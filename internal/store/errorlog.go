@@ -67,7 +67,7 @@ func LogError(e *LoggedError) error {
 // The text can contain arbitrary bytes: a MIME parser handed a corrupt message
 // will happily quote the offending header back, and that header came from an
 // email. Writing raw control characters into a log means terminal escape
-// sequences in `uea errors` output and unreadable rows in the UI, so anything
+// sequences in `iql errors` output and unreadable rows in the UI, so anything
 // non-printable becomes a visible placeholder instead.
 func sanitiseForLog(s string) string {
 	var b strings.Builder

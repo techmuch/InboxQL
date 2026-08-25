@@ -41,7 +41,7 @@ export const openTool = (id: string, label: string): void => {
   try {
     model.doAction({ type: 'FlexLayout_SelectTab', data: { tabNode: existing } } as any);
   } catch (e) {
-    console.error('[UEA] could not focus the existing tab', id, e);
+    console.error('[InboxQL] could not focus the existing tab', id, e);
     return;
   }
 
@@ -49,7 +49,7 @@ export const openTool = (id: string, label: string): void => {
   const parent = node?.getParent?.();
   const selected = parent?.getChildren?.()[parent.getSelected?.()];
   if (selected?.getId?.() !== existing) {
-    console.error('[UEA] tab did not come forward', id);
+    console.error('[InboxQL] tab did not come forward', id);
   }
 };
 

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/store"
 )
 
 // registerErrorRoutes wires the error log onto an authenticated mux.

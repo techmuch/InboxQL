@@ -12,9 +12,9 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/google/uuid"
-	"github.com/user/uea/internal/account"
-	"github.com/user/uea/internal/message"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/message"
+	"github.com/user/inboxql/internal/store"
 )
 
 const DefaultMaxHostConnections = 5
@@ -184,7 +184,7 @@ func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailb
 	return count, nil
 }
 
-// parseIMAPMessage converts a fetched IMAP message into UEA's representation.
+// parseIMAPMessage converts a fetched IMAP message into InboxQL's representation.
 //
 // The MIME walk lives in message.ParseRFC822, shared with the importers. This
 // function's job is only the part unique to IMAP: overlaying the transport

@@ -1,15 +1,15 @@
-# UEA Project Review & nexus-shell Assessment
+# InboxQL Project Review & nexus-shell Assessment
 *August 23, 2026*
 
 ## TL;DR
 
-**UEA** is badly overextended relative to what's built. `requirements.md` describes an enterprise-grade product (encrypted credential vault, hybrid FTS5+vector search, a sync audit ledger, an AI agent execution engine, S3 backup, sentiment/LDA analysis). The actual codebase is 7 commits and ~3,450 lines of Go/TS implementing a basic IMAP sync + a plain-text login + a message list + a visual editor whose backend doesn't exist yet. Several of the "done" features are UI shells with no logic behind them, and there are two real security holes (plaintext credentials, disabled TLS verification) that should be fixed before anything else.
+**InboxQL** is badly overextended relative to what's built. `requirements.md` describes an enterprise-grade product (encrypted credential vault, hybrid FTS5+vector search, a sync audit ledger, an AI agent execution engine, S3 backup, sentiment/LDA analysis). The actual codebase is 7 commits and ~3,450 lines of Go/TS implementing a basic IMAP sync + a plain-text login + a message list + a visual editor whose backend doesn't exist yet. Several of the "done" features are UI shells with no logic behind them, and there are two real security holes (plaintext credentials, disabled TLS verification) that should be fixed before anything else.
 
-**nexus-shell** is in noticeably better shape than the "still finding its way" framing suggests — clean code, no `eval`/`dangerouslySetInnerHTML`, low `any` usage, real test coverage. I found three concrete, fixable issues (below), and the more urgent problem is that UEA is pinned to a version from six minor releases ago, so none of this actually affects UEA yet.
+**nexus-shell** is in noticeably better shape than the "still finding its way" framing suggests — clean code, no `eval`/`dangerouslySetInnerHTML`, low `any` usage, real test coverage. I found three concrete, fixable issues (below), and the more urgent problem is that InboxQL is pinned to a version from six minor releases ago, so none of this actually affects InboxQL yet.
 
 ---
 
-## Part 1: UEA — Requirements Compliance
+## Part 1: InboxQL — Requirements Compliance
 
 Total implementation: 8 Go files (1,681 lines) + 5 frontend files (~2,000 lines), across 7 commits. `requirements.md` is 26.5KB. Section-by-section, against `go.mod` (only deps: `go-imap`, `go-message`, `uuid`, `mattn/go-sqlite3` — no vector library, no Prometheus/expvar, no S3 SDK, no LLM client, no Eino) and the actual code:
 
@@ -31,18 +31,18 @@ Total implementation: 8 Go files (1,681 lines) + 5 frontend files (~2,000 lines)
 | LLM Gateway / Ollama / OpenAI integration | **Missing** | No HTTP client for any LLM provider anywhere in `go.mod` or the code. |
 | Bullet-to-Draft / SSE streaming | **Missing** | No SSE handler, no draft-generation endpoint. |
 | S3-compatible encrypted backup | **Missing** | No AWS/S3 SDK dependency; no backup code. |
-| `uea doctor` / `uea maintenance` / `uea backup` CLI | **Missing** | `main.go` only starts the HTTP server — there is no CLI subcommand dispatch at all yet. |
+| `iql doctor` / `iql maintenance` / `iql backup` CLI | **Missing** | `main.go` only starts the HTTP server — there is no CLI subcommand dispatch at all yet. |
 | AI Agent Builder (Eino) | **UI-only — see Part 3** | Frontend persists a ReactFlow graph as JSON; nothing executes it. |
 
 **Net assessment:** of the roughly 20 backend capabilities specified, 2 are real (per-host concurrency limiting, basic UID-based incremental fetch), a handful are thin stand-ins, and the rest — including everything under "Hybrid Search," "LLM Gateway," "Credential Vault," and "Secure Cloud Backup" — don't exist yet.
 
-## Part 2: UEA — Bugs and Security Issues Found in Code
+## Part 2: InboxQL — Bugs and Security Issues Found in Code
 
 These are concrete, not stylistic:
 
 1. **TLS certificate verification is disabled unconditionally.** `internal/sync/sync.go:242`: `client.DialTLS(addr, &tls.Config{InsecureSkipVerify: true})`. Every IMAP connection — carrying login credentials and full email content — is vulnerable to a trivial MITM regardless of the `ssl` setting a user picks. This should be a hard stop before anyone points this at a real mailbox.
 2. **Credentials stored in plaintext.** Covered above — `accounts.password` is plain text in SQLite, and it's also sent back to the frontend unencrypted in `GET /api/accounts` responses (`account.Account.Password` has no `json:"-"` tag, unlike `store.User.PasswordHash` which correctly does).
-3. **`handleMessage` is an empty stub.** `cmd/uea/main.go:280-282`:
+3. **`handleMessage` is an empty stub.** `cmd/iql/main.go:280-282`:
    ```go
    func handleMessage(w http.ResponseWriter, r *http.Request) {
    // ... (no changes needed to handleMessage)
@@ -50,12 +50,12 @@ These are concrete, not stylistic:
    ```
    It's registered and routed (`/api/message`), but does nothing — no response is written at all. Anything that calls this (the Thread Focus View in `test.md` section 6) gets an empty 200. This looks like an artifact of an AI-assisted edit that dropped the implementation.
 4. **No panic recovery in sync goroutines**, as noted above — a single malformed IMAP response that panics a parser will take down the whole server, not just that account's sync.
-5. **A personal email address is hardcoded into a shared-code SQL query.** `internal/store/store.go:686`: `AND from_addr NOT LIKE '%david.d.fullmer@gmail.com%'`. The requirement ("Top Senders List... automatically excluding the user's own addresses") calls for deriving this from the configured account list, not a hardcoded literal. As written, this feature only works correctly for one specific email address, breaks for every other account UEA is supposed to support, and bakes a personal address into source that the project's own `readme.md` invites outside contributors to fork.
-6. **Default admin account (`admin@uea.local` / `password123`) is created unconditionally on every startup** (`main.go:34`) with no forced-change mechanism and no way to disable it — fine for local dev, risky if this ever binds to anything but `localhost`.
+5. **A personal email address is hardcoded into a shared-code SQL query.** `internal/store/store.go:686`: `AND from_addr NOT LIKE '%david.d.fullmer@gmail.com%'`. The requirement ("Top Senders List... automatically excluding the user's own addresses") calls for deriving this from the configured account list, not a hardcoded literal. As written, this feature only works correctly for one specific email address, breaks for every other account InboxQL is supposed to support, and bakes a personal address into source that the project's own `readme.md` invites outside contributors to fork.
+6. **Default admin account (`admin@inboxql.local` / `password123`) is created unconditionally on every startup** (`main.go:34`) with no forced-change mechanism and no way to disable it — fine for local dev, risky if this ever binds to anything but `localhost`.
 7. **No SQL connection-pool tuning** (`db.SetMaxOpenConns`, etc.) on the shared `*sql.DB` — with WAL mode's single-writer model and concurrent sync goroutines writing messages, this is a `database is locked` error waiting to happen once more than one account syncs at a time (currently masked because there's exactly one dev account and no real load).
 8. Minor: dead code — `apiMux.HandleFunc("/api/accounts", handleAccounts)` (`main.go:47`) is unreachable; the top-level exact-match registration on `mux` (`main.go:58`) always wins for that path first. Not a bug, but confusing enough to trip someone up later.
 
-## Part 3: UEA — Where the Effort Actually Went
+## Part 3: InboxQL — Where the Effort Actually Went
 
 Commit history:
 ```
@@ -79,8 +79,8 @@ That's the clearest sign the project is off course: the most recent, most comple
 
 ## Part 4: nexus-shell — Version & Dependency Status
 
-- UEA's `frontend/package.json` pins `"nexus-shell": "^0.1.2"`. The actual repo at `../nexus-shell` is at **0.2.11** (134 commits total, most recent additions: global Cmd+K QuickSearch, a multi-theme selector, a graph auto-layout engine, property-panel components). UEA is roughly **six minor versions behind** what's being developed — none of the new-version risk below actually reaches UEA until it upgrades, and that upgrade itself is unassessed (no changelog was checked for breaking changes between 0.1.2 and 0.2.11, since the requirements.md phrasing suggested comparing versions was secondary to finding weaknesses in the library itself).
-- **Dependency mismatch**: nexus-shell's `package.json` depends on `zustand@^4.5.2`; UEA depends on `zustand@^5.0.11`. These are different major versions with breaking API changes between them. If/when UEA upgrades nexus-shell, expect either two copies of zustand in the bundle (wasted size, and any code that tries to share a store instance across the boundary will not behave as expected) or a forced downgrade of UEA's own zustand — worth checking before the upgrade, not after.
+- InboxQL's `frontend/package.json` pins `"nexus-shell": "^0.1.2"`. The actual repo at `../nexus-shell` is at **0.2.11** (134 commits total, most recent additions: global Cmd+K QuickSearch, a multi-theme selector, a graph auto-layout engine, property-panel components). InboxQL is roughly **six minor versions behind** what's being developed — none of the new-version risk below actually reaches InboxQL until it upgrades, and that upgrade itself is unassessed (no changelog was checked for breaking changes between 0.1.2 and 0.2.11, since the requirements.md phrasing suggested comparing versions was secondary to finding weaknesses in the library itself).
+- **Dependency mismatch**: nexus-shell's `package.json` depends on `zustand@^4.5.2`; InboxQL depends on `zustand@^5.0.11`. These are different major versions with breaking API changes between them. If/when InboxQL upgrades nexus-shell, expect either two copies of zustand in the bundle (wasted size, and any code that tries to share a store instance across the boundary will not behave as expected) or a forced downgrade of InboxQL's own zustand — worth checking before the upgrade, not after.
 
 ## Part 5: nexus-shell — Code Quality (Overall)
 
@@ -92,7 +92,7 @@ Better than the "still finding its way" framing implies: 17,061 lines across 107
 2. **`ChatService.registerSlashCommand` has no matching unregister, and no de-duplication.** (`src/core/services/ChatService.ts:41-42`). It's an append-only array. Any component that registers a slash command in an effect and unmounts (or that runs twice under React 19 StrictMode in dev, which double-invokes effects) leaves duplicate or orphaned commands in the store for the rest of the session — there's no cleanup path at all, unlike the panel/pane APIs which at least have `setPanels` to fully replace state.
 3. **`QuickSearch`'s combobox is missing `aria-activedescendant`.** (`src/components/widgets/QuickSearch.tsx`). It correctly uses `role="combobox"` / `role="listbox"` / `role="option"` and `aria-selected`, but the WAI-ARIA combobox pattern also requires the input to expose `aria-activedescendant` pointing at the id of the currently-highlighted option so screen readers announce keyboard navigation. Right now arrow-key highlighting is purely visual. This is a small, contained fix (give each option row a real `id` and wire it to the input's `aria-activedescendant`) and would be a clean, welcome first contribution — it doesn't touch any behavior, just accessibility.
 
-None of these are severe — nothing here is a security hole or a data-loss bug, which is a meaningfully different risk profile than what's found in UEA above. They're the kind of thing you'd expect to find in a library that's shipped 134 commits in active development, and all three are small enough to send as a PR rather than just an issue.
+None of these are severe — nothing here is a security hole or a data-loss bug, which is a meaningfully different risk profile than what's found in InboxQL above. They're the kind of thing you'd expect to find in a library that's shipped 134 commits in active development, and all three are small enough to send as a PR rather than just an issue.
 
 ## Sources
-All findings are drawn directly from the project files at `/Users/david/projects/UEA` and `/Users/david/projects/nexus-shell` (git log, `requirements.md`, `go.mod`, `package.json`, and the source files cited inline above) as of 2026-08-23.
+All findings are drawn directly from the project files at `/Users/david/projects/InboxQL` and `/Users/david/projects/nexus-shell` (git log, `requirements.md`, `go.mod`, `package.json`, and the source files cited inline above) as of 2026-08-23.

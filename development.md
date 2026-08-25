@@ -1,10 +1,10 @@
-# Developer On-ramp: Universal Email Analytics (UEA)
+# Developer On-ramp: InboxQL — Email for Engineers
 
-This document provides a comprehensive guide for developers who want to contribute to the Universal Email Analytics (UEA) project.
+This document provides a comprehensive guide for developers who want to contribute to the InboxQL project.
 
 ## 1. Architecture Overview
 
-UEA is a web application with a Golang backend and a ReactJS frontend.
+InboxQL is a web application with a Golang backend and a ReactJS frontend.
 
 ### 1.1. Backend (Golang)
 
@@ -32,8 +32,8 @@ The frontend is a modern ReactJS application built with Vite, TypeScript, and Ta
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/your-username/uea.git
-    cd uea
+    git clone https://github.com/your-username/iql.git
+    cd iql
     ```
 
 2.  **Build the entire project (Frontend & Backend):**
@@ -43,7 +43,7 @@ The frontend is a modern ReactJS application built with Vite, TypeScript, and Ta
     ```bash
     make build
     ```
-    This command installs frontend dependencies, builds the React application, embeds the assets into the Go binary, and compiles the backend into `bin/uea`.
+    This command installs frontend dependencies, builds the React application, embeds the assets into the Go binary, and compiles the backend into `bin/iql`.
 
 ### 2.3. Running the application
 
@@ -53,7 +53,7 @@ The project provides several ways to run the application using `make`:
     ```bash
     make start
     ```
-    This stops any running instances, rebuilds the backend, and starts it in the background, logging to `uea.log`.
+    This stops any running instances, rebuilds the backend, and starts it in the background, logging to `iql.log`.
 
 2.  **Run in Foreground:**
     ```bash
@@ -75,11 +75,11 @@ The `Makefile` is the primary tool for managing the development lifecycle.
 | `make all` | Alias for `make build`. |
 | `make build` | Builds both the frontend and the backend. |
 | `make frontend` | Installs npm dependencies and builds the React application. |
-| `make backend` | Compiles the Go backend into `bin/uea`. |
+| `make backend` | Compiles the Go backend into `bin/iql`. |
 | `make test` | Runs both backend (`go test`) and frontend (`vitest`) tests. |
-| `make start` | Runs the backend in the background (logs to `uea.log`). |
+| `make start` | Runs the backend in the background (logs to `iql.log`). |
 | `make start --foreground` | Runs the backend in the foreground. |
-| `./bin/uea` | Lists every CLI subcommand. The server is `uea serve`. |
+| `./bin/iql` | Lists every CLI subcommand. The server is `iql serve`. |
 | `make stop` | Stops any running backend instances. |
 | `make restart` | Restarts the backend. |
 | `make clean` | Removes build artifacts (`bin/`, `frontend/dist/`, etc.). |
@@ -90,7 +90,7 @@ For a faster development loop with hot-module replacement (HMR), you can run the
 
 1.  **Start the Backend:**
     ```bash
-    go run ./cmd/uea/main.go
+    go run ./cmd/iql/main.go
     ```
     (Defaults to `http://localhost:8080`)
 
@@ -132,7 +132,7 @@ The project uses GitHub Actions for CI/CD. The workflow is defined in `.github/w
 
 ## 6. Contributing
 
-We welcome contributions from the community! If you're interested in contributing to UEA, please follow these steps:
+We welcome contributions from the community! If you're interested in contributing to InboxQL, please follow these steps:
 
 1.  Fork the repository.
 2.  Create a new branch for your feature or bug fix.

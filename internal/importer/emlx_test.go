@@ -82,7 +82,7 @@ func TestEMLXFlags(t *testing.T) {
 		{"read", 1, []string{`\Seen`}},
 		{"flagged", 16, []string{`\Flagged`}},
 		{"read and flagged", 17, []string{`\Seen`, `\Flagged`}},
-		// Real messages carry many bits UEA does not decode; the ones it does
+		// Real messages carry many bits InboxQL does not decode; the ones it does
 		// must still be found among them.
 		{"read amid unknown bits", 8623489 | 1, []string{`\Seen`}},
 	}

@@ -1,12 +1,12 @@
 // Package importer reads mail out of a desktop client's local store and into
-// UEA, without modifying the source.
+// InboxQL, without modifying the source.
 //
 // # Shape
 //
 // A [Source] is one client — Apple Mail, a directory of .eml files, later
 // Thunderbird. Sources are strictly read-only: they open files O_RDONLY, never
 // write, and never move or delete anything. Someone importing their mail
-// archive is trusting UEA with the only copy they have.
+// archive is trusting InboxQL with the only copy they have.
 //
 // # Scanning and importing are separate
 //
@@ -105,7 +105,7 @@ type Stats struct {
 	Oldest time.Time `json:"oldest,omitempty"`
 	Newest time.Time `json:"newest,omitempty"`
 
-	// AlreadyPresent is how many of these messages UEA already holds, matched
+	// AlreadyPresent is how many of these messages InboxQL already holds, matched
 	// on Message-ID. The most useful number on a scan and the one that turns a
 	// frightening import into an informed one. Deep scan only.
 	AlreadyPresent int `json:"alreadyPresent"`
@@ -177,7 +177,7 @@ func (f ProgressFunc) Report(p Progress) {
 	}
 }
 
-// Source is one mail client UEA can read from.
+// Source is one mail client InboxQL can read from.
 type Source interface {
 	// ID is stable and machine-facing, e.g. "apple-mail".
 	ID() string

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/user/uea/internal/message"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/message"
+	"github.com/user/inboxql/internal/store"
 )
 
 // SplitEMLX separates an Apple .emlx container into its message and metadata.
@@ -94,7 +94,7 @@ func emlxPlistFlags(plist []byte) (int64, bool) {
 // Apple's .emlx flag bits.
 //
 // Reverse-engineered rather than documented, so only the two bits that are
-// well attested and that UEA has any use for are decoded. Everything else is
+// well attested and that InboxQL has any use for are decoded. Everything else is
 // left alone rather than guessed at.
 const (
 	emlxFlagRead    = 1 << 0

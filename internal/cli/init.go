@@ -8,33 +8,33 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/user/uea/internal/auth"
-	"github.com/user/uea/internal/store"
-	"github.com/user/uea/internal/vault"
+	"github.com/user/inboxql/internal/auth"
+	"github.com/user/inboxql/internal/store"
+	"github.com/user/inboxql/internal/vault"
 )
 
 func init() {
 	register(&Command{
 		Name:    "init",
-		Summary: "prepare a directory for UEA (database, vault key, admin user)",
-		Usage: `uea init [--data <dir>] [--admin-user <email>] [--force]
+		Summary: "prepare a directory for InboxQL (database, vault key, admin user)",
+		Usage: `iql init [--data <dir>] [--admin-user <email>] [--force]
 
-Prepares a directory to hold everything UEA owns:
+Prepares a directory to hold everything InboxQL owns:
 
-  <dir>/uea.db      SQLite database, migrated to the current schema
+  <dir>/inboxql.db      SQLite database, migrated to the current schema
   <dir>/vault.key   AES-256 key for account passwords (mode 0600)
-  <dir>/backups/    default destination for ` + "`uea backup`" + `
+  <dir>/backups/    default destination for ` + "`iql backup`" + `
 
 Also creates the administrator account. The password comes from
-UEA_ADMIN_PASSWORD if set, otherwise one is generated and printed once —
-it is not recoverable afterwards, though ` + "`uea user passwd`" + ` can set a new one.
+INBOXQL_ADMIN_PASSWORD if set, otherwise one is generated and printed once —
+it is not recoverable afterwards, though ` + "`iql user passwd`" + ` can set a new one.
 
 Safe to re-run: existing files are kept and only what is missing is created.
 --force is required only to reinitialise a directory that already has a
 database, and even then the database itself is never deleted.
 
 Flags:
-  --admin-user <email>   administrator username (default admin@uea.local)
+  --admin-user <email>   administrator username (default admin@inboxql.local)
   --force                proceed even if the directory is already initialised`,
 		Run: runInit,
 	})
@@ -43,7 +43,7 @@ Flags:
 func runInit(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
-	adminUser := fs.String("admin-user", envOr("UEA_ADMIN_USER", "admin@uea.local"), "administrator username")
+	adminUser := fs.String("admin-user", envOr("INBOXQL_ADMIN_USER", "admin@inboxql.local"), "administrator username")
 	force := fs.Bool("force", false, "proceed even if already initialised")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
@@ -65,7 +65,7 @@ func runInit(ctx *Context, args []string) error {
 		dbExisted = true
 		if !*force {
 			return Fail(ExitUsage,
-				"%s already contains a UEA database\n\nRe-run with --force to fill in anything missing (the database is never deleted).",
+				"%s already contains an InboxQL database\n\nRe-run with --force to fill in anything missing (the database is never deleted).",
 				ctx.DataDir)
 		}
 	}
@@ -93,7 +93,7 @@ func runInit(ctx *Context, args []string) error {
 		return Fail(ExitError, "failed to check for existing user: %v", err)
 	}
 	if existing == nil {
-		password := os.Getenv("UEA_ADMIN_PASSWORD")
+		password := os.Getenv("INBOXQL_ADMIN_PASSWORD")
 		generated := password == ""
 		if generated {
 			password, err = generatePassword()
@@ -113,7 +113,7 @@ func runInit(ctx *Context, args []string) error {
 		return ctx.EmitJSON(out)
 	}
 
-	ctx.Printf("Initialised UEA in %s\n\n", out.DataDir)
+	ctx.Printf("Initialised InboxQL in %s\n\n", out.DataDir)
 	ctx.Printf("  database    %s (schema v%d)\n", out.Database, out.SchemaVer)
 	ctx.Printf("  vault key   %s\n", out.VaultKey)
 	ctx.Printf("  backups     %s\n\n", filepath.Join(out.DataDir, "backups"))
@@ -123,19 +123,19 @@ func runInit(ctx *Context, args []string) error {
 		ctx.Printf("  username    %s\n", out.AdminUser)
 		ctx.Printf("  password    %s\n\n", out.AdminPass)
 		ctx.Printf("This password is shown once and is not stored in recoverable form.\n")
-		ctx.Printf("Save it now, or set a new one later with `uea user passwd %s`.\n\n", out.AdminUser)
+		ctx.Printf("Save it now, or set a new one later with `iql user passwd %s`.\n\n", out.AdminUser)
 	} else if existing != nil {
 		ctx.Printf("Administrator %s already exists; left unchanged.\n\n", out.AdminUser)
 	} else {
-		ctx.Printf("Administrator %s created with the password from UEA_ADMIN_PASSWORD.\n\n", out.AdminUser)
+		ctx.Printf("Administrator %s created with the password from INBOXQL_ADMIN_PASSWORD.\n\n", out.AdminUser)
 	}
 
 	ctx.Printf("Back up %s together with the database — without it,\n", vault.KeyFileName)
 	ctx.Printf("stored account passwords cannot be decrypted.\n\n")
 	ctx.Printf("Next:\n")
-	ctx.Printf("  uea account add --data %s    connect a mailbox\n", out.DataDir)
-	ctx.Printf("  uea doctor      --data %s    check everything is healthy\n", out.DataDir)
-	ctx.Printf("  uea serve       --data %s    start the web interface\n", out.DataDir)
+	ctx.Printf("  iql account add --data %s    connect a mailbox\n", out.DataDir)
+	ctx.Printf("  iql doctor      --data %s    check everything is healthy\n", out.DataDir)
+	ctx.Printf("  iql serve       --data %s    start the web interface\n", out.DataDir)
 	return nil
 }
 

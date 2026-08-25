@@ -83,7 +83,7 @@ func Checkpoint() error {
 //
 // Uses SQLite's online backup API rather than copying the file, which is what
 // requirements.md 2.4 asks for: a plain copy of a live WAL database can catch
-// a torn write, and copying uea.db without its -wal sidecar silently loses
+// a torn write, and copying inboxql.db without its -wal sidecar silently loses
 // whatever had not been checkpointed.
 func BackupTo(destPath string) error {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {

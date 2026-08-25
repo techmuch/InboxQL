@@ -6,16 +6,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/user/uea/internal/llm"
-	"github.com/user/uea/internal/message"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/llm"
+	"github.com/user/inboxql/internal/message"
+	"github.com/user/inboxql/internal/store"
 )
 
 func init() {
 	register(&Command{
 		Name:    "search",
 		Summary: "find messages",
-		Usage: `uea search [--query <text>] [flags] [--json]
+		Usage: `iql search [--query <text>] [flags] [--json]
 
 Substring matching over subject, body and sender — not ranked relevance.
 There is no full-text index yet, so a bare --query on a large mailbox is a
@@ -34,14 +34,14 @@ Flags:
   --full               include message bodies in JSON output
 
 Returns a JSON array of message summaries under --json. Bodies are omitted by
-default so a wide search stays small; use ` + "`uea read`" + ` for one message.`,
+default so a wide search stays small; use ` + "`iql read`" + ` for one message.`,
 		Run: runSearch,
 	})
 
 	register(&Command{
 		Name:    "read",
 		Summary: "read a message or a whole thread",
-		Usage: `uea read <message-id> [--thread] [--json]
+		Usage: `iql read <message-id> [--thread] [--json]
 
 Flags:
   --thread   return every message in the conversation, oldest first
@@ -55,7 +55,7 @@ message sharing a subject line can appear.`,
 	register(&Command{
 		Name:    "analyze",
 		Summary: "summarise a thread, or emit context for an agent to analyse",
-		Usage: `uea analyze <message-id> [--prompt <question>] [--json]
+		Usage: `iql analyze <message-id> [--prompt <question>] [--json]
 
 With an LLM provider configured, returns prose answering --prompt (or a
 summary when none is given).
@@ -133,7 +133,7 @@ func runSearch(ctx *Context, args []string) error {
 		return Fail(ExitUsage, "unknown folder %q (want inbox, starred, sent, drafts, spam or trash)", q.Folder)
 	}
 	if store.IsDraftFolder(q.Folder) {
-		return Fail(ExitUsage, "drafts are not messages; use `uea draft list`")
+		return Fail(ExitUsage, "drafts are not messages; use `iql draft list`")
 	}
 	// A bare positional is the natural way to type this.
 	if q.Text == "" && fs.NArg() > 0 {
@@ -185,7 +185,7 @@ func runRead(ctx *Context, args []string) error {
 		return Fail(ExitUsage, "invalid flags")
 	}
 	if fs.NArg() != 1 {
-		return Fail(ExitUsage, "usage: uea read <message-id> [--thread]")
+		return Fail(ExitUsage, "usage: iql read <message-id> [--thread]")
 	}
 	id := fs.Arg(0)
 
@@ -281,7 +281,7 @@ func runAnalyze(ctx *Context, args []string) error {
 		return Fail(ExitUsage, "invalid flags")
 	}
 	if fs.NArg() != 1 {
-		return Fail(ExitUsage, "usage: uea analyze <message-id> [--prompt <question>]")
+		return Fail(ExitUsage, "usage: iql analyze <message-id> [--prompt <question>]")
 	}
 	id := fs.Arg(0)
 
@@ -310,7 +310,7 @@ func runAnalyze(ctx *Context, args []string) error {
 		// bundle is the deliverable for an agent driving the CLI.
 		bundle.Mode = "context"
 		bundle.Note = "No LLM provider is configured, so this is the thread as structured " +
-			"context rather than a generated answer. Configure one with `uea llm configure`, " +
+			"context rather than a generated answer. Configure one with `iql llm configure`, " +
 			"or analyse this payload yourself."
 		if ctx.JSON {
 			return ctx.EmitJSON(bundle)

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/user/uea/internal/message"
+	"github.com/user/inboxql/internal/message"
 )
 
 // messageColumns is the canonical column list for scanMessage.
@@ -65,7 +65,7 @@ func SearchMessages(q SearchQuery) ([]*message.Message, error) {
 
 	if q.Text != "" {
 		// Scanned across the fields a person would expect "search" to cover.
-		// Without an index this is a table scan; acceptable at the scale UEA
+		// Without an index this is a table scan; acceptable at the scale InboxQL
 		// currently reaches, and the place FTS5 should slot in later.
 		// normalized_body is included because it is where HTML-only mail keeps
 		// its searchable text: body holds the plain part, which such a message

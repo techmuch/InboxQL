@@ -7,7 +7,7 @@ EMAILS = [
     {
         "id": 1,
         "from": "alice@tech.com",
-        "to": "admin@uea.local",
+        "to": "admin@inboxql.local",
         "subject": "Project X Status",
         "body": "The synchronization logic for Project X is 90% complete. We should be able to launch the beta next week.",
         "date": "Wed, 25 Feb 2026 10:00:00 +0000",
@@ -16,7 +16,7 @@ EMAILS = [
     {
         "id": 2,
         "from": "bob@security.io",
-        "to": "admin@uea.local",
+        "to": "admin@inboxql.local",
         "subject": "Security Audit Result",
         "body": "The latest audit of the IMAP sync engine passed with no high-severity vulnerabilities.",
         "date": "Thu, 26 Feb 2026 14:30:00 +0000",
@@ -25,7 +25,7 @@ EMAILS = [
     {
         "id": 3,
         "from": "marketing@travel.com",
-        "to": "admin@uea.local",
+        "to": "admin@inboxql.local",
         "subject": "Flight to San Francisco",
         "body": "Your flight UA123 is confirmed. Departure: March 5th, 8:00 AM.",
         "date": "Fri, 27 Feb 2026 09:15:00 +0000",
@@ -82,7 +82,7 @@ class MockIMAPServer:
                     for i, email in enumerate(EMAILS):
                         # Create a proper RFC822 message
                         msg_body = f"From: {email['from']}\r\nTo: {email['to']}\r\nSubject: {email['subject']}\r\nDate: {email['date']}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{email['body']}"
-                        envelope = f'("{email["date"]}" "{email["subject"]}" (("Name" NIL "{email["from"].split("@")[0]}" "{email["from"].split("@")[1]}")) NIL NIL (("To" NIL "{email["to"].split("@")[0]}" "{email["to"].split("@")[1]}")) NIL NIL NIL "{email["id"]}@uea.local")'
+                        envelope = f'("{email["date"]}" "{email["subject"]}" (("Name" NIL "{email["from"].split("@")[0]}" "{email["from"].split("@")[1]}")) NIL NIL (("To" NIL "{email["to"].split("@")[0]}" "{email["to"].split("@")[1]}")) NIL NIL NIL "{email["id"]}@inboxql.local")'
                         resp = f"* {i+1} FETCH (UID {email['id']} FLAGS ({' '.join(email['flags'])}) INTERNALDATE \"{email['date']}\" RFC822.SIZE {len(msg_body)} ENVELOPE {envelope} BODY[] {{{len(msg_body)}}}\r\n{msg_body})\r\n"
                         client_socket.send(resp.encode())
                     client_socket.send(f"{tag} OK FETCH completed\r\n".encode())

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/user/uea/internal/account"
-	"github.com/user/uea/internal/message"
+	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/message"
 )
 
 // Folder membership is pure SQL over flags, sender and mailbox name — nothing
@@ -18,7 +18,7 @@ import (
 // database is opened once for the package and each test clears the tables it
 // uses rather than opening its own.
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "uea-store-test")
+	dir, err := os.MkdirTemp("", "iql-store-test")
 	if err != nil {
 		panic(err)
 	}

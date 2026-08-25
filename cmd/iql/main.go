@@ -1,6 +1,6 @@
-// Command uea is the Universal Email Analytics server and administrative CLI.
+// Command iql is the InboxQL server and administrative CLI.
 //
-// The same binary serves the dashboard (`uea serve`) and provides the command
+// The same binary serves the dashboard (`iql serve`) and provides the command
 // surface documented in AGENTS.md. Everything of substance lives in
 // internal/cli; this is dispatch and nothing else.
 package main
@@ -8,7 +8,7 @@ package main
 import (
 	"os"
 
-	"github.com/user/uea/internal/cli"
+	"github.com/user/inboxql/internal/cli"
 )
 
 func main() {

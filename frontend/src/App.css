@@ -7,3 +7,17 @@
   max-width: none;
 }
 
+
+/*
+ * The brand lockup keeps its own capitalisation.
+ *
+ * nexus-shell's AppTitle hard-codes `uppercase` on its <h1>, which renders
+ * InboxQL as INBOXQL and flattens the QL the name is built around. A Tailwind
+ * arbitrary variant cannot win this: nexus-shell ships its utilities
+ * unlayered, and unlayered rules beat anything in `@layer utilities` no matter
+ * how specific. A plain rule in this file — imported after nexus-shell's
+ * stylesheet, and also unlayered — is what actually takes effect.
+ */
+.app-lockup h1 {
+  text-transform: none;
+}

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/user/uea/internal/blobstore"
-	"github.com/user/uea/internal/message"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/blobstore"
+	"github.com/user/inboxql/internal/message"
+	"github.com/user/inboxql/internal/store"
 )
 
 // Options controls one import run.

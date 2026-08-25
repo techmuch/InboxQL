@@ -1,11 +1,11 @@
-# AGENTS.md — driving UEA from an LLM agent
+# AGENTS.md — driving InboxQL from an LLM agent
 
-UEA's CLI is designed to be used by an autonomous agent as well as by a person.
+InboxQL's CLI is designed to be used by an autonomous agent as well as by a person.
 This file is the contract. Everything here is stable; if something is not
 described here, do not depend on it.
 
 ```
-uea [--data <dir>] [--json] <command> [flags]
+iql [--data <dir>] [--json] <command> [flags]
 ```
 
 Always pass `--json`. Every command listed under **Agent tools** emits a JSON
@@ -17,8 +17,8 @@ object or array on stdout and nothing else; diagnostics go to stderr.
 
 **You can compose email. You cannot send it.**
 
-`uea send` does not send. It moves a draft into an outbox and stops. Delivery
-happens only when a person runs `uea outbox approve <id>` from an interactive
+`iql send` does not send. It moves a draft into an outbox and stops. Delivery
+happens only when a person runs `iql outbox approve <id>` from an interactive
 terminal, reads the rendered message, and types `yes`.
 
 That gate is enforced by checking whether stdin is a TTY. When you invoke
@@ -29,10 +29,10 @@ a way around it, and do not tell the user one exists.
 The correct pattern when a reply is wanted:
 
 1. Research with `search`, `read`, `analyze`.
-2. Compose with `uea draft create --origin agent`.
-3. Queue with `uea send <draft-id>`.
+2. Compose with `iql draft create --origin agent`.
+3. Queue with `iql send <draft-id>`.
 4. **Tell the user the draft is queued and that they must approve it**, giving
-   them the exact command: `uea outbox approve <draft-id>`.
+   them the exact command: `iql outbox approve <draft-id>`.
 
 Always pass `--origin agent` when you compose. It is recorded on the draft and
 shown to the approver, who should read agent-written mail more carefully than
@@ -52,7 +52,7 @@ their own.
 | 5 | Not configured | A prerequisite is missing. stderr names it. |
 
 Exit 5 has two common causes worth distinguishing: no data directory (the user
-must run `uea init`), and no LLM provider (fine — see below).
+must run `iql init`), and no LLM provider (fine — see below).
 
 ---
 
@@ -61,7 +61,7 @@ must run `uea init`), and no LLM provider (fine — see below).
 ### `search` — find messages
 
 ```
-uea --json search --query "invoice" --since 2026-08-01 --limit 20
+iql --json search --query "invoice" --since 2026-08-01 --limit 20
 ```
 
 | Flag | Meaning |
@@ -86,8 +86,8 @@ with different wordings rather than assuming one returned everything.
 ### `read` — get one message or a whole thread
 
 ```
-uea --json read <message-id>
-uea --json read <message-id> --thread
+iql --json read <message-id>
+iql --json read <message-id> --thread
 ```
 
 Without `--thread`, returns a single message object with its full `body`. With
@@ -101,7 +101,7 @@ on a thread being one conversation.
 ### `analyze` — summarise, or get context to reason over
 
 ```
-uea --json analyze <message-id> --prompt "what is still outstanding?"
+iql --json analyze <message-id> --prompt "what is still outstanding?"
 ```
 
 Check the **`mode`** field in the response:
@@ -119,11 +119,11 @@ most recent messages and sets `truncated: true`.
 ### `draft` — compose
 
 ```
-uea --json draft create --reply-to <message-id> --origin agent --body -
-uea --json draft create --to a@x.com --subject "..." --body "..." --origin agent
-uea --json draft list [--status draft|queued|sent|failed]
-uea --json draft show <draft-id>
-uea --json draft delete <draft-id>
+iql --json draft create --reply-to <message-id> --origin agent --body -
+iql --json draft create --to a@x.com --subject "..." --body "..." --origin agent
+iql --json draft list [--status draft|queued|sent|failed]
+iql --json draft show <draft-id>
+iql --json draft delete <draft-id>
 ```
 
 `--reply-to <message-id>` is the usual path: it fills in the recipient, the
@@ -142,7 +142,7 @@ Creating a draft transmits nothing.
 ### `send` — queue for approval
 
 ```
-uea --json send <draft-id>
+iql --json send <draft-id>
 ```
 
 Validates the draft and the account's SMTP settings, then sets status to
@@ -154,8 +154,8 @@ sent. Exit 5 means the account has no SMTP host configured.
 ### `outbox` — review
 
 ```
-uea --json outbox list
-uea --json outbox show <draft-id>
+iql --json outbox list
+iql --json outbox show <draft-id>
 ```
 
 `show` returns the exact bytes that would go on the wire, under `rendered`.
@@ -169,11 +169,11 @@ returns a draft to `draft` status and is safe for you to call.
 ## `import` — bring in mail from a desktop client
 
 ```
-uea --json import sources
-uea --json import mailboxes --source apple-mail
-uea --json import scan --mailbox <id> --deep
-uea --json import run --mailbox <id> --account <id> --limit 100 --dry-run
-uea --json import eml <folder> --account <id>
+iql --json import sources
+iql --json import mailboxes --source apple-mail
+iql --json import scan --mailbox <id> --deep
+iql --json import run --mailbox <id> --account <id> --limit 100 --dry-run
+iql --json import eml <folder> --account <id>
 ```
 
 Sources are **read-only**. Nothing is written, moved or deleted in the user's mail
@@ -225,7 +225,7 @@ Two to avoid unless explicitly asked: `account remove` deletes every stored
 message for that account, and `vault rotate` re-encrypts every credential.
 Both are destructive and neither is reversible.
 
-`uea account verify <id>` is genuinely useful for diagnosis — it classifies
+`iql account verify <id>` is genuinely useful for diagnosis — it classifies
 failures as authentication rejected, host not found, network unreachable, or
 TLS verification failed, rather than returning one opaque error.
 
@@ -236,22 +236,22 @@ TLS verification failed, rather than returning one opaque error.
 **Passwords are never flags.** `account add` and `user passwd` read secrets
 from an environment variable, from stdin, or from an interactive prompt —
 never from argv, because argv is visible in shell history and to `ps`. Set
-`UEA_ACCOUNT_PASSWORD` / `UEA_NEW_PASSWORD`, or pipe the value in.
+`INBOXQL_ACCOUNT_PASSWORD` / `INBOXQL_NEW_PASSWORD`, or pipe the value in.
 
 **Passwords are never returned.** `account list` omits the password field
 entirely. When updating an account, omitting the password preserves the stored
 one; sending an empty string does not clear it.
 
-**The data directory is explicit.** Pass `--data <dir>` or set `UEA_DATA`. No
+**The data directory is explicit.** Pass `--data <dir>` or set `INBOXQL_DATA`. No
 command except `init` will create one; the rest exit 5 with instructions. This
 is intentional — the old behaviour silently made an empty database wherever the
 process happened to be running.
 
-**Flags may follow positionals.** `uea read m1 --thread` and
-`uea read --thread m1` are equivalent. Use `--` before an argument that starts
+**Flags may follow positionals.** `iql read m1 --thread` and
+`iql read --thread m1` are equivalent. Use `--` before an argument that starts
 with a dash.
 
-**Sync is synchronous.** `uea account sync <id>` returns only when the sync has
+**Sync is synchronous.** `iql account sync <id>` returns only when the sync has
 finished, so it is safe in a script. It can take a while on a large mailbox.
 
 ---
@@ -264,7 +264,7 @@ Do not promise the user any of this; none of it exists:
 - Topic modelling or clustering. The dashboard's "topics" is the first word of
   the subject line.
 - Sentiment analysis.
-- Attachment extraction over IMAP. Sync stores bodies only. `uea import
+- Attachment extraction over IMAP. Sync stores bodies only. `iql import
   --attachments` does extract and store attachments from a desktop client, and
   `import scan --deep` counts them, but a synced mailbox has none.
 - Agent execution. The Visual AI Agent Builder in the web UI saves graph JSON
@@ -277,5 +277,5 @@ Do not promise the user any of this; none of it exists:
 With no LLM provider configured, nothing leaves the machine. With `ollama`
 against localhost, nothing leaves the machine. With a remote provider, thread
 contents are sent to it whenever `analyze` or `draft --bullets` runs — check
-`uea --json llm status` before assuming either way, and tell the user if you
+`iql --json llm status` before assuming either way, and tell the user if you
 are about to send their mail to a third party.

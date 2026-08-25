@@ -4,16 +4,16 @@ import (
 	"flag"
 	"strings"
 
-	"github.com/user/uea/internal/account"
-	"github.com/user/uea/internal/store"
-	"github.com/user/uea/internal/sync"
+	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/store"
+	"github.com/user/inboxql/internal/sync"
 )
 
 func init() {
 	register(&Command{
 		Name:    "account",
 		Summary: "manage email accounts",
-		Usage: `uea account <add|list|remove|verify|sync> [flags]
+		Usage: `iql account <add|list|remove|verify|sync> [flags]
 
   add      connect a mailbox
   list     show configured accounts
@@ -32,7 +32,7 @@ add flags:
   --smtp-host <host>   SMTP host, required to send
   --smtp-port <n>      SMTP port (default 587)
 
-The password is never taken as a flag: it is read from UEA_ACCOUNT_PASSWORD,
+The password is never taken as a flag: it is read from INBOXQL_ACCOUNT_PASSWORD,
 from stdin when piped, or prompted for without echo. A password in argv is
 visible in shell history and to anyone running ps.`,
 		Run: runAccount,
@@ -97,7 +97,7 @@ func accountAdd(ctx *Context, args []string) error {
 	}
 	defer store.CloseDB()
 
-	password, err := ctx.ReadSecret("UEA_ACCOUNT_PASSWORD", "IMAP password")
+	password, err := ctx.ReadSecret("INBOXQL_ACCOUNT_PASSWORD", "IMAP password")
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func accountAdd(ctx *Context, args []string) error {
 	}
 	ctx.Printf("Added account %s (%s@%s)\n", acc.ID, acc.User, acc.Host)
 	ctx.Printf("The password is encrypted at rest with the vault key.\n\n")
-	ctx.Printf("Verify it with: uea account verify %s\n", acc.ID)
+	ctx.Printf("Verify it with: iql account verify %s\n", acc.ID)
 	return nil
 }
 
@@ -139,7 +139,7 @@ func accountList(ctx *Context, args []string) error {
 	}
 
 	if len(accounts) == 0 {
-		ctx.Printf("No accounts configured. Add one with `uea account add`.\n")
+		ctx.Printf("No accounts configured. Add one with `iql account add`.\n")
 		return nil
 	}
 
@@ -169,7 +169,7 @@ func accountRemove(ctx *Context, args []string) error {
 		return Fail(ExitUsage, "invalid flags")
 	}
 	if fs.NArg() != 1 {
-		return Fail(ExitUsage, "usage: uea account remove <id> [--yes]")
+		return Fail(ExitUsage, "usage: iql account remove <id> [--yes]")
 	}
 	id := fs.Arg(0)
 
@@ -308,7 +308,7 @@ func classifyConnectError(err error) string {
 
 func accountSync(ctx *Context, args []string) error {
 	if len(args) != 1 {
-		return Fail(ExitUsage, "usage: uea account sync <id>")
+		return Fail(ExitUsage, "usage: iql account sync <id>")
 	}
 	if err := ctx.OpenStore(); err != nil {
 		return err

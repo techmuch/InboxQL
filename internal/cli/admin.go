@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/user/uea/internal/auth"
-	"github.com/user/uea/internal/blobstore"
-	"github.com/user/uea/internal/llm"
-	"github.com/user/uea/internal/store"
-	"github.com/user/uea/internal/vault"
+	"github.com/user/inboxql/internal/auth"
+	"github.com/user/inboxql/internal/blobstore"
+	"github.com/user/inboxql/internal/llm"
+	"github.com/user/inboxql/internal/store"
+	"github.com/user/inboxql/internal/vault"
 
 	"context"
 )
@@ -20,16 +20,16 @@ func init() {
 	register(&Command{
 		Name:    "user",
 		Summary: "manage dashboard logins",
-		Usage: `uea user <list|add|passwd> [flags]
+		Usage: `iql user <list|add|passwd> [flags]
 
   list              show accounts that can sign in
   add <username>    create a login
   passwd <username> set a new password
 
-Passwords are read from UEA_NEW_PASSWORD, from stdin when piped, or prompted
+Passwords are read from INBOXQL_NEW_PASSWORD, from stdin when piped, or prompted
 for without echo.
 
-` + "`uea user passwd`" + ` is the recovery path when the administrator password is
+` + "`iql user passwd`" + ` is the recovery path when the administrator password is
 lost — without it the only remedy would be deleting the database.`,
 		Run: runUser,
 	})
@@ -37,7 +37,7 @@ lost — without it the only remedy would be deleting the database.`,
 	register(&Command{
 		Name:    "vault",
 		Summary: "inspect and rotate the credential encryption key",
-		Usage: `uea vault <status|rotate>
+		Usage: `iql vault <status|rotate>
 
   status   report on the key and whether every account decrypts
   rotate   generate a new key and re-encrypt every stored password
@@ -51,7 +51,7 @@ so a failed rotation is recoverable; delete it once the new key is verified.`,
 	register(&Command{
 		Name:    "llm",
 		Summary: "configure the optional completion provider",
-		Usage: `uea llm <status|configure|test|disable>
+		Usage: `iql llm <status|configure|test|disable>
 
   status      show the current provider
   configure   set the provider, model, endpoint and API key
@@ -62,7 +62,7 @@ configure flags:
   --provider <ollama|openai>   openai covers any /v1/chat/completions endpoint
   --model <name>               e.g. llama3, gpt-4o-mini
   --endpoint <url>             defaults per provider
-  --api-key                    read from UEA_LLM_API_KEY, stdin, or prompted
+  --api-key                    read from INBOXQL_LLM_API_KEY, stdin, or prompted
 
 Configuring a remote provider means email content leaves this machine when
 analyze or draft runs. Ollama against localhost keeps everything local.`,
@@ -72,7 +72,7 @@ analyze or draft runs. Ollama against localhost keeps everything local.`,
 	register(&Command{
 		Name:    "maintenance",
 		Summary: "vacuum, analyze and check the database",
-		Usage: `uea maintenance <vacuum|analyze|integrity|checkpoint>
+		Usage: `iql maintenance <vacuum|analyze|integrity|checkpoint>
 
   vacuum      rebuild the database, reclaiming freed space
   analyze     refresh query planner statistics
@@ -86,7 +86,7 @@ Stop the server before vacuum: it needs exclusive access.`,
 	register(&Command{
 		Name:    "backup",
 		Summary: "write a consistent copy of the database",
-		Usage: `uea backup [<path>] [--include-key]
+		Usage: `iql backup [<path>] [--include-key]
 
 Uses SQLite's online backup API, so it is safe to run while the server is up.
 With no path, writes into <data>/backups/ with a timestamped name.
@@ -107,10 +107,10 @@ rather than letting you discover it at restore time.`,
 	register(&Command{
 		Name:    "restore",
 		Summary: "replace the database from a backup",
-		Usage: `uea restore <path> [--yes]
+		Usage: `iql restore <path> [--yes]
 
-Replaces <data>/uea.db with the given backup. The current database is renamed
-to uea.db.<timestamp>.bak rather than deleted.
+Replaces <data>/inboxql.db with the given backup. The current database is renamed
+to inboxql.db.<timestamp>.bak rather than deleted.
 
 Stop the server first. If the backup was taken with a different vault.key, the
 restored account passwords will not decrypt — restore that key too.`,
@@ -137,7 +137,7 @@ func runUser(ctx *Context, args []string) error {
 			return ctx.EmitJSON(users)
 		}
 		if len(users) == 0 {
-			ctx.Printf("No logins exist. Create one with `uea user add <username>`.\n")
+			ctx.Printf("No logins exist. Create one with `iql user add <username>`.\n")
 			return nil
 		}
 		ctx.Printf("%-32s %s\n", "USERNAME", "DISPLAY NAME")
@@ -148,7 +148,7 @@ func runUser(ctx *Context, args []string) error {
 
 	case "add", "passwd":
 		if len(rest) != 1 {
-			return Fail(ExitUsage, "usage: uea user %s <username>", sub)
+			return Fail(ExitUsage, "usage: iql user %s <username>", sub)
 		}
 		username := rest[0]
 
@@ -157,13 +157,13 @@ func runUser(ctx *Context, args []string) error {
 			return Fail(ExitError, "failed to look up user: %v", err)
 		}
 		if sub == "add" && existing != nil {
-			return Fail(ExitUsage, "user %s already exists; use `uea user passwd %s`", username, username)
+			return Fail(ExitUsage, "user %s already exists; use `iql user passwd %s`", username, username)
 		}
 		if sub == "passwd" && existing == nil {
 			return Fail(ExitNotFound, "no user named %s", username)
 		}
 
-		password, err := ctx.ReadSecret("UEA_NEW_PASSWORD", "new password")
+		password, err := ctx.ReadSecret("INBOXQL_NEW_PASSWORD", "new password")
 		if err != nil {
 			return err
 		}
@@ -327,7 +327,7 @@ func runLLM(ctx *Context, args []string) error {
 			ctx.Printf("No LLM provider configured.\n\n")
 			ctx.Printf("analyze and draft still work: they emit structured JSON context\n")
 			ctx.Printf("for an external agent instead of generating prose.\n\n")
-			ctx.Printf("To enable generation:  uea llm configure --provider ollama --model llama3\n")
+			ctx.Printf("To enable generation:  iql llm configure --provider ollama --model llama3\n")
 			return nil
 		}
 		ctx.Printf("provider   %s\n", cfg.Provider)
@@ -360,8 +360,8 @@ func runLLM(ctx *Context, args []string) error {
 		}
 
 		cfg := store.LLMConfig{Provider: *provider, Model: *model, Endpoint: *endpoint}
-		if *withKey || os.Getenv("UEA_LLM_API_KEY") != "" {
-			key, err := ctx.ReadSecret("UEA_LLM_API_KEY", "API key")
+		if *withKey || os.Getenv("INBOXQL_LLM_API_KEY") != "" {
+			key, err := ctx.ReadSecret("INBOXQL_LLM_API_KEY", "API key")
 			if err != nil {
 				return err
 			}
@@ -375,7 +375,7 @@ func runLLM(ctx *Context, args []string) error {
 			return ctx.EmitJSON(cfg.Redacted())
 		}
 		ctx.Printf("Configured %s (%s).\n", cfg.Provider, cfg.Model)
-		ctx.Printf("Check it reaches the model with: uea llm test\n")
+		ctx.Printf("Check it reaches the model with: iql llm test\n")
 		return nil
 
 	case "test":
@@ -443,7 +443,7 @@ func runMaintenance(ctx *Context, args []string) error {
 	case "checkpoint":
 		action = store.Checkpoint
 	case "":
-		return Fail(ExitUsage, "usage: uea maintenance <vacuum|analyze|integrity|checkpoint>")
+		return Fail(ExitUsage, "usage: iql maintenance <vacuum|analyze|integrity|checkpoint>")
 	default:
 		return Fail(ExitUsage, "unknown subcommand %q", sub)
 	}
@@ -484,7 +484,7 @@ func runBackup(ctx *Context, args []string) error {
 		// steps aside; an explicit path still refuses, because overwriting a
 		// backup someone named is never what they meant.
 		base := filepath.Join(ctx.DataDir, "backups",
-			"uea-"+time.Now().UTC().Format("20060102T150405Z"))
+			"iql-"+time.Now().UTC().Format("20060102T150405Z"))
 		dest = base + ".db"
 		for i := 2; ; i++ {
 			if _, err := os.Stat(dest); os.IsNotExist(err) {
@@ -563,7 +563,7 @@ func runRestore(ctx *Context, args []string) error {
 		return Fail(ExitUsage, "invalid flags")
 	}
 	if fs.NArg() != 1 {
-		return Fail(ExitUsage, "usage: uea restore <path> [--yes]")
+		return Fail(ExitUsage, "usage: iql restore <path> [--yes]")
 	}
 	source := fs.Arg(0)
 
@@ -606,7 +606,7 @@ func runRestore(ctx *Context, args []string) error {
 	if movedTo != "" {
 		ctx.Printf("Previous database kept at %s\n", movedTo)
 	}
-	ctx.Printf("\nRun `uea doctor` to confirm the vault key still matches.\n")
+	ctx.Printf("\nRun `iql doctor` to confirm the vault key still matches.\n")
 	return nil
 }
 

@@ -2,8 +2,8 @@
 
 *Draft, 2026-08-23. Supersedes the CLI-only import sketch.*
 
-Import mail from a desktop client's local store into UEA, non-destructively, driven
-either from Settings → Import in the UI or from `uea import` on the command line.
+Import mail from a desktop client's local store into InboxQL, non-destructively, driven
+either from Settings → Import in the UI or from `iql import` on the command line.
 Apple Mail is the first source; the design is pluggable so Thunderbird and Outlook
 are additions rather than rewrites.
 
@@ -14,7 +14,7 @@ are additions rather than rewrites.
 Four things drive nearly every decision below.
 
 **Reading is privileged.** `~/Library/Mail` is TCC-protected on macOS. Whichever
-process reads it — the CLI, or `uea serve` when the UI drives the scan — needs Full
+process reads it — the CLI, or `iql serve` when the UI drives the scan — needs Full
 Disk Access, and without it the failure is a bare `EPERM`. A web UI makes this
 worse, not better: the user clicks a button in a browser and a background process
 they never think about is the thing that lacks permission.
@@ -29,7 +29,7 @@ cancellation and survivable state, not a request that hangs for twenty minutes.
 
 **The browser must never name a filesystem path.** A `POST` that accepts
 `{"path": "..."}` and reads it is a directory-traversal hole that hands any page on
-localhost the ability to read arbitrary files as the UEA user. The server enumerates
+localhost the ability to read arbitrary files as the InboxQL user. The server enumerates
 sources itself; the client selects from that list by opaque id.
 
 ---
@@ -39,7 +39,7 @@ sources itself; the client selects from that list by opaque id.
 ### 2.1 `internal/importer` — the source abstraction
 
 ```go
-// Source is one mail client UEA can read from.
+// Source is one mail client InboxQL can read from.
 type Source interface {
     ID() string    // "apple-mail" — stable, used by the API
     Name() string  // "Apple Mail" — shown to a person
@@ -162,8 +162,8 @@ the "backup is a fast `sqlite3_backup`" property; content addressing dedupes the
 PDF sent to five people automatically; and a file on disk can be served, exported and
 virus-scanned without a round trip through the database.
 
-The consequence must be documented loudly: `uea backup` copies the *database*. Once
-attachments exist, a backup is no longer self-sufficient — either `uea backup` learns
+The consequence must be documented loudly: `iql backup` copies the *database*. Once
+attachments exist, a backup is no longer self-sufficient — either `iql backup` learns
 to archive the blob directory too, or the docs say plainly that `<data>/attachments/`
 must be backed up alongside. I would do the former.
 
@@ -237,19 +237,19 @@ it is showing.
 | Unread count | Moderate | Trailing plist of every file |
 | Attachment count / bytes | Expensive | Parse MIME structure of every message |
 | Distinct contacts | Expensive | Parse From/To/Cc of every message |
-| Already in UEA | Moderate | Header-only Message-ID read, checked against the DB |
+| Already in InboxQL | Moderate | Header-only Message-ID read, checked against the DB |
 
 So: **fast scan is the default and returns instantly** — counts, sizes, tree, rough
 date range. A **Deep scan** button then parses headers and MIME structure for
 attachments, contacts and the duplicate preview, reporting progress as it goes.
 
 The duplicate preview is the most valuable number on the screen and the one nobody
-asks for: *"of 12,481 messages, 3,204 are already in UEA."* It turns a scary import
+asks for: *"of 12,481 messages, 3,204 are already in InboxQL."* It turns a scary import
 into an informed one. Match on Message-ID rather than content hash — header-only
 reads, an order of magnitude cheaper, and accurate enough for a preview.
 
 "Contacts" is computed as distinct participant addresses across the scanned messages.
-UEA has no contacts table, and this design does not add one — it is a derived
+InboxQL has no contacts table, and this design does not add one — it is a derived
 statistic, and a real contacts feature is separate work.
 
 ---
@@ -287,11 +287,11 @@ Settings already renders a category sidebar (`accounts`, `profile`, `appearance`
 The permission failure gets a first-class state, not a toast:
 
 ```
-⚠ Apple Mail found, but UEA cannot read it.
+⚠ Apple Mail found, but InboxQL cannot read it.
   macOS restricts ~/Library/Mail. Grant Full Disk Access to the program
-  running UEA, then restart it:
+  running InboxQL, then restart it:
     System Settings → Privacy & Security → Full Disk Access
-  Currently running as: /Users/david/projects/UEA/bin/uea
+  Currently running as: /Users/david/projects/InboxQL/bin/iql
   [ Re-check ]
 ```
 
@@ -316,16 +316,16 @@ library, which is the fastest way to find its rough edges.
 
 ## 7. CLI parity
 
-Everything the UI does is the same importer package behind `uea import`, and the CLI
+Everything the UI does is the same importer package behind `iql import`, and the CLI
 lands first because it is testable without a browser:
 
 ```
-uea import sources                                    # what is detected
-uea import mailboxes --source apple-mail              # the tree, fast stats
-uea import scan --source apple-mail --mailbox INBOX   # deep stats
-uea import run --source apple-mail --mailbox INBOX \
+iql import sources                                    # what is detected
+iql import mailboxes --source apple-mail              # the tree, fast stats
+iql import scan --source apple-mail --mailbox INBOX   # deep stats
+iql import run --source apple-mail --mailbox INBOX \
     --account archive --limit 100 --attachments --dry-run
-uea import eml ~/Desktop/exported --account archive   # the no-permission path
+iql import eml ~/Desktop/exported --account archive   # the no-permission path
 ```
 
 All support `--json`, so an agent can drive an import the same way it drives search —
@@ -338,9 +338,9 @@ and AGENTS.md gains a section.
 | Phase | Contents | Rough size |
 |---|---|---|
 | 0 | Fix the content-hash collision (migration v10) | small — do this first regardless |
-| 1 | `internal/importer` skeleton, `ParseRFC822` extraction, `eml` source, `uea import eml` | half a day — **imports your 100 messages** |
-| 2 | Apple Mail source: discovery, `.emlx`, TCC detection, fast + deep scan, `uea import` CLI | ~1 day |
-| 3 | Attachments: migration v11, content-addressed blob store, `uea backup` learns about it | ~1 day |
+| 1 | `internal/importer` skeleton, `ParseRFC822` extraction, `eml` source, `iql import eml` | half a day — **imports your 100 messages** |
+| 2 | Apple Mail source: discovery, `.emlx`, TCC detection, fast + deep scan, `iql import` CLI | ~1 day |
+| 3 | Attachments: migration v11, content-addressed blob store, `iql backup` learns about it | ~1 day |
 | 4 | Job model (v12), API endpoints, SSE progress | ~1 day |
 | 5 | Settings → Import UI, plus the SettingsView split | ~1–2 days |
 | 6 | mbox, Thunderbird, Envelope Index for authoritative flags | later |
@@ -356,12 +356,12 @@ the feature is real; everything after is reach and ergonomics.
    `ON DELETE CASCADE`, so imported mail is deleted along with whatever account owns
    it. I would default to a dedicated host-less "archive" account that sync and
    verify skip, rather than importing into a live IMAP account where
-   `uea account remove` would take the archive with it.
+   `iql account remove` would take the archive with it.
 
 2. **Attachment default.** Include attachments by default with a 25 MB per-file cap,
    or exclude by default and make it opt-in? Including is friendlier; excluding keeps
    the first import fast and the data directory small.
 
-3. **Whether `uea backup` archives blobs.** Once attachments are on disk the database
+3. **Whether `iql backup` archives blobs.** Once attachments are on disk the database
    backup is no longer complete. I think `backup` should produce a bundle, but that
    changes its output format from a single `.db` file.

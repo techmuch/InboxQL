@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Go's flag package stops at the first positional, so `uea read m1 --thread`
+// Go's flag package stops at the first positional, so `iql read m1 --thread`
 // would silently drop --thread. That is the failure parseArgs exists to
 // prevent, and it is worth pinning: a dropped flag produces wrong output with
 // no error at all.
@@ -170,7 +170,7 @@ func TestEveryCommandHasUsage(t *testing.T) {
 }
 
 // The help groups drive the top-level listing, so a command missing from them
-// is invisible to anyone reading `uea` with no arguments.
+// is invisible to anyone reading `iql` with no arguments.
 func TestEveryCommandAppearsInAGroup(t *testing.T) {
 	grouped := map[string]bool{}
 	for _, g := range groups {

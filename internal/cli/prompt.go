@@ -19,7 +19,7 @@ func IsStdoutTerminal() bool {
 
 // IsTerminal reports whether stdin is attached to a terminal.
 //
-// This is the mechanism behind the outbox approval gate: an agent invoking uea
+// This is the mechanism behind the outbox approval gate: an agent invoking iql
 // through a pipe cannot satisfy it, and no flag exists to override it. See
 // [approveDraft].
 func IsTerminal() bool {
@@ -57,7 +57,7 @@ func (c *Context) Confirm(prompt string) bool {
 //  3. an interactive prompt with echo disabled.
 //
 // A command-line flag is deliberately not among the options. requirements.md
-// 2.4 specifies `uea account add --pass`, but a password in argv is visible in
+// 2.4 specifies `iql account add --pass`, but a password in argv is visible in
 // shell history and to every user on the machine via ps.
 func (c *Context) ReadSecret(envVar, prompt string) (string, error) {
 	if envVar != "" {

@@ -4,14 +4,14 @@ import (
 	"flag"
 	"time"
 
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/store"
 )
 
 func init() {
 	register(&Command{
 		Name:    "errors",
 		Summary: "show failures recorded by imports and other operations",
-		Usage: `uea errors [--category <name>] [--job <id>] [--limit <n>] [--clear] [--json]
+		Usage: `iql errors [--category <name>] [--job <id>] [--limit <n>] [--clear] [--json]
 
 Per-item failures are recorded rather than only counted, because "3 failed"
 says nothing about which three or why.

@@ -7,20 +7,20 @@ import (
 	"runtime"
 	"runtime/debug"
 
-	"github.com/user/uea/internal/api"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/api"
+	"github.com/user/inboxql/internal/store"
 )
 
 // Version is the release version, overridable at build time with
 //
-//	go build -ldflags "-X github.com/user/uea/internal/cli.Version=1.2.3"
-var Version = "0.0.8"
+//	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
+var Version = "0.0.9"
 
 func init() {
 	register(&Command{
 		Name:    "version",
-		Summary: "print the UEA version",
-		Usage: `uea version [--json]
+		Summary: "print the InboxQL version",
+		Usage: `iql version [--json]
 
 Prints the version, the revision it was built from when available, and the Go
 toolchain used. Include this in bug reports.`,
@@ -30,15 +30,15 @@ toolchain used. Include this in bug reports.`,
 	register(&Command{
 		Name:    "serve",
 		Summary: "run the web server",
-		Usage: `uea serve [--addr <host:port>] [--data <dir>]
+		Usage: `iql serve [--addr <host:port>] [--data <dir>]
 
 Serves the dashboard and API. The data directory must already exist; run
-` + "`uea init`" + ` first.
+` + "`iql init`" + ` first.
 
 Flags:
-  --addr <host:port>   listen address (default ":8080", or $UEA_ADDR)
+  --addr <host:port>   listen address (default ":8080", or $INBOXQL_ADDR)
 
-Binding to :8080 exposes UEA on every interface. It has no TLS of its own, so
+Binding to :8080 exposes InboxQL on every interface. It has no TLS of its own, so
 put it behind a reverse proxy before exposing it beyond localhost.`,
 		Run: runServe,
 	})
@@ -63,7 +63,7 @@ func runVersion(ctx *Context, args []string) error {
 		})
 	}
 
-	ctx.Printf("uea %s\n", Version)
+	ctx.Printf("iql %s\n", Version)
 	if revision != "" {
 		ctx.Printf("revision %s\n", revision)
 	}
@@ -74,7 +74,7 @@ func runVersion(ctx *Context, args []string) error {
 func runServe(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
-	addr := fs.String("addr", envOr("UEA_ADDR", ":8080"), "listen address")
+	addr := fs.String("addr", envOr("INBOXQL_ADDR", ":8080"), "listen address")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -93,7 +93,7 @@ func runServe(ctx *Context, args []string) error {
 	}
 
 	log.Printf("Data directory: %s", ctx.DataDir)
-	ctx.Printf("UEA %s listening on http://localhost%s\n", Version, *addr)
+	ctx.Printf("InboxQL %s listening on http://localhost%s\n", Version, *addr)
 
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		return Fail(ExitError, "server stopped: %v", err)

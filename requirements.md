@@ -1,10 +1,10 @@
-# **Project: Universal Email Analytics (UEA) \- Requirements Document**
+# **Project: InboxQL (Email for Engineers) \- Requirements Document**
 
 ## **1\. Introduction**
 
-The **Universal Email Analytics (UEA)** application is a high-performance, self-hosted web application built with a robust **Golang** backend and a modern **ReactJS** frontend. Designed as a standalone, comprehensive dashboard, UEA facilitates the aggregation and exploration of email data across disparate providers via the **IMAP protocol**.
+The **InboxQL** application is a high-performance, self-hosted web application built with a robust **Golang** backend and a modern **ReactJS** frontend. Designed as a standalone, comprehensive dashboard, InboxQL facilitates the aggregation and exploration of email data across disparate providers via the **IMAP protocol**.
 
-By centralizing data into a local-first environment, UEA empowers users to perform deep-dive analytics—such as trend discovery, social network mapping, and semantic content search—without sacrificing privacy. The application is tailored for power users, researchers, and professionals who manage high-velocity inboxes and require more than what standard webmail clients offer in terms of data visibility and automated insight.
+By centralizing data into a local-first environment, InboxQL empowers users to perform deep-dive analytics—such as trend discovery, social network mapping, and semantic content search—without sacrificing privacy. The application is tailored for power users, researchers, and professionals who manage high-velocity inboxes and require more than what standard webmail clients offer in terms of data visibility and automated insight.
 
 ## **2\. Backend Requirements (Golang)**
 
@@ -48,12 +48,12 @@ By centralizing data into a local-first environment, UEA empowers users to perfo
 
 ### **2.4. CLI Management Suite**
 
-The uea binary serves as both the web server and a powerful administrative tool:
+The iql binary serves as both the web server and a powerful administrative tool:
 
-* **uea account**: Commands to add (--host \--user \--pass), list, remove, or verify connections.  
-* **uea doctor**: A comprehensive diagnostic suite that checks local disk health, database indices, LLM connectivity, and IMAP reachability.  
-* **uea maintenance**: Commands for reindex-vectors (to upgrade embedding models) and vacuum (to reclaim disk space).  
-* **uea backup**:  
+* **iql account**: Commands to add (--host \--user \--pass), list, remove, or verify connections.  
+* **iql doctor**: A comprehensive diagnostic suite that checks local disk health, database indices, LLM connectivity, and IMAP reachability.  
+* **iql maintenance**: Commands for reindex-vectors (to upgrade embedding models) and vacuum (to reclaim disk space).  
+* **iql backup**:  
   * **Atomic Snapshot:** Uses the sqlite3\_backup API to create a consistent file copy while the application is running.  
   * **Granular Extraction:** A utility to export specific threads or subsets of messages to standardized formats like .eml or .json.
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/uea/internal/importer"
+	"github.com/user/inboxql/internal/importer"
 )
 
 func write(t *testing.T, dir, name, content string) {

@@ -109,7 +109,7 @@ export const MessageViewer = () => {
                 {a.filename}
                 <span className="text-muted-foreground">{formatBytes(a.size)}</span>
                 {/* A row with no stored bytes is a record that the message
-                    carried something UEA chose not to keep, not a broken link. */}
+                    carried something InboxQL chose not to keep, not a broken link. */}
                 {!a.storagePath && <span className="italic">not stored</span>}
               </span>
             ))}
@@ -126,8 +126,8 @@ export const MessageViewer = () => {
              cannot do what it says. */
           <div className="mt-12 border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
             This draft has not been sent. Queue it with{' '}
-            <code className="font-mono text-foreground">uea send {message.id}</code>, then approve it with{' '}
-            <code className="font-mono text-foreground">uea outbox approve {message.id}</code> from a terminal.
+            <code className="font-mono text-foreground">iql send {message.id}</code>, then approve it with{' '}
+            <code className="font-mono text-foreground">iql outbox approve {message.id}</code> from a terminal.
           </div>
         ) : (
           <div className="mt-12 flex gap-3">

@@ -1,9 +1,9 @@
-# Universal Email Analytics (UEA) - Gemini Context
+# InboxQL — Email for Engineers: Gemini Context
 
-This file serves as a comprehensive guide for Gemini CLI to understand the UEA project's architecture, technologies, and development workflows.
+This file serves as a comprehensive guide for Gemini CLI to understand the InboxQL project's architecture, technologies, and development workflows.
 
 ## Project Overview
-**Universal Email Analytics (UEA)** is a high-performance, self-hosted web application for deep-dive email analytics. It centralizes data from multiple IMAP accounts into a local-first environment, enabling interactive dashboards, trend discovery, and AI-assisted workflows while maintaining strict user privacy.
+**InboxQL** is a high-performance, self-hosted web application for deep-dive email analytics. It centralizes data from multiple IMAP accounts into a local-first environment, enabling interactive dashboards, trend discovery, and AI-assisted workflows while maintaining strict user privacy.
 
 ### Key Technologies
 - **Backend:** Go (Golang)
@@ -13,7 +13,7 @@ This file serves as a comprehensive guide for Gemini CLI to understand the UEA p
 - **AI Integration:** Support for local (Ollama/llama.cpp) and remote (OpenAI, Gemini) LLM backends.
 
 ## Project Structure
-- `cmd/uea/`: Contains the main entry point (`main.go`). The binary serves as both the web server and the CLI administrative tool.
+- `cmd/iql/`: Contains the main entry point (`main.go`). The binary serves as both the web server and the CLI administrative tool.
 - `internal/`: Core backend logic.
     - `account/`: Account configuration and credential management.
     - `vault/`: AES-256-GCM encryption at rest for account passwords (machine-local key in `data/vault.key`).
@@ -34,7 +34,7 @@ The project uses a `Makefile` to manage the build lifecycle.
 - `make all`: Builds both the frontend and the backend.
 - `make build`: Builds both the frontend and the backend.
 - `make frontend`: Installs dependencies, builds the React application, and copies assets to `internal/embed/static/`.
-- `make backend`: Compiles the Go application into `bin/uea`.
+- `make backend`: Compiles the Go application into `bin/iql`.
 - `make start`: Builds and runs the backend in the background (default).
 - `make start --foreground`: Runs the backend in the foreground.
 - `make test`: Runs both backend and frontend tests.
@@ -48,7 +48,7 @@ The project uses a `Makefile` to manage the build lifecycle.
    - Navigate to `frontend/`.
    - Run `npm run dev` to start the Vite development server (defaults to `http://localhost:3000`).
 2. **Backend Development:**
-   - Run `go run ./cmd/uea/main.go` to start the backend server (defaults to `http://localhost:8080`).
+   - Run `go run ./cmd/iql/main.go` to start the backend server (defaults to `http://localhost:8080`).
 3. **Testing:**
    - All tests: `make test`
    - Backend: `go test ./...`
@@ -68,11 +68,11 @@ The project uses a `Makefile` to manage the build lifecycle.
 - **Performance:** Use React Virtualization for the message feed to handle large datasets with zero lag.
 
 ## CLI Commands
-The `uea` binary supports several administrative commands:
-- `uea account`: Manage email accounts (add, list, remove, verify).
-- `uea doctor`: Run diagnostics on the installation.
-- `uea maintenance`: Re-index vectors or reclaim disk space.
-- `uea backup`: Create and manage encrypted backups.
+The `iql` binary supports several administrative commands:
+- `iql account`: Manage email accounts (add, list, remove, verify).
+- `iql doctor`: Run diagnostics on the installation.
+- `iql maintenance`: Re-index vectors or reclaim disk space.
+- `iql backup`: Create and manage encrypted backups.
 
 ## Implementation Status
 

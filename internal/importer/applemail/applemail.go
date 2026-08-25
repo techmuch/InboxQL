@@ -16,7 +16,7 @@
 // because the two need opposite advice.
 //
 // Everything here is read-only. Nothing is written, moved or deleted under
-// ~/Library/Mail: someone importing their archive may be trusting UEA with the
+// ~/Library/Mail: someone importing their archive may be trusting InboxQL with the
 // only copy they have.
 package applemail
 
@@ -31,8 +31,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/user/uea/internal/importer"
-	"github.com/user/uea/internal/message"
+	"github.com/user/inboxql/internal/importer"
+	"github.com/user/inboxql/internal/message"
 )
 
 // versionDir matches Mail's top-level container, V2 through V10 and onwards.
@@ -56,7 +56,7 @@ func NewAt(mailRoot string) *Source { return &Source{mailRoot: mailRoot} }
 func (s *Source) ID() string   { return "apple-mail" }
 func (s *Source) Name() string { return "Apple Mail" }
 
-const fullDiskAccessRemedy = "Grant Full Disk Access to the program running UEA, then restart it:\n" +
+const fullDiskAccessRemedy = "Grant Full Disk Access to the program running InboxQL, then restart it:\n" +
 	"  System Settings → Privacy & Security → Full Disk Access"
 
 func (s *Source) mailDir() string {
@@ -111,7 +111,7 @@ func (s *Source) Detect() importer.Detection {
 		return importer.Detection{
 			Available: true, Root: dir,
 			Detail: fmt.Sprintf("no V<n> mail store found under %s", dir),
-			Remedy: "This layout is not one UEA recognises. Export messages to .eml and use `uea import eml` instead.",
+			Remedy: "This layout is not one InboxQL recognises. Export messages to .eml and use `iql import eml` instead.",
 		}
 	}
 
@@ -136,7 +136,7 @@ func executablePath() string {
 	if p, err := os.Executable(); err == nil {
 		return p
 	}
-	return "the uea binary"
+	return "the iql binary"
 }
 
 // ensureRoot resolves the store if Detect has not already run.

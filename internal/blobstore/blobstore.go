@@ -3,7 +3,7 @@
 // # Why not SQLite
 //
 // A 25 MB attachment in a BLOB column would destroy the property that makes
-// `uea backup` cheap — SQLite's online backup copies the whole database, so one
+// `iql backup` cheap — SQLite's online backup copies the whole database, so one
 // video attachment turns a two-second backup into a two-minute one. Files on
 // disk can also be served, exported and scanned without a round trip through
 // the database.

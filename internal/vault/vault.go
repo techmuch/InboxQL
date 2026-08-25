@@ -5,12 +5,12 @@
 //
 // The key is machine-local: a random 256-bit key held in the data directory as
 // vault.key with 0600 permissions. This protects credentials against the
-// realistic leak paths for a self-hosted app — a stolen or copied uea.db, an
+// realistic leak paths for a self-hosted app — a stolen or copied inboxql.db, an
 // unencrypted backup, a database file handed to someone for debugging. Anyone
 // holding only the database cannot recover the passwords.
 //
 // It deliberately does NOT protect against an attacker who can already read the
-// data directory as the user running UEA, since the key sits next to the
+// data directory as the user running InboxQL, since the key sits next to the
 // database. Closing that gap requires a user-supplied passphrase (Argon2id),
 // which is what requirements.md section 2.1.4 ultimately calls for. The "v1"
 // tag in the ciphertext envelope exists so that upgrade can be rolled out
@@ -209,7 +209,7 @@ func Decrypt(value string) (string, error) {
 
 // Reload discards the in-memory key and re-runs Init against dataDir.
 //
-// Used by `uea vault rotate`, which moves the old key file aside and then calls
+// Used by `iql vault rotate`, which moves the old key file aside and then calls
 // this to mint a replacement. Nothing else should need it: the key is intended
 // to be loaded once per process.
 func Reload(dataDir string) error {

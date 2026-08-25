@@ -490,7 +490,7 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
             {attachments && (
               <p className="text-[10px] text-muted-foreground">
                 Attachment files are stored outside the database. A plain backup will
-                not contain them — use <code>uea backup --include-attachments</code>.
+                not contain them — use <code>iql backup --include-attachments</code>.
               </p>
             )}
           </div>

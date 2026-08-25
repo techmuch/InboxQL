@@ -3,7 +3,7 @@ package store
 import (
 	"fmt"
 
-	"github.com/user/uea/internal/vault"
+	"github.com/user/inboxql/internal/vault"
 )
 
 // Setting keys for the optional LLM gateway.

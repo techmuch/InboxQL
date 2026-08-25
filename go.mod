@@ -1,4 +1,4 @@
-module github.com/user/uea
+module github.com/user/inboxql
 
 go 1.25.6
 

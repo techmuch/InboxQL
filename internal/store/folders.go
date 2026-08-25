@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/user/uea/internal/message"
+	"github.com/user/inboxql/internal/message"
 )
 
 // Folders the mailbox UI offers.
 //
 // These are views over one flat table rather than real IMAP folders, because
-// that is what UEA actually has: sync flattens every folder it fetches into
+// that is what InboxQL actually has: sync flattens every folder it fetches into
 // `messages`, and the only per-message signals are the IMAP flags, the sender,
 // and — since schema v14 — the folder name it was read from.
 const (
@@ -26,7 +26,7 @@ const (
 // Folders in display order.
 var Folders = []string{FolderInbox, FolderStarred, FolderSent, FolderDrafts, FolderSpam, FolderTrash}
 
-// ValidFolder reports whether a name is one UEA knows.
+// ValidFolder reports whether a name is one InboxQL knows.
 func ValidFolder(name string) bool {
 	if name == "" || name == FolderAll {
 		return true
@@ -60,7 +60,7 @@ const (
 // Two independent signals, because neither is sufficient alone. The folder it
 // was read from is authoritative when present, but is NULL for everything
 // synced before v14. The sender address covers those, and also covers mail
-// sent from another client that never landed in a folder UEA fetched — but it
+// sent from another client that never landed in a folder InboxQL fetched — but it
 // would wrongly claim a message you merely appear in the From of, which is why
 // the folder check comes first.
 const sqlIsSent = `(

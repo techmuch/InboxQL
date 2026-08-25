@@ -1,4 +1,4 @@
-// Package hasher computes the content hashes UEA uses to deduplicate messages.
+// Package hasher computes the content hashes InboxQL uses to deduplicate messages.
 package hasher
 
 import (
@@ -33,7 +33,7 @@ func NormalizeAndHashSHA256(input string) string {
 // MessageHash computes the deduplication hash for a message.
 //
 // Identity comes from the Message-ID where the sender supplied one, which is
-// stable across every route the same message can reach UEA by — fetched over
+// stable across every route the same message can reach InboxQL by — fetched over
 // IMAP, read out of an Apple Mail .emlx, imported from a .eml file. The sender,
 // subject and body are folded in so that messages without a Message-ID, and
 // messages with no body at all, still separate from one another.

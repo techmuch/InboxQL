@@ -34,7 +34,7 @@ const useFilterStore = create<FilterState>((set) => ({
 
 // --- Login View ---
 const LoginView = ({ onLogin }: { onLogin: (user: any) => void }) => {
-  const [username, setUsername] = useState('admin@uea.local');
+  const [username, setUsername] = useState('admin@inboxql.local');
   const [password, setPassword] = useState('password123');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -68,8 +68,8 @@ const LoginView = ({ onLogin }: { onLogin: (user: any) => void }) => {
           <div className="w-16 h-16 bg-primary/10  flex items-center justify-center mb-4">
             <Mail className="w-8 h-8 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold">Email UEA</h1>
-          <p className="text-muted-foreground text-sm">Universal Email Analytics</p>
+          <h1 className="text-2xl font-bold">InboxQL</h1>
+          <p className="text-muted-foreground text-sm">Email for Engineers</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -1044,7 +1044,7 @@ const SettingsView = () => {
           {activeCategory === 'appearance' && (
             <div className="animate-in fade-in duration-300">
               <h2 className="text-2xl font-bold text-foreground mb-2">Appearance</h2>
-              <p className="text-muted-foreground text-sm mb-8">Customize how Email UEA looks on your screen.</p>
+              <p className="text-muted-foreground text-sm mb-8">Customize how InboxQL looks on your screen.</p>
               <div className="space-y-8">
                 <section>
                   <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Color Theme</h3>
@@ -1071,7 +1071,7 @@ const SettingsView = () => {
           {activeCategory === 'ai' && (
             <div className="animate-in fade-in duration-300">
               <h2 className="text-2xl font-bold text-foreground mb-2">AI & Analysis Configuration</h2>
-              <p className="text-muted-foreground text-sm mb-8">Optimize how UEA processes and categorizes your emails.</p>
+              <p className="text-muted-foreground text-sm mb-8">Optimize how InboxQL processes and categorizes your emails.</p>
               
               <div className="space-y-6">
                 <div className="space-y-2">
@@ -1098,7 +1098,7 @@ const SettingsView = () => {
             <div className="py-20 text-center animate-in zoom-in-95 duration-300">
               <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-10" />
               <h3 className="text-lg font-medium opacity-50">Security Configuration coming soon</h3>
-              <p className="text-sm text-muted-foreground mt-2">We are hard at work bringing this feature to UEA.</p>
+              <p className="text-sm text-muted-foreground mt-2">We are hard at work bringing this feature to InboxQL.</p>
             </div>
           )}
         </div>
@@ -1189,69 +1189,69 @@ function App() {
 
   useEffect(() => {
     commandRegistry.registerCommand({
-      id: 'uea.open-dashboard',
+      id: 'iql.open-dashboard',
       label: 'Analytics Dashboard',
       keybinding: 'Control+Shift+D',
       execute: () => openToolCb('dashboard', 'Analytics Dashboard'),
     });
     commandRegistry.registerCommand({
-      id: 'uea.open-mail',
+      id: 'iql.open-mail',
       label: 'Mailbox',
       keybinding: 'Control+Shift+M',
       execute: () => openToolCb('mail', 'Mailbox'),
     });
     commandRegistry.registerCommand({
-      id: 'uea.open-search',
+      id: 'iql.open-search',
       label: 'Search Email',
       keybinding: 'Control+Shift+F',
       execute: () => openToolCb('search', 'Search'),
     });
     commandRegistry.registerCommand({
-      id: 'uea.open-agents',
+      id: 'iql.open-agents',
       label: 'AI Agents',
       keybinding: 'Control+Shift+A',
       execute: () => openToolCb('agents', 'AI Agents'),
     });
     commandRegistry.registerCommand({
-      id: 'uea.open-errors',
+      id: 'iql.open-errors',
       label: 'View: Error Log',
       keybinding: 'Control+Shift+E',
       execute: () => openErrorLog(),
     });
 
     commandRegistry.registerCommand({
-      id: 'uea.open-settings',
+      id: 'iql.open-settings',
       label: 'Settings',
       keybinding: 'Control+,',
       execute: () => openToolCb('settings', 'Settings'),
     });
     commandRegistry.registerCommand({
-      id: 'uea.logout',
+      id: 'iql.logout',
       label: 'Sign Out',
       execute: handleLogout,
     });
     commandRegistry.registerCommand({
       id: 'nexus.about',
-      label: 'About UEA',
-      execute: () => alert('Email UEA v0.1.1\nUniversal Email Analytics Workbench'),
+      label: 'About InboxQL',
+      execute: () => alert('InboxQL v0.1.1\nInboxQL Workbench'),
     });
 
     menuRegistry.setMenus({
       'Tools': [
-        { id: 'tools.dashboard', label: 'Analytics Dashboard', commandId: 'uea.open-dashboard' },
-        { id: 'tools.mail', label: 'Mailbox', commandId: 'uea.open-mail' },
-        { id: 'tools.search', label: 'Search Email', commandId: 'uea.open-search' },
-        { id: 'tools.agents', label: 'AI Agents', commandId: 'uea.open-agents' },
+        { id: 'tools.dashboard', label: 'Analytics Dashboard', commandId: 'iql.open-dashboard' },
+        { id: 'tools.mail', label: 'Mailbox', commandId: 'iql.open-mail' },
+        { id: 'tools.search', label: 'Search Email', commandId: 'iql.open-search' },
+        { id: 'tools.agents', label: 'AI Agents', commandId: 'iql.open-agents' },
       ],
       'View': [
         { id: 'view.toggle-chat', label: 'Toggle Chat', commandId: 'view.toggleChat', keybinding: 'Control+I' },
       ],
       'Help': [
-        { id: 'help.settings', label: 'Settings', commandId: 'uea.open-settings' },
-        { id: 'help.errors', label: 'Error Log', commandId: 'uea.open-errors' },
+        { id: 'help.settings', label: 'Settings', commandId: 'iql.open-settings' },
+        { id: 'help.errors', label: 'Error Log', commandId: 'iql.open-errors' },
         { id: 'help.divider', label: '---' },
-        { id: 'help.about', label: 'About Email UEA', commandId: 'nexus.about' },
-        { id: 'help.logout', label: 'Sign Out', commandId: 'uea.logout' },
+        { id: 'help.about', label: 'About InboxQL', commandId: 'nexus.about' },
+        { id: 'help.logout', label: 'Sign Out', commandId: 'iql.logout' },
       ]
     });
 
@@ -1285,9 +1285,11 @@ function App() {
   if (!user) return <LoginView onLogin={setUser} />;
 
   return (
-    <div className="h-screen w-screen overflow-hidden uea-workbench">
+    <div className="h-screen w-screen overflow-hidden iql-workbench">
       <ShellLayout
-        title={<AppTitle title="Email UEA" />}
+        // `app-lockup` keeps the QL in InboxQL; see App.css for why a Tailwind
+        // class could not do it.
+        title={<AppTitle title="InboxQL" subtitle="Email for Engineers" className="app-lockup" />}
         // Chat was a fixture of the shell in 0.1.x, toggled by a built-in
         // command. In 0.2.x it is an ordinary registered panel, so passing no
         // panels left `view.toggleChat` with nothing to toggle. Registering it
@@ -1303,7 +1305,7 @@ function App() {
               email: user.email,
               avatarUrl: user.profileImageUrl,
             }}
-            onClick={() => commandRegistry.executeCommand('uea.open-settings')}
+            onClick={() => commandRegistry.executeCommand('iql.open-settings')}
           />
         }
       />

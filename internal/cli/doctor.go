@@ -7,16 +7,16 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/user/uea/internal/store"
-	"github.com/user/uea/internal/sync"
-	"github.com/user/uea/internal/vault"
+	"github.com/user/inboxql/internal/store"
+	"github.com/user/inboxql/internal/sync"
+	"github.com/user/inboxql/internal/vault"
 )
 
 func init() {
 	register(&Command{
 		Name:    "doctor",
 		Summary: "diagnose the installation",
-		Usage: `uea doctor [--json] [--skip-network]
+		Usage: `iql doctor [--json] [--skip-network]
 
 Runs health checks and exits non-zero if any of them fail, so it is usable
 from monitoring and CI.
@@ -87,14 +87,14 @@ func runDoctor(ctx *Context, args []string) error {
 	// --- data directory ---------------------------------------------------
 	if info, err := os.Stat(ctx.DataDir); err != nil {
 		rep.add("data directory", statusFail, fmt.Sprintf("%s is not accessible: %v", ctx.DataDir, err),
-			fmt.Sprintf("uea init --data %s", ctx.DataDir))
+			fmt.Sprintf("iql init --data %s", ctx.DataDir))
 		return finishDoctor(ctx, rep)
 	} else if !info.IsDir() {
 		rep.add("data directory", statusFail, fmt.Sprintf("%s is not a directory", ctx.DataDir))
 		return finishDoctor(ctx, rep)
 	}
 
-	probe := filepath.Join(ctx.DataDir, ".uea-write-probe")
+	probe := filepath.Join(ctx.DataDir, ".iql-write-probe")
 	if err := os.WriteFile(probe, []byte("ok"), 0o600); err != nil {
 		rep.add("data directory", statusFail, fmt.Sprintf("%s is not writable: %v", ctx.DataDir, err))
 	} else {
@@ -104,7 +104,7 @@ func runDoctor(ctx *Context, args []string) error {
 
 	// --- database ---------------------------------------------------------
 	if err := ctx.OpenStore(); err != nil {
-		rep.add("database", statusFail, err.Error(), fmt.Sprintf("uea init --data %s", ctx.DataDir))
+		rep.add("database", statusFail, err.Error(), fmt.Sprintf("iql init --data %s", ctx.DataDir))
 		return finishDoctor(ctx, rep)
 	}
 	defer store.CloseDB()
@@ -116,9 +116,9 @@ func runDoctor(ctx *Context, args []string) error {
 		// Lower means migrations did not run; higher means the database was
 		// written by a newer binary and this one may not understand it.
 		status := statusFail
-		remedy := "run any uea command with this binary to apply migrations"
+		remedy := "run any iql command with this binary to apply migrations"
 		if version > store.SchemaVersion {
-			remedy = "this database was written by a newer UEA; upgrade the binary"
+			remedy = "this database was written by a newer InboxQL; upgrade the binary"
 		}
 		rep.add("schema version", status,
 			fmt.Sprintf("database is v%d, binary expects v%d", version, store.SchemaVersion), remedy)
@@ -128,7 +128,7 @@ func runDoctor(ctx *Context, args []string) error {
 
 	if err := store.IntegrityCheck(); err != nil {
 		rep.add("database integrity", statusFail, err.Error(),
-			"restore from a backup: uea restore <file>")
+			"restore from a backup: iql restore <file>")
 	} else {
 		rep.add("database integrity", statusOK, "integrity_check passed")
 	}
@@ -163,11 +163,11 @@ func runDoctor(ctx *Context, args []string) error {
 	switch {
 	case len(accounts) == 0:
 		rep.add("account credentials", statusWarn, "no accounts configured",
-			"uea account add")
+			"iql account add")
 	case undecryptable > 0:
 		rep.add("account credentials", statusFail,
 			fmt.Sprintf("%d of %d account password(s) could not be decrypted", undecryptable, len(accounts)),
-			"the vault key does not match these rows; restore the original vault.key or re-enter the passwords with `uea account add`")
+			"the vault key does not match these rows; restore the original vault.key or re-enter the passwords with `iql account add`")
 	default:
 		rep.add("account credentials", statusOK,
 			fmt.Sprintf("%d account(s), all decryptable", len(accounts)))
@@ -187,7 +187,7 @@ func runDoctor(ctx *Context, args []string) error {
 			c, err := sync.ConnectIMAP(acc)
 			if err != nil {
 				rep.add(name, statusFail, fmt.Sprintf("%s:%d — %v", acc.Host, acc.Port, err),
-					fmt.Sprintf("uea account verify %s", acc.ID))
+					fmt.Sprintf("iql account verify %s", acc.ID))
 				continue
 			}
 			c.Logout()
@@ -204,7 +204,7 @@ func runDoctor(ctx *Context, args []string) error {
 		rep.add("llm provider", statusWarn, fmt.Sprintf("cannot read settings: %v", err))
 	} else if cfg.Provider == "" {
 		rep.add("llm provider", statusWarn, "not configured — analyze and draft will emit context instead of prose",
-			"uea llm configure --provider ollama --model llama3")
+			"iql llm configure --provider ollama --model llama3")
 	} else {
 		rep.add("llm provider", statusOK, fmt.Sprintf("%s (%s)", cfg.Provider, cfg.Model))
 	}

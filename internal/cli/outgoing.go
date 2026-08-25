@@ -7,17 +7,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/user/uea/internal/account"
-	"github.com/user/uea/internal/llm"
-	"github.com/user/uea/internal/mailer"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/llm"
+	"github.com/user/inboxql/internal/mailer"
+	"github.com/user/inboxql/internal/store"
 )
 
 func init() {
 	register(&Command{
 		Name:    "draft",
 		Summary: "compose a reply or a new message",
-		Usage: `uea draft <create|list|show|delete> [flags]
+		Usage: `iql draft <create|list|show|delete> [flags]
 
 create flags:
   --account <id>        sending account (required unless only one exists)
@@ -34,18 +34,18 @@ create flags:
   --origin <human|agent> who composed this; recorded for the approver
 
 Creating a draft sends nothing. It is stored with status "draft" until
-` + "`uea send`" + ` moves it to the outbox and a human approves it.`,
+` + "`iql send`" + ` moves it to the outbox and a human approves it.`,
 		Run: runDraft,
 	})
 
 	register(&Command{
 		Name:    "send",
 		Summary: "queue a draft for delivery (does not send)",
-		Usage: `uea send <draft-id> [--json]
+		Usage: `iql send <draft-id> [--json]
 
 Moves the draft into the outbox with status "queued". Nothing is transmitted.
 
-Delivery requires ` + "`uea outbox approve <id>`" + ` run by a person at a terminal.
+Delivery requires ` + "`iql outbox approve <id>`" + ` run by a person at a terminal.
 That is a deliberate boundary: an agent can research, compose and queue a
 reply, but cannot put mail on the wire unattended. There is no flag to bypass
 it.`,
@@ -55,7 +55,7 @@ it.`,
 	register(&Command{
 		Name:    "outbox",
 		Summary: "review and approve queued messages",
-		Usage: `uea outbox <list|show|approve|reject> [id]
+		Usage: `iql outbox <list|show|approve|reject> [id]
 
   list      queued messages awaiting approval
   show      print a queued message in full, exactly as it will be sent
@@ -153,7 +153,7 @@ func draftCreate(ctx *Context, args []string) error {
 		}
 		switch len(accounts) {
 		case 0:
-			return Fail(ExitNotConfigured, "no accounts configured; run `uea account add` first")
+			return Fail(ExitNotConfigured, "no accounts configured; run `iql account add` first")
 		case 1:
 			d.AccountID = accounts[0].ID
 		default:
@@ -180,7 +180,7 @@ func draftCreate(ctx *Context, args []string) error {
 		provider, err := llm.New(cfg)
 		if err != nil {
 			return Fail(ExitNotConfigured,
-				"--bullets needs an LLM provider (`uea llm configure`).\n\n"+
+				"--bullets needs an LLM provider (`iql llm configure`).\n\n"+
 					"Without one, compose the text yourself and pass it with --body.")
 		}
 
@@ -212,7 +212,7 @@ func draftCreate(ctx *Context, args []string) error {
 	ctx.Printf("Created draft %s\n", d.ID)
 	ctx.Printf("  to       %s\n", strings.Join(d.To, ", "))
 	ctx.Printf("  subject  %s\n\n", d.Subject)
-	ctx.Printf("Review it with `uea draft show %s`, then queue it with `uea send %s`.\n", d.ID, d.ID)
+	ctx.Printf("Review it with `iql draft show %s`, then queue it with `iql send %s`.\n", d.ID, d.ID)
 	return nil
 }
 
@@ -301,7 +301,7 @@ func draftList(ctx *Context, args []string) error {
 
 func draftShow(ctx *Context, args []string) error {
 	if len(args) != 1 {
-		return Fail(ExitUsage, "usage: uea draft show <draft-id>")
+		return Fail(ExitUsage, "usage: iql draft show <draft-id>")
 	}
 	if err := ctx.OpenStore(); err != nil {
 		return err
@@ -321,7 +321,7 @@ func draftShow(ctx *Context, args []string) error {
 
 func draftDelete(ctx *Context, args []string) error {
 	if len(args) != 1 {
-		return Fail(ExitUsage, "usage: uea draft delete <draft-id>")
+		return Fail(ExitUsage, "usage: iql draft delete <draft-id>")
 	}
 	if err := ctx.OpenStore(); err != nil {
 		return err
@@ -345,7 +345,7 @@ func draftDelete(ctx *Context, args []string) error {
 
 func runSend(ctx *Context, args []string) error {
 	if len(args) != 1 {
-		return Fail(ExitUsage, "usage: uea send <draft-id>")
+		return Fail(ExitUsage, "usage: iql send <draft-id>")
 	}
 	if err := ctx.OpenStore(); err != nil {
 		return err
@@ -383,7 +383,7 @@ func runSend(ctx *Context, args []string) error {
 	}
 	if acc.SMTPHost == "" {
 		return Fail(ExitNotConfigured,
-			"account %s has no SMTP host; set one with `uea account add --smtp-host ...`", acc.ID)
+			"account %s has no SMTP host; set one with `iql account add --smtp-host ...`", acc.ID)
 	}
 
 	now := time.Now()
@@ -399,12 +399,12 @@ func runSend(ctx *Context, args []string) error {
 			"id":       d.ID,
 			"status":   d.Status,
 			"queuedAt": d.QueuedAt,
-			"note":     "Nothing has been sent. A person must run `uea outbox approve " + d.ID + "` from a terminal.",
+			"note":     "Nothing has been sent. A person must run `iql outbox approve " + d.ID + "` from a terminal.",
 		})
 	}
 	ctx.Printf("Queued draft %s. Nothing has been sent yet.\n\n", d.ID)
-	ctx.Printf("  uea outbox show %s      review it\n", d.ID)
-	ctx.Printf("  uea outbox approve %s   deliver it\n", d.ID)
+	ctx.Printf("  iql outbox show %s      review it\n", d.ID)
+	ctx.Printf("  iql outbox approve %s   deliver it\n", d.ID)
 	return nil
 }
 
@@ -440,7 +440,7 @@ func runOutbox(ctx *Context, args []string) error {
 
 	case "show":
 		if len(rest) != 1 {
-			return Fail(ExitUsage, "usage: uea outbox show <draft-id>")
+			return Fail(ExitUsage, "usage: iql outbox show <draft-id>")
 		}
 		d, err := requireDraft(rest[0])
 		if err != nil {
@@ -478,10 +478,10 @@ func runOutbox(ctx *Context, args []string) error {
 
 func outboxApprove(ctx *Context, args []string) error {
 	if len(args) != 1 {
-		return Fail(ExitUsage, "usage: uea outbox approve <draft-id>")
+		return Fail(ExitUsage, "usage: iql outbox approve <draft-id>")
 	}
 
-	// The gate. Approval is the one action in UEA that puts mail on the wire,
+	// The gate. Approval is the one action in InboxQL that puts mail on the wire,
 	// and it is reachable only from an interactive terminal. There is
 	// deliberately no --yes or --force: a flag would be available to the same
 	// agent the gate exists to stop.
@@ -489,7 +489,7 @@ func outboxApprove(ctx *Context, args []string) error {
 		return Fail(ExitNeedsApprove,
 			"approval requires a terminal.\n\n"+
 				"This message stays queued. A person must run:\n"+
-				"    uea outbox approve %s\n\n"+
+				"    iql outbox approve %s\n\n"+
 				"There is no flag to bypass this.", args[0])
 	}
 
@@ -498,7 +498,7 @@ func outboxApprove(ctx *Context, args []string) error {
 		return err
 	}
 	if d.Status != store.DraftStatusQueued {
-		return Fail(ExitUsage, "draft %s is %q, not queued; run `uea send %s` first", d.ID, d.Status, d.ID)
+		return Fail(ExitUsage, "draft %s is %q, not queued; run `iql send %s` first", d.ID, d.Status, d.ID)
 	}
 
 	acc, err := requireAccount(d.AccountID)
@@ -560,7 +560,7 @@ func outboxReject(ctx *Context, args []string) error {
 		return Fail(ExitUsage, "invalid flags")
 	}
 	if fs.NArg() != 1 {
-		return Fail(ExitUsage, "usage: uea outbox reject <draft-id> [--reason <text>]")
+		return Fail(ExitUsage, "usage: iql outbox reject <draft-id> [--reason <text>]")
 	}
 
 	d, err := requireDraft(fs.Arg(0))

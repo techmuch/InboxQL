@@ -1,6 +1,6 @@
 // Package mailer delivers outgoing messages over SMTP.
 //
-// This is the only code in UEA that causes an irreversible external effect, so
+// This is the only code in InboxQL that causes an irreversible external effect, so
 // it is deliberately small and does exactly one thing. Nothing here decides
 // *whether* to send — that gate lives in the outbox approval flow — and Send
 // should only ever be reached after a human has approved the draft.
@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/user/uea/internal/account"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/store"
 )
 
 // Message is a composed outgoing email.

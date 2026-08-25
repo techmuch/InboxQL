@@ -15,8 +15,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/user/uea/internal/importer"
-	"github.com/user/uea/internal/message"
+	"github.com/user/inboxql/internal/importer"
+	"github.com/user/inboxql/internal/message"
 )
 
 // Source reads .eml files from a directory tree.

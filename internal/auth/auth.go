@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -115,7 +115,7 @@ func generateSecureToken(length int) string {
 
 // SetPassword sets a user's password, creating the user when absent.
 //
-// This is the recovery path behind `uea user passwd`: without it, a forgotten
+// This is the recovery path behind `iql user passwd`: without it, a forgotten
 // administrator password could only be resolved by deleting the database.
 func SetPassword(username, password string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

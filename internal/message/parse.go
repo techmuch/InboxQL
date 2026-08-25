@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/emersion/go-message/mail"
-	"github.com/user/uea/internal/hasher"
+	"github.com/user/inboxql/internal/hasher"
 )
 
 // htmlTag matches an HTML element so a markup body can be reduced to something
@@ -15,7 +15,7 @@ import (
 // the result is never rendered, only indexed.
 var htmlTag = regexp.MustCompile("<[^>]*>")
 
-// ParseRFC822 parses a raw message into UEA's representation.
+// ParseRFC822 parses a raw message into InboxQL's representation.
 //
 // This is the single MIME entry point, shared by the IMAP sync engine and every
 // import source. Two parsers would drift, and whichever one saw less traffic

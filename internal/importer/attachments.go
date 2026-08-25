@@ -11,7 +11,7 @@ import (
 // CountAttachments reports how many attachment parts a message carries and
 // their combined decoded size.
 //
-// Counting only: UEA has no attachment storage yet, so this exists to make a
+// Counting only: InboxQL has no attachment storage yet, so this exists to make a
 // deep scan able to say "1,204 attachments, 2.1 GB" before anyone decides
 // whether importing them is worth it. When attachment storage lands, extraction
 // walks the same structure.

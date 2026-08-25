@@ -172,7 +172,7 @@ func ListDrafts(status string) ([]*Draft, error) {
 
 // DeleteDraft removes a draft.
 //
-// Sent drafts are kept deliberately: they are the only record that UEA
+// Sent drafts are kept deliberately: they are the only record that InboxQL
 // delivered a message, so deleting one destroys the audit trail.
 func DeleteDraft(id string) error {
 	res, err := db.Exec("DELETE FROM drafts WHERE id = ? AND status != ?", id, DraftStatusSent)

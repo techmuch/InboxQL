@@ -8,22 +8,22 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/user/uea/internal/message"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/message"
+	"github.com/user/inboxql/internal/store"
 )
 
 func init() {
 	register(&Command{
 		Name:    "export",
 		Summary: "extract messages to .eml or .json",
-		Usage: `uea export [flags]
+		Usage: `iql export [flags]
 
 Writes matching messages to a directory, one file each, or to a single JSON
 document on stdout.
 
 Flags:
   --account <id>       restrict to one account
-  --query <text>       substring match, as in ` + "`uea search`" + `
+  --query <text>       substring match, as in ` + "`iql search`" + `
   --from <address>     sender contains this
   --since <YYYY-MM-DD> on or after this date
   --until <YYYY-MM-DD> on or before this date

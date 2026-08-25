@@ -9,7 +9,7 @@ import (
 //
 // StoragePath is empty when the bytes were not kept. Size and Filename are
 // still populated in that case, so the record says what the message carried
-// even when UEA chose not to hold it.
+// even when InboxQL chose not to hold it.
 type Attachment struct {
 	ID          string    `json:"id"`
 	MessageID   string    `json:"messageId"`

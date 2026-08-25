@@ -1,6 +1,6 @@
-# Email UEA - Comprehensive Test Plan
+# InboxQL - Comprehensive Test Plan
 
-This document outlines the core features of the Email UEA workbench and provides step-by-step instructions for manual verification.
+This document outlines the core features of the InboxQL workbench and provides step-by-step instructions for manual verification.
 
 ---
 
@@ -22,8 +22,8 @@ This will:
 **Feature:** Secure access to the application and protected API endpoints.
 - **Steps to Test (Login):**
   1. Open `http://localhost:5173`.
-  2. Verify the Login screen appears with the "Email UEA" logo.
-  3. Enter Username: `admin@uea.local` and Password: `password123`.
+  2. Verify the Login screen appears with the "InboxQL" logo.
+  3. Enter Username: `admin@inboxql.local` and Password: `password123`.
   4. Click **Sign In**.
   5. Verify successful entry into the workbench.
 - **Steps to Test (Logout):**
@@ -37,7 +37,7 @@ This will:
 ## 2. Branding & Layout
 **Feature:** Customized workbench UI.
 - **Steps to Test:**
-  1. Verify the top-left title is **"Email UEA"**.
+  1. Verify the top-left title is **"InboxQL"**.
   2. Verify the left sidebar and activity bar are hidden.
   3. Verify the menu order: **Tools** -> **View** -> **Help**.
 

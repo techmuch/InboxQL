@@ -1,9 +1,9 @@
-// Package llm is UEA's optional completion gateway.
+// Package llm is InboxQL's optional completion gateway.
 //
-// "Optional" is the important word. UEA works without any provider configured:
+// "Optional" is the important word. InboxQL works without any provider configured:
 // the analyze and draft commands fall back to emitting structured context for
 // an external agent to reason over. Configuring a provider turns those same
-// commands into ones that return prose. Nothing else in UEA depends on this
+// commands into ones that return prose. Nothing else in InboxQL depends on this
 // package, and no email content leaves the machine unless a remote provider is
 // deliberately configured.
 package llm
@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/store"
 )
 
 // ErrNotConfigured is returned by New when no provider has been set.

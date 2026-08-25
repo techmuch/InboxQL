@@ -1,6 +1,6 @@
 // Package api holds the HTTP surface: route registration and handlers.
 //
-// Split out of cmd/uea so that main.go is subcommand dispatch and nothing
+// Split out of cmd/iql so that main.go is subcommand dispatch and nothing
 // else; the handlers here were previously inline alongside server startup.
 package api
 
@@ -11,12 +11,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/user/uea/internal/account"
-	"github.com/user/uea/internal/auth"
-	"github.com/user/uea/internal/embed"
-	"github.com/user/uea/internal/message"
-	"github.com/user/uea/internal/store"
-	"github.com/user/uea/internal/sync"
+	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/auth"
+	"github.com/user/inboxql/internal/embed"
+	"github.com/user/inboxql/internal/message"
+	"github.com/user/inboxql/internal/store"
+	"github.com/user/inboxql/internal/sync"
 )
 
 // syncManager bounds concurrent IMAP connections per host for syncs triggered
@@ -479,7 +479,7 @@ func handleAgents(w http.ResponseWriter, r *http.Request) {
 
 // handleMessageAttachments lists what a message carried.
 //
-// A row with no storagePath is a record that the message had an attachment UEA
+// A row with no storagePath is a record that the message had an attachment InboxQL
 // chose not to keep — too large, or attachments disabled for that import —
 // rather than a broken reference. The viewer renders the distinction.
 func handleMessageAttachments(w http.ResponseWriter, r *http.Request) {

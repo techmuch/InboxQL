@@ -7,18 +7,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/user/uea/internal/blobstore"
-	"github.com/user/uea/internal/importer"
-	"github.com/user/uea/internal/importer/applemail"
-	"github.com/user/uea/internal/importer/emlfiles"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/blobstore"
+	"github.com/user/inboxql/internal/importer"
+	"github.com/user/inboxql/internal/importer/applemail"
+	"github.com/user/inboxql/internal/importer/emlfiles"
+	"github.com/user/inboxql/internal/store"
 )
 
 func init() {
 	register(&Command{
 		Name:    "import",
 		Summary: "import mail from a desktop client, without modifying it",
-		Usage: `uea import <sources|mailboxes|scan|run|eml> [flags]
+		Usage: `iql import <sources|mailboxes|scan|run|eml> [flags]
 
   sources     which mail clients are present on this machine
   mailboxes   list a client's folders with message counts
@@ -30,9 +30,9 @@ Sources are read-only. Nothing is written, moved or deleted in the client's
 store.
 
 Common flags:
-  --source <id>        apple-mail (see ` + "`uea import sources`" + `)
-  --mailbox <id,...>   mailbox ids from ` + "`uea import mailboxes`" + `
-  --account <id>       UEA account to import into
+  --source <id>        apple-mail (see ` + "`iql import sources`" + `)
+  --mailbox <id,...>   mailbox ids from ` + "`iql import mailboxes`" + `
+  --account <id>       InboxQL account to import into
   --limit <n>          newest n messages, across all selected mailboxes
   --since <YYYY-MM-DD> only messages on or after this date
   --until <YYYY-MM-DD> only messages on or before this date
@@ -41,7 +41,7 @@ Common flags:
   --attachments        run: also store attachment files on disk
   --max-attachment-mb  skip attachments larger than this (default 25)
 
-On macOS, reading ~/Library/Mail needs Full Disk Access. ` + "`uea import sources`" + `
+On macOS, reading ~/Library/Mail needs Full Disk Access. ` + "`iql import sources`" + `
 says so explicitly when that is what is missing.
 
 Imported mail belongs to the --account you choose, and messages cascade on
@@ -51,7 +51,7 @@ rather than a live IMAP one.
 Attachments are off by default: storing them can multiply the size of the data
 directory. With --attachments they are written to <data>/attachments/, addressed
 by content so the same file sent to several people is stored once. Remember that
-` + "`uea backup`" + ` copies only the database — see ` + "`uea help backup`" + `.`,
+` + "`iql backup`" + ` copies only the database — see ` + "`iql help backup`" + `.`,
 		Run: runImport,
 	})
 }
@@ -81,7 +81,7 @@ func sourceByID(id string) (importer.Source, error) {
 	case "apple-mail", "applemail", "apple":
 		return applemail.New(), nil
 	case "":
-		return nil, Fail(ExitUsage, "--source is required (try `uea import sources`)")
+		return nil, Fail(ExitUsage, "--source is required (try `iql import sources`)")
 	default:
 		return nil, Fail(ExitUsage, "unknown source %q (known: apple-mail)", id)
 	}
@@ -118,7 +118,7 @@ func importSources(ctx *Context, args []string) error {
 		}
 	}
 	ctx.Printf("\nNo client detected, or blocked by permissions? Export messages from your\n")
-	ctx.Printf("mail client into a folder and run: uea import eml <folder> --account <id>\n")
+	ctx.Printf("mail client into a folder and run: iql import eml <folder> --account <id>\n")
 	return nil
 }
 
@@ -166,7 +166,7 @@ func importScan(ctx *Context, args []string) error {
 	}
 	ids := splitList(*mailboxes)
 	if len(ids) == 0 {
-		return Fail(ExitUsage, "--mailbox is required (see `uea import mailboxes`)")
+		return Fail(ExitUsage, "--mailbox is required (see `iql import mailboxes`)")
 	}
 
 	src, err := sourceByID(*sourceID)
@@ -252,7 +252,7 @@ type importFlags struct {
 func (f *importFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&f.source, "source", "apple-mail", "source id")
 	fs.StringVar(&f.mailbox, "mailbox", "", "mailbox ids, comma separated")
-	fs.StringVar(&f.account, "account", "", "UEA account to import into")
+	fs.StringVar(&f.account, "account", "", "InboxQL account to import into")
 	fs.IntVar(&f.limit, "limit", 0, "newest n messages")
 	fs.StringVar(&f.since, "since", "", "on or after YYYY-MM-DD")
 	fs.StringVar(&f.until, "until", "", "on or before YYYY-MM-DD")
@@ -289,7 +289,7 @@ func importRun(ctx *Context, args []string) error {
 
 	ids := splitList(f.mailbox)
 	if len(ids) == 0 {
-		return Fail(ExitUsage, "--mailbox is required (see `uea import mailboxes`)")
+		return Fail(ExitUsage, "--mailbox is required (see `iql import mailboxes`)")
 	}
 	src, err := sourceByID(f.source)
 	if err != nil {
@@ -310,7 +310,7 @@ func importEML(ctx *Context, args []string) error {
 		return Fail(ExitUsage, "invalid flags")
 	}
 	if fs.NArg() != 1 {
-		return Fail(ExitUsage, "usage: uea import eml <folder> --account <id>")
+		return Fail(ExitUsage, "usage: iql import eml <folder> --account <id>")
 	}
 
 	src := emlfiles.New(fs.Arg(0))
@@ -331,7 +331,7 @@ func importEML(ctx *Context, args []string) error {
 // mailboxes are chosen, selection, execution and reporting are identical.
 func doImport(ctx *Context, src importer.Source, mailboxIDs []string, f *importFlags) error {
 	if f.account == "" {
-		return Fail(ExitUsage, "--account is required (see `uea account list`)")
+		return Fail(ExitUsage, "--account is required (see `iql account list`)")
 	}
 	sel, err := f.selection()
 	if err != nil {
@@ -472,7 +472,7 @@ func verifyMailboxes(src importer.Source, ids []string) error {
 	for _, id := range ids {
 		if !valid[id] {
 			return Fail(ExitNotFound,
-				"no mailbox %q in %s\n\nRun `uea import mailboxes` to list them.", id, src.Name())
+				"no mailbox %q in %s\n\nRun `iql import mailboxes` to list them.", id, src.Name())
 		}
 	}
 	return nil

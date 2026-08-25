@@ -1,4 +1,4 @@
-// Package cli implements the uea command-line interface.
+// Package cli implements the iql command-line interface.
 //
 // # Design
 //
@@ -9,7 +9,7 @@
 // # Two audiences
 //
 // Some commands are for a person at a terminal; others exist so an LLM agent
-// can drive UEA as a tool. The agent-facing ones (search, read, analyze, draft,
+// can drive InboxQL as a tool. The agent-facing ones (search, read, analyze, draft,
 // send) all support `--json` and never prompt. The split matters most around
 // [outbox approval], which is deliberately reachable only from a terminal.
 package cli
@@ -25,7 +25,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/store"
 )
 
 // Exit codes. These are part of the contract with scripts and agents, so they
@@ -64,11 +64,11 @@ type Context struct {
 	Stderr io.Writer
 }
 
-// Command is one uea subcommand.
+// Command is one iql subcommand.
 type Command struct {
 	Name    string
 	Summary string
-	// Usage is printed under `uea help <name>`. The first line should be the
+	// Usage is printed under `iql help <name>`. The first line should be the
 	// invocation form.
 	Usage string
 	Run   func(ctx *Context, args []string) error
@@ -102,16 +102,16 @@ func (c *Context) dbPath() string {
 // OpenStore opens the database, refusing if the directory was never
 // initialised.
 //
-// `uea init` is the only command that may create a data directory. Everything
+// `iql init` is the only command that may create a data directory. Everything
 // else fails loudly instead, because silently creating an empty database in
-// the wrong working directory produces a UEA that looks broken rather than
+// the wrong working directory produces an InboxQL that looks broken rather than
 // misconfigured — the old behaviour, when the path was hardcoded relative to
 // the process's cwd.
 func (c *Context) OpenStore() error {
 	if _, err := os.Stat(c.dbPath()); err != nil {
 		if os.IsNotExist(err) {
 			return Fail(ExitNotConfigured,
-				"no UEA data directory at %s\n\nRun `uea init --data %s` to create one.",
+				"no InboxQL data directory at %s\n\nRun `iql init --data %s` to create one.",
 				c.DataDir, c.DataDir)
 		}
 		return Fail(ExitError, "cannot access %s: %v", c.dbPath(), err)
@@ -127,13 +127,13 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	ctx := &Context{Stdin: stdin, Stdout: stdout, Stderr: stderr}
 
 	var showVersion bool
-	fs := flag.NewFlagSet("uea", flag.ContinueOnError)
+	fs := flag.NewFlagSet("iql", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.StringVar(&ctx.DataDir, "data", envOr("UEA_DATA", "./data"),
-		"path to the UEA data directory")
+	fs.StringVar(&ctx.DataDir, "data", envOr("INBOXQL_DATA", "./data"),
+		"path to the InboxQL data directory")
 	fs.BoolVar(&ctx.JSON, "json", false, "emit machine-readable JSON")
-	fs.BoolVar(&showVersion, "version", false, "print the UEA version")
-	fs.BoolVar(&showVersion, "v", false, "print the UEA version")
+	fs.BoolVar(&showVersion, "version", false, "print the InboxQL version")
+	fs.BoolVar(&showVersion, "v", false, "print the InboxQL version")
 	fs.Usage = func() { usage(stderr) }
 
 	// Plain Parse, deliberately: it stops at the first non-flag token, which is
@@ -164,7 +164,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	cmd, ok := Commands[name]
 	if !ok {
-		fmt.Fprintf(stderr, "uea: unknown command %q\n\n", name)
+		fmt.Fprintf(stderr, "iql: unknown command %q\n\n", name)
 		usage(stderr)
 		return ExitUsage
 	}
@@ -178,10 +178,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := cmd.Run(ctx, rest[1:]); err != nil {
 		var cliErr *Error
 		if errors.As(err, &cliErr) {
-			fmt.Fprintf(stderr, "uea %s: %s\n", name, cliErr.Err)
+			fmt.Fprintf(stderr, "iql %s: %s\n", name, cliErr.Err)
 			return cliErr.Code
 		}
-		fmt.Fprintf(stderr, "uea %s: %v\n", name, err)
+		fmt.Fprintf(stderr, "iql %s: %v\n", name, err)
 		return ExitError
 	}
 	return ExitOK
@@ -206,15 +206,15 @@ var groups = []struct {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, `uea — Universal Email Analytics
+	fmt.Fprint(w, `iql — InboxQL: Email for Engineers
 
 Usage:
-  uea [global flags] <command> [flags]
+  iql [global flags] <command> [flags]
 
 Global flags:
-  --data <dir>    data directory (default "./data", or $UEA_DATA)
+  --data <dir>    data directory (default "./data", or $INBOXQL_DATA)
   --json          emit machine-readable JSON where supported
-  --version, -v   print the UEA version
+  --version, -v   print the InboxQL version
 
 `)
 	seen := map[string]bool{}
@@ -244,7 +244,7 @@ Global flags:
 		fmt.Fprintln(w)
 	}
 
-	fmt.Fprint(w, "Run `uea help <command>` for details.\nAgents: see AGENTS.md for the JSON contract and exit codes.\n")
+	fmt.Fprint(w, "Run `iql help <command>` for details.\nAgents: see AGENTS.md for the JSON contract and exit codes.\n")
 }
 
 func help(ctx *Context, args []string) int {
@@ -254,7 +254,7 @@ func help(ctx *Context, args []string) int {
 	}
 	cmd, ok := Commands[args[0]]
 	if !ok {
-		fmt.Fprintf(ctx.Stderr, "uea: unknown command %q\n", args[0])
+		fmt.Fprintf(ctx.Stderr, "iql: unknown command %q\n", args[0])
 		return ExitUsage
 	}
 	fmt.Fprintf(ctx.Stdout, "%s\n", strings.TrimSpace(cmd.Usage))
@@ -271,7 +271,7 @@ func subcommand(args []string) (string, []string) {
 
 // parseArgs parses fs while allowing flags and positionals to be interleaved.
 //
-// Go's flag package stops at the first non-flag argument, so `uea read m1
+// Go's flag package stops at the first non-flag argument, so `iql read m1
 // --thread` would parse "m1" and then silently treat "--thread" as another
 // positional — the flag has no effect and nothing complains. That is the
 // natural way to type the command, and an ignored flag is a worse failure than

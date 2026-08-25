@@ -17,7 +17,7 @@ func TestBodylessMessagesDoNotCollide(t *testing.T) {
 	}
 }
 
-// Two copies of the same message reaching UEA by different routes — fetched
+// Two copies of the same message reaching InboxQL by different routes — fetched
 // over IMAP and read out of an .emlx — must agree, or importing duplicates
 // everything already synced.
 func TestSameMessageFromDifferentSourcesAgrees(t *testing.T) {

@@ -12,15 +12,15 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/user/uea/internal/account"
-	"github.com/user/uea/internal/hasher"
-	"github.com/user/uea/internal/message"
-	"github.com/user/uea/internal/vault"
+	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/hasher"
+	"github.com/user/inboxql/internal/message"
+	"github.com/user/inboxql/internal/vault"
 )
 
 const (
 	// DBNAME is the default name for the SQLite database file.
-	DBNAME = "uea.db"
+	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
 	SchemaVersion = 14
 )

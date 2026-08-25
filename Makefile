@@ -17,20 +17,20 @@ frontend:
 	cp -r frontend/dist/* internal/embed/static/
 
 VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.7")
-LDFLAGS := -X github.com/user/uea/internal/cli.Version=$(VERSION)
+LDFLAGS := -X github.com/user/inboxql/internal/cli.Version=$(VERSION)
 
 backend:
 	@echo "Building backend (v$(VERSION))..."
-	go build -ldflags "$(LDFLAGS)" -o bin/uea ./cmd/uea
+	go build -ldflags "$(LDFLAGS)" -o bin/iql ./cmd/iql
 
 install: build
-	@echo "Installing uea binary to $(BINDIR)..."
+	@echo "Installing iql binary to $(BINDIR)..."
 	mkdir -p $(BINDIR)
-	install -m 755 bin/uea $(BINDIR)/uea
+	install -m 755 bin/iql $(BINDIR)/iql
 
 uninstall:
-	@echo "Removing uea binary from $(BINDIR)..."
-	rm -f $(BINDIR)/uea
+	@echo "Removing iql binary from $(BINDIR)..."
+	rm -f $(BINDIR)/iql
 
 test:
 	@echo "Running backend tests..."
@@ -43,21 +43,21 @@ clean:
 	rm -rf bin
 	rm -rf frontend/dist
 	rm -rf web
-	rm -f uea.log
+	rm -f iql.log
 
 # Default to background. Use --foreground for foreground.
 # Example: make start --foreground
-# `uea init` is safe to re-run and only fills in what is missing, so a fresh
+# `iql init` is safe to re-run and only fills in what is missing, so a fresh
 # clone boots in one step while an existing data directory is left alone.
 start: stop backend
-	@./bin/uea init --data ./data >/dev/null 2>&1 || ./bin/uea init --data ./data --force >/dev/null 2>&1 || true
+	@./bin/iql init --data ./data >/dev/null 2>&1 || ./bin/iql init --data ./data --force >/dev/null 2>&1 || true
 ifneq (,$(filter --foreground,$(MAKECMDGOALS)))
 	@echo "Running backend in foreground..."
-	./bin/uea serve --data ./data
+	./bin/iql serve --data ./data
 else
 	@echo "Running backend in background..."
-	nohup ./bin/uea serve --data ./data > uea.log 2>&1 &
-	@echo "Backend started. Check uea.log for output."
+	nohup ./bin/iql serve --data ./data > iql.log 2>&1 &
+	@echo "Backend started. Check iql.log for output."
 	@echo "Access the frontend at http://localhost:8080"
 endif
 
@@ -71,4 +71,4 @@ restart: stop start
 
 stop:
 	@echo "Stopping any running backend instances..."
-	-pkill -f "bin/uea" || true
+	-pkill -f "bin/iql" || true

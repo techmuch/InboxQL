@@ -1,6 +1,8 @@
-# Universal Email Analytics (UEA)
+# InboxQL
 
-**Universal Email Analytics (UEA)** is a powerful, self-hosted web application for deep-dive email analytics. It connects to your existing email accounts via IMAP and provides a comprehensive dashboard to explore your data, discover trends, and gain insights from your communication history.
+**Email for Engineers**
+
+**InboxQL** is a powerful, self-hosted web application for deep-dive email analytics. It connects to your existing email accounts via IMAP and provides a comprehensive dashboard to explore your data, discover trends, and gain insights from your communication history.
 
 ## Key Features
 
@@ -9,11 +11,11 @@
 *   **Interactive Analytics**: Explore your data with interactive heatmaps (powered by `@nivo/calendar`), dynamic donut charts, and topic treemaps. Drill down with deep cross-filtering between dates, senders, and topics.
 *   **Intelligent Mailbox**: Seamlessly pivot from high-level analytics to a high-performance email feed filtered precisely by your dashboard selections.
 *   **Privacy-First**: Your data is stored locally, and no email content is ever sent to a third party without your explicit consent. Account passwords are encrypted at rest with AES-256-GCM.
-*   **Cross-Platform**: UEA is available for Windows, macOS, and Linux.
+*   **Cross-Platform**: InboxQL is available for Windows, macOS, and Linux.
 
 ## Status
 
-UEA is in active early development. The table below is the honest state of play — several items described in `requirements.md` are specified but not yet built:
+InboxQL is in active early development. The table below is the honest state of play — several items described in `requirements.md` are specified but not yet built:
 
 | Area | Status |
 | :--- | :--- |
@@ -32,11 +34,11 @@ UEA is in active early development. The table below is the honest state of play 
 
 *   **Credentials at rest**: IMAP/SMTP passwords are sealed with AES-256-GCM using a machine-local key stored at `data/vault.key` (mode `0600`). **Back this file up alongside your database** — without it, stored passwords cannot be recovered. Passwords are never returned to the browser by the API.
 *   **Transport**: IMAP TLS connections verify the server certificate. There is no option to disable this.
-*   **Default account**: on first run UEA creates `admin@uea.local` with a well-known development password. Set `UEA_ADMIN_PASSWORD` (and optionally `UEA_ADMIN_USER`) before running UEA anywhere other than localhost.
+*   **Default account**: on first run InboxQL creates `admin@inboxql.local` with a well-known development password. Set `INBOXQL_ADMIN_PASSWORD` (and optionally `INBOXQL_ADMIN_USER`) before running InboxQL anywhere other than localhost.
 
 ## Getting Started
 
-UEA is distributed as a single, zero-dependency binary.
+InboxQL is distributed as a single, zero-dependency binary.
 
 ### Download Release
 
@@ -44,22 +46,22 @@ Download the latest release for your operating system, prepare a data directory,
 then start the server:
 
 ```bash
-./uea init      # creates ./data with the database and encryption key
-./uea serve
+./iql init      # creates ./data with the database and encryption key
+./iql serve
 ```
 
-`./uea` on its own lists every subcommand — it is an administrative CLI as well
-as a server. You can then access the UEA dashboard by opening your web browser and navigating to `http://localhost:8080`.
+`./iql` on its own lists every subcommand — it is an administrative CLI as well
+as a server. You can then access the InboxQL dashboard by opening your web browser and navigating to `http://localhost:8080`.
 
 ### Build from Source
 
-To build UEA from source, ensure you have Go 1.21+ and Node.js 20+ installed, then run:
+To build InboxQL from source, ensure you have Go 1.21+ and Node.js 20+ installed, then run:
 
 ```bash
 make build
 ```
 
-This will produce the `bin/uea` executable. You can start the server in the foreground with:
+This will produce the `bin/iql` executable. You can start the server in the foreground with:
 
 ```bash
 make start --foreground
@@ -67,15 +69,15 @@ make start --foreground
 
 ## CLI Management
 
-UEA also includes a powerful command-line interface (CLI) for managing your accounts and performing other administrative tasks.
+InboxQL also includes a powerful command-line interface (CLI) for managing your accounts and performing other administrative tasks.
 
-*   `uea account`: Add, list, remove, or verify connections to your email accounts.
-*   `uea doctor`: Run diagnostics to check the health of your UEA installation.
-*   `uea maintenance`: Perform maintenance tasks such as re-indexing your data.
-*   `uea backup`: Create and manage backups of your UEA data.
+*   `iql account`: Add, list, remove, or verify connections to your email accounts.
+*   `iql doctor`: Run diagnostics to check the health of your InboxQL installation.
+*   `iql maintenance`: Perform maintenance tasks such as re-indexing your data.
+*   `iql backup`: Create and manage backups of your InboxQL data.
 
-For more information on the CLI, run `uea --help`.
+For more information on the CLI, run `iql --help`.
 
 ## Contributing
 
-We welcome contributions from the community! If you're interested in contributing to UEA, please see our [Development Guide](development.md) for more information.
+We welcome contributions from the community! If you're interested in contributing to InboxQL, please see our [Development Guide](development.md) for more information.

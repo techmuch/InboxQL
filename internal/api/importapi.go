@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/user/uea/internal/importer"
-	"github.com/user/uea/internal/importer/applemail"
-	"github.com/user/uea/internal/store"
+	"github.com/user/inboxql/internal/importer"
+	"github.com/user/inboxql/internal/importer/applemail"
+	"github.com/user/inboxql/internal/store"
 )
 
 // importManager is created on first use, once the data directory is known.
@@ -20,7 +20,7 @@ var (
 )
 
 // SetDataDir tells the API where the data directory is, for the blob store.
-// Called by `uea serve` before the listener starts.
+// Called by `iql serve` before the listener starts.
 func SetDataDir(dir string) { importDataDir = dir }
 
 func manager() *importer.Manager {
@@ -32,7 +32,7 @@ func manager() *importer.Manager {
 //
 // Deliberately a fixed list built server-side. No endpoint takes a filesystem
 // path from the client: a handler that read `{"path": "..."}` would let any
-// page on localhost read arbitrary files as the UEA user. Clients choose a
+// page on localhost read arbitrary files as the InboxQL user. Clients choose a
 // source by id from this list, and mailbox ids are opaque handles this server
 // minted during discovery.
 func knownSources() []importer.Source {

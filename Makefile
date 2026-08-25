@@ -16,7 +16,7 @@ frontend:
 	mkdir -p internal/embed/static
 	cp -r frontend/dist/* internal/embed/static/
 
-VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.17")
+VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.18")
 LDFLAGS := -X github.com/user/inboxql/internal/cli.Version=$(VERSION)
 
 backend:
@@ -57,20 +57,18 @@ clean:
 # Example: make start --foreground
 # `iql init` is safe to re-run and only fills in what is missing, so a fresh
 # clone boots in one step while an existing data directory is left alone.
-# Local development runs passwordless. `make start` is a single-user loop on
-# your own machine, which is exactly the case --trust-local exists for; the
-# shipped default is still password-required, so nothing deployed inherits
-# this. Override with TRUST_LOCAL= to exercise the login flow.
-TRUST_LOCAL ?= --trust-local
+# Passwordless local access is the default, so nothing extra is needed here.
+# Set AUTH=--require-password to exercise the login flow.
+AUTH ?=
 
 start: stop backend
 	@./bin/iql init --data ./data >/dev/null 2>&1 || ./bin/iql init --data ./data --force >/dev/null 2>&1 || true
 ifneq (,$(filter --foreground,$(MAKECMDGOALS)))
 	@echo "Running backend in foreground..."
-	./bin/iql start --data ./data $(TRUST_LOCAL)
+	./bin/iql start --data ./data $(AUTH)
 else
 	@echo "Running backend in background..."
-	nohup ./bin/iql start --data ./data $(TRUST_LOCAL) > iql.log 2>&1 &
+	nohup ./bin/iql start --data ./data $(AUTH) > iql.log 2>&1 &
 	@echo "Backend started. Check iql.log for output."
 	@echo "Access the frontend at http://localhost:8080"
 endif

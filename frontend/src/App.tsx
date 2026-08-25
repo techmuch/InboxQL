@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile } from 'nexus-shell';
-import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, Inbox, Star, Send, File, AlertOctagon, MoreVertical, ChevronLeft, ChevronRight, User, Lock, Download } from 'lucide-react';
+import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, Inbox, Star, Send, File, AlertOctagon, MoreVertical, User, Lock, Download } from 'lucide-react';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { create } from 'zustand';
 import { AgentManager } from './AgentManager';
@@ -289,14 +289,20 @@ const MailClient = () => {
 
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [counts, setCounts] = useState<Record<string, { total: number; unread: number }>>({});
 
-  const fetchMessages = async () => {
-    setLoading(true);
+  const fetchMessages = async (currentOffset = 0) => {
+    const isLoadMore = currentOffset > 0;
+    if (isLoadMore) setLoadingMore(true);
+    else setLoading(true);
     try {
       const query = new URLSearchParams();
       query.append('limit', '50');
+      query.append('offset', currentOffset.toString());
       query.append('folder', folder);
       // The dashboard's cross-filters compose with the folder rather than
       // replacing it: Sent plus a date means "sent, on that date".
@@ -311,13 +317,23 @@ const MailClient = () => {
       }
       if (!res.ok) throw new Error();
       const data = await res.json();
-      setMessages(data || []);
-      setFocusedIndex(-1);
-      setSelectedMessageIds(new Set());
+      const newMessages = data || [];
+      
+      if (isLoadMore) {
+        setMessages(prev => [...prev, ...newMessages]);
+      } else {
+        setMessages(newMessages);
+        setFocusedIndex(-1);
+        setSelectedMessageIds(new Set());
+      }
+      
+      setOffset(currentOffset + newMessages.length);
+      setHasMore(newMessages.length === 50);
     } catch (e) {
       console.error('Failed to fetch messages', e);
     }
-    setLoading(false);
+    if (isLoadMore) setLoadingMore(false);
+    else setLoading(false);
   };
 
   /**
@@ -339,7 +355,7 @@ const MailClient = () => {
   };
 
   useEffect(() => {
-    fetchMessages();
+    fetchMessages(0);
   }, [folder, date, from, topic]);
 
   useEffect(() => {
@@ -412,6 +428,15 @@ const MailClient = () => {
     }
   };
 
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop <= clientHeight * 1.5) {
+      if (hasMore && !loadingMore && !loading) {
+        fetchMessages(offset);
+      }
+    }
+  };
+
   return (
     <div className="flex h-full bg-background text-foreground overflow-hidden">
       <div className="w-64 flex flex-col pt-4 border-r border-border/50 bg-card/20">
@@ -438,18 +463,16 @@ const MailClient = () => {
       <div className="flex-1 flex flex-col" tabIndex={0} onKeyDown={handleKeyDown}>
         <div className="h-12 border-b border-border flex items-center px-4 gap-2 sticky top-0 bg-background/80 backdrop-blur-md z-10">
           <button className="p-2 hover:bg-accent  transition-colors"><input type="checkbox" className="border-border" /></button>
-          <button onClick={() => { fetchMessages(); fetchCounts(); }} className={`p-2 hover:bg-accent  transition-colors ${loading ? 'animate-spin' : ''}`}>
+          <button onClick={() => { fetchMessages(0); fetchCounts(); }} className={`p-2 hover:bg-accent  transition-colors ${loading ? 'animate-spin' : ''}`}>
             <RefreshCw className="w-4 h-4 text-muted-foreground" />
           </button>
           <button className="p-2 hover:bg-accent  transition-colors"><MoreVertical className="w-4 h-4 text-muted-foreground" /></button>
           <div className="flex-1" />
           {/* The page shows at most 50; the total comes from the server so
               the two numbers are not the same number twice. */}
-          <div className="text-xs text-muted-foreground font-medium tabular-nums">
+          <div className="text-xs text-muted-foreground font-medium tabular-nums px-4">
             {messages.length === 0 ? '0' : `1-${messages.length}`} of {counts[folder]?.total ?? messages.length}
           </div>
-          <button className="p-2 hover:bg-accent  transition-colors"><ChevronLeft className="w-4 h-4 text-muted-foreground" /></button>
-          <button className="p-2 hover:bg-accent  transition-colors"><ChevronRight className="w-4 h-4 text-muted-foreground" /></button>
         </div>
 
         {(date || from || topic) && (
@@ -464,7 +487,7 @@ const MailClient = () => {
           </div>
         )}
 
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto" onScroll={handleScroll}>
           {messages.length === 0 && !loading && (() => {
             const meta = folderMeta[folder];
             const EmptyIcon = meta?.icon ?? Mail;

@@ -1,0 +1,199 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# A push that supersedes an in-flight run cancels it; the older result is never
+# the one anybody wants.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned rather than "stable" so a toolchain release cannot turn a green
+  # branch red overnight. go.mod requires 1.25.6.
+  GO_VERSION: "1.25.6"
+  NODE_VERSION: "22"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The gate. Everything else depends on this, so it is the fastest job and it
+  # runs on one platform only.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^frontend/' || true)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # -race needs cgo, which this build requires anyway. It is worth the time:
+      # sync runs goroutines against a single-writer database.
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Coverage summary
+        run: |
+          go test -coverprofile=coverage.out ./... >/dev/null 2>&1 || true
+          go tool cover -func=coverage.out | tail -1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # npm ci, not npm install: it installs exactly the lockfile and fails if
+      # the lockfile and package.json disagree. `make build` uses npm install,
+      # which silently resolves new versions and makes a release artifact
+      # unreproducible.
+      - name: Install
+        run: npm --prefix frontend ci
+
+      - name: Typecheck
+        run: npm --prefix frontend exec tsc -- -b --noEmit
+
+      - name: Test
+        run: npm --prefix frontend test -- --run
+
+      - name: Build
+        run: npm --prefix frontend run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  # ---------------------------------------------------------------------------
+  # Three native runners, not one runner with GOOS set.
+  #
+  # mattn/go-sqlite3 is cgo, and `iql backup` uses SQLite's online backup API,
+  # which exists only in the cgo build — CGO_ENABLED=0 fails to compile, it does
+  # not merely degrade. So each target needs a C toolchain for that target, and
+  # building natively is far simpler than maintaining three cross-toolchains.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.os }})
+    needs: [test, frontend]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: iql-linux-amd64
+            binary: iql
+          - os: macos-latest
+            artifact: iql-darwin-arm64
+            binary: iql
+          - os: windows-latest
+            artifact: iql-windows-amd64
+            binary: iql.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # The Go binary embeds the built frontend, so it must exist before the
+      # backend compiles. Reusing the artifact keeps the frontend built once.
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Stage embedded assets
+        shell: bash
+        run: |
+          rm -rf internal/embed/static
+          mkdir -p internal/embed/static
+          cp -r frontend/dist/* internal/embed/static/
+
+      - name: Build
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          version=$(node -p "require('./frontend/package.json').version")
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/user/inboxql/internal/cli.Version=$version" \
+            -o "${{ matrix.binary }}" ./cmd/iql
+
+      # A binary that cannot answer `version` is not a build worth publishing.
+      - name: Smoke test
+        shell: bash
+        run: |
+          ./${{ matrix.binary }} --version
+          ./${{ matrix.binary }} --help > /dev/null
+          ./${{ matrix.binary }} --data "$RUNNER_TEMP/smoke" init
+          ./${{ matrix.binary }} --data "$RUNNER_TEMP/smoke" --json doctor || true
+        env:
+          INBOXQL_ADMIN_PASSWORD: ci-smoke-password
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.binary }}
+
+  e2e:
+    name: End-to-end
+    needs: [test, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Stage embedded assets
+        run: |
+          rm -rf internal/embed/static
+          mkdir -p internal/embed/static
+          cp -r frontend/dist/* internal/embed/static/
+
+      # The suite builds and starts the real binary itself, so it needs no
+      # server fixture here.
+      # -race here earns its keep: the first run of this suite under it found a
+      # genuine data race in the harness itself.
+      - name: Run end-to-end suite
+        run: go test -race -count=1 -tags e2e ./e2e/... -v

@@ -111,7 +111,37 @@ Adding a command means: register it, put its name in `commandOrder` and
 `commandGroup` (a test fails otherwise), and add its subcommand verbs to
 `subcommands` so completion offers them.
 
-### 3.3. Local Development (Hot Reloading)
+### 3.3. Tests and CI
+
+Three layers, run by `.github/workflows/ci.yml` on every push:
+
+| Layer | Command | What it covers |
+|---|---|---|
+| Unit | `make test` | Go packages and the frontend suite. |
+| End-to-end | `make e2e` | The real binary: CLI contract, HTTP auth, outbox gate, backup round trip. |
+| Build | CI only | Native compile on Linux, macOS and Windows. |
+
+`make test-all` runs the first two together.
+
+End-to-end tests live in `e2e/` behind a `//go:build e2e` tag, so `go test
+./...` does not pay for them. They compile the binary once, run each case
+against its own temp data directory, and start servers on free loopback ports —
+so they are safe to run in parallel with a live install.
+
+**Why the build matrix has three runners.** `mattn/go-sqlite3` is cgo, and
+`iql backup` uses SQLite's online backup API, which exists only in the cgo
+build. `CGO_ENABLED=0` fails to compile rather than degrading, so `GOOS=windows
+go build` from Linux is not an option without a cross C toolchain. Building
+natively on each platform is simpler. The rest of the tree is portable: with
+that one call excluded, every package compiles for all three.
+
+Releases are tag-driven (`.github/workflows/release.yml`): push `v0.1.0` and it
+builds all three platforms, checks each binary reports the tagged version,
+and opens a draft GitHub release with checksums. macOS builds are unsigned for
+now; notarisation is the next step if InboxQL is distributed beyond your own
+machines.
+
+### 3.4. Local Development (Hot Reloading)
 
 For a faster development loop with hot-module replacement (HMR), you can run the components separately:
 
@@ -130,7 +160,7 @@ For a faster development loop with hot-module replacement (HMR), you can run the
 
 The frontend dev server will proxy API requests to the backend.
 
-### 3.4. Backend Development
+### 3.5. Backend Development
 
 The backend code is located in `internal/`.
 
@@ -138,7 +168,7 @@ The backend code is located in `internal/`.
 *   **Sync Engine**: Implemented in `internal/sync/`.
 *   **Storage**: Database logic is in `internal/store/`.
 
-### 3.5. Frontend Development
+### 3.6. Frontend Development
 
 The frontend code is located in the `frontend/src` directory.
 
@@ -155,7 +185,16 @@ For more details on manual verification, see [test.md](test.md).
 
 ## 5. CI/CD
 
-The project uses GitHub Actions for CI/CD. The workflow is defined in `.github/workflows/ci.yml`. The workflow is triggered on every push to the `main` branch and on every tagged release. It builds the application for all target architectures and runs the tests.
+Two GitHub Actions workflows. See §3.3 for what each layer covers and why the
+build matrix needs three runners.
+
+| Workflow | Trigger | Jobs |
+|---|---|---|
+| `ci.yml` | every push, every PR | `test` (vet, gofmt, `go test -race`), `frontend` (typecheck, vitest, build), `build` (Linux / macOS / Windows), `e2e` |
+| `release.yml` | tags matching `v*` | three-platform build, version check against the tag, draft release with checksums |
+
+`build` and `e2e` depend on `test` and `frontend`, so a failing unit test stops
+the run before anything is compiled three times.
 
 ## 6. Contributing
 

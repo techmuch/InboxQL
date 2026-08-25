@@ -630,10 +630,20 @@ func migrateDB(db *sql.DB) error {
 	return nil
 }
 
+// CloseDB closes the database and allows InitDB to open one again.
+//
+// Resetting the once matters beyond tidiness: without it, InitDB could only
+// ever run once per process, so any second caller silently received the
+// already-closed handle and every query failed with "database is closed".
+// That made the store untestable from more than one test in a package, and
+// forced test files to share a single database opened in TestMain. Production
+// opens once and closes at exit, so the reset changes nothing there.
 func CloseDB() {
 	if db != nil {
 		db.Close()
+		db = nil
 	}
+	dbOnce = sync.Once{}
 }
 
 // Agent functions

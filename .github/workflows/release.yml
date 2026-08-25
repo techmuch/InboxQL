@@ -1,0 +1,173 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (for a manual run)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.25.6"
+  NODE_VERSION: "22"
+
+jobs:
+  frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm --prefix frontend ci
+      - run: npm --prefix frontend run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  build:
+    name: ${{ matrix.artifact }}
+    needs: frontend
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: iql-linux-amd64
+            binary: iql
+            goarch: amd64
+          - os: macos-latest
+            artifact: iql-darwin-universal
+            binary: iql
+            goarch: universal
+          - os: windows-latest
+            artifact: iql-windows-amd64
+            binary: iql.exe
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Stage embedded assets
+        shell: bash
+        run: |
+          rm -rf internal/embed/static
+          mkdir -p internal/embed/static
+          cp -r frontend/dist/* internal/embed/static/
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "value=${ref#v}" >> "$GITHUB_OUTPUT"
+
+      # macOS gets both architectures and lipo joins them. Cross-compiling the
+      # two halves works because each is a native-toolchain target on the same
+      # host; going further afield would need a cross C toolchain, which is why
+      # Linux and Windows build on their own runners instead.
+      - name: Build (macOS universal)
+        if: matrix.goarch == 'universal'
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          LDFLAGS="-s -w -X github.com/user/inboxql/internal/cli.Version=${{ steps.version.outputs.value }}"
+          GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o iql-amd64 ./cmd/iql
+          GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o iql-arm64 ./cmd/iql
+          lipo -create -output iql iql-amd64 iql-arm64
+          lipo -info iql
+
+      - name: Build
+        if: matrix.goarch != 'universal'
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/user/inboxql/internal/cli.Version=${{ steps.version.outputs.value }}" \
+            -o "${{ matrix.binary }}" ./cmd/iql
+
+      - name: Verify the binary reports the tagged version
+        shell: bash
+        run: |
+          built=$(./${{ matrix.binary }} --json version | node -p "JSON.parse(require('fs').readFileSync(0)).version")
+          expected="${{ steps.version.outputs.value }}"
+          if [ "$built" != "$expected" ]; then
+            echo "binary reports $built but the tag says $expected"
+            exit 1
+          fi
+          echo "version $built"
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "${{ matrix.binary }}" readme.md AGENTS.md dist/
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "../${{ matrix.artifact }}.zip" ./*
+          else
+            tar czf "../${{ matrix.artifact }}.tar.gz" ./*
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd artifacts
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          draft: true
+          body: |
+            ## Install
+
+            Download the archive for your platform, unpack it, and put `iql` on your PATH.
+
+            ```
+            iql init --data ~/.inboxql
+            iql start --data ~/.inboxql
+            ```
+
+            macOS builds are unsigned; Gatekeeper will need
+            `xattr -d com.apple.quarantine iql` until notarisation is set up.
+
+            Verify a download against `SHA256SUMS` before running it.

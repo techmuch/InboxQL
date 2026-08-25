@@ -30,6 +30,23 @@ InboxQL is in active early development. The table below is the honest state of p
 | CLI suite (`doctor`, `maintenance`, `backup`) | Not implemented |
 | Encrypted cloud backup | Not implemented |
 
+## Running it
+
+```bash
+iql init  --data ~/.inboxql
+iql start --data ~/.inboxql
+```
+
+Sign in with the administrator account `init` created. On a single-user desktop
+machine you can skip the password with `iql start --trust-local`.
+
+**Do not combine `--trust-local` with a reverse proxy.** A proxy on the same
+host relays every request over loopback, so with the flag on, everyone who can
+reach the proxy is signed in as the administrator. InboxQL cannot distinguish
+the two deployments — it is bound to loopback in both — which is why this is a
+flag you set rather than something detected. It is off by default, and `iql
+start` warns if you combine it with a non-loopback listen address.
+
 ## Security Notes
 
 *   **Credentials at rest**: IMAP/SMTP passwords are sealed with AES-256-GCM using a machine-local key stored at `data/vault.key` (mode `0600`). **Back this file up alongside your database** — without it, stored passwords cannot be recovered. Passwords are never returned to the browser by the API.

@@ -62,10 +62,59 @@ func Authenticate(username, password string) (*store.Session, error) {
 	return session, nil
 }
 
-// Middleware protects routes and injects the authenticated user into the context.
-// Local connections (localhost / loopback) are authenticated automatically as the
-// default administrator without requiring a password. Connections arriving from external
-// network interfaces require a valid session cookie.
+// trustLocal controls whether a loopback connection may skip the password.
+//
+// Off by default, and that default is the whole point. It is set once at
+// startup by SetTrustLocal and only read afterwards, so no lock is needed.
+var trustLocal bool
+
+// SetTrustLocal enables or disables passwordless access for loopback clients.
+//
+// Call this before serving. `iql serve --trust-local` is the only thing that
+// turns it on.
+func SetTrustLocal(enabled bool) { trustLocal = enabled }
+
+// TrustLocal reports whether passwordless loopback access is enabled.
+func TrustLocal() bool { return trustLocal }
+
+// forwardedHeaders are set by every reverse proxy worth the name. Their
+// presence means this connection was relayed, so the peer address describes
+// the proxy rather than the client.
+var forwardedHeaders = []string{
+	"X-Forwarded-For",
+	"X-Real-Ip",
+	"Forwarded",
+	"X-Forwarded-Host",
+}
+
+// viaProxy reports whether a request shows signs of having been relayed.
+//
+// This is defence in depth, not the primary control. A proxy that strips these
+// headers would defeat it — which is exactly why passwordless access is
+// opt-in rather than something we try to detect our way out of.
+func viaProxy(r *http.Request) bool {
+	for _, h := range forwardedHeaders {
+		if r.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// Middleware protects routes and injects the authenticated user into the
+// context. A valid session cookie always authenticates.
+//
+// A loopback connection may additionally skip the password, but only when
+// `--trust-local` was passed. It is not enabled by default, and it cannot be,
+// because a loopback peer does not mean a local user.
+//
+// The case that forces this: a reverse proxy on the same host — the deployment
+// `iql serve` recommends in its own help text, since InboxQL terminates no TLS
+// — relays every request over loopback. The peer address is then 127.0.0.1 for
+// the entire internet, and auto-authenticating on it published every protected
+// endpoint, mail included. Nothing about the connection distinguishes that
+// from a person at the machine: the app binds loopback in both cases. Only the
+// operator knows which deployment this is, so only the operator can say.
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var user *store.User
@@ -82,8 +131,7 @@ func Middleware(next http.Handler) http.Handler {
 			}
 		}
 
-		// Localhost / loopback requests bypass the password requirement
-		if user == nil && IsLoopback(r.RemoteAddr) {
+		if user == nil && trustLocal && IsLoopback(r.RemoteAddr) && !viaProxy(r) {
 			if defaultUser, err := store.GetDefaultUser(); err == nil && defaultUser != nil {
 				user = defaultUser
 			}

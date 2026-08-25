@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os/exec"
 	"runtime"
@@ -11,13 +12,14 @@ import (
 	"time"
 
 	"github.com/user/inboxql/internal/api"
+	"github.com/user/inboxql/internal/auth"
 	"github.com/user/inboxql/internal/store"
 )
 
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.15"
+var Version = "0.0.16"
 
 func init() {
 	register(&Command{
@@ -42,9 +44,16 @@ Serves the dashboard and API. The data directory must already exist; run
 Flags:
   --addr <host:port>   listen address (default ":8080", or $INBOXQL_ADDR)
   --open               automatically open the dashboard in your default browser
+  --trust-local        skip the password for connections from this machine
 
 Binding to :8080 exposes InboxQL on every interface. It has no TLS of its own, so
-put it behind a reverse proxy before exposing it beyond localhost.`,
+put it behind a reverse proxy before exposing it beyond localhost.
+
+--trust-local is for a single-user desktop install and must not be combined with
+a reverse proxy. A proxy relays every request over loopback, so with this on,
+everyone reaching the proxy is signed in as the administrator. InboxQL cannot
+tell the two deployments apart — it is bound to loopback in both — which is why
+this is a flag you set rather than something detected.`,
 		Run: runStart,
 	})
 }
@@ -95,14 +104,32 @@ func openBrowser(url string) error {
 	return cmd.Start()
 }
 
+// boundToLoopback reports whether a listen address accepts only local
+// connections. An address with no host — ":8080" — listens on every
+// interface, which is the case worth warning about.
+func boundToLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return false
+	}
+	return auth.IsLoopback(host)
+}
+
 func runStart(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	addr := fs.String("addr", envOr("INBOXQL_ADDR", ":8080"), "listen address")
 	openFlag := fs.Bool("open", false, "open browser on start")
+	trust := fs.Bool("trust-local", false, "skip the password for connections from this machine")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
+
+	auth.SetTrustLocal(*trust)
 
 	if err := ctx.OpenStore(); err != nil {
 		return err
@@ -130,7 +157,23 @@ func runStart(ctx *Context, args []string) error {
 	p.Printf("  %s\n", p.Dim("──────────────────────────────────────────────────"))
 	p.Printf("  %-12s %s\n", p.Dim("Web UI:"), p.Bold(displayURL))
 	p.Printf("  %-12s %s\n", p.Dim("Data dir:"), ctx.DataDir)
-	p.Printf("  %-12s %s\n\n", p.Dim("Status:"), p.Green("Ready & listening"))
+	p.Printf("  %-12s %s\n", p.Dim("Status:"), p.Green("Ready & listening"))
+
+	// State the auth posture on every start. It is the one setting whose
+	// wrong value is invisible until someone else is reading the mail.
+	if *trust {
+		p.Printf("  %-12s %s\n", p.Dim("Auth:"), p.Yellow("passwordless for this machine (--trust-local)"))
+		if !boundToLoopback(*addr) {
+			p.Printf("\n  %s %s\n", p.Yellow("warning:"),
+				"--trust-local with a non-loopback listen address.")
+			p.Printf("  %s\n", p.Dim("Anyone who can reach "+displayURL+" over loopback — a reverse"))
+			p.Printf("  %s\n", p.Dim("proxy on this host, or an SSH tunnel — is signed in as the"))
+			p.Printf("  %s\n", p.Dim("administrator. Drop --trust-local, or bind to 127.0.0.1."))
+		}
+	} else {
+		p.Printf("  %-12s %s\n", p.Dim("Auth:"), "password required")
+	}
+	p.Printf("\n")
 
 	if *openFlag {
 		go func() {

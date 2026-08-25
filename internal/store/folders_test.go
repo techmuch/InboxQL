@@ -1,7 +1,6 @@
 package store
 
 import (
-	"os"
 	"sort"
 	"testing"
 	"time"
@@ -14,31 +13,15 @@ import (
 // the compiler checks. It has already broken once silently (an edit that did
 // not match, leaving every folder returning every message), so this exercises
 // a real database rather than asserting on generated SQL strings.
-// InitDB is guarded by a sync.Once and CloseDB does not reset it, so the
-// database is opened once for the package and each test clears the tables it
-// uses rather than opening its own.
-func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "iql-store-test")
-	if err != nil {
-		panic(err)
-	}
-	defer os.RemoveAll(dir)
-	if _, err := InitDB(dir); err != nil {
-		panic(err)
-	}
-	code := m.Run()
-	CloseDB()
-	os.Exit(code)
-}
-
 func openFolderFixture(t *testing.T) {
 	t.Helper()
 
-	for _, table := range []string{"messages", "drafts", "accounts"} {
-		if _, err := db.Exec("DELETE FROM " + table); err != nil {
-			t.Fatalf("clearing %s: %v", table, err)
-		}
+	// CloseDB resets the once, so each test gets a database of its own rather
+	// than sharing one opened in TestMain and clearing tables between runs.
+	if _, err := InitDB(t.TempDir()); err != nil {
+		t.Fatalf("InitDB: %v", err)
 	}
+	t.Cleanup(CloseDB)
 
 	if err := SaveAccount(&account.Account{
 		ID: "acct", Name: "Me", Email: "me@example.com", User: "me@example.com",

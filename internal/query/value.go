@@ -82,6 +82,49 @@ func ParseDateValue(v string) (start, end int64, err error) {
 	return 0, 0, fmt.Errorf("%q is not a date (try 2026-08-15, 2026-08, today, or 7d)", v)
 }
 
+// ParseFutureDate resolves a date expression that looks forward.
+//
+// The same grammar, the opposite direction for relative forms. `after:7d` means
+// the last seven days because mail is in the past; `due:7d` means the next
+// seven days because a deadline is not. Reusing ParseDateValue for both was
+// wrong in a way that looked right — a ticket created with `--due 7d` was
+// stamped a week overdue.
+//
+// Absolute dates are unambiguous and parse identically either way.
+func ParseFutureDate(v string) (start, end int64, err error) {
+	trimmed := strings.TrimSpace(strings.ToLower(v))
+	now := Now()
+
+	if len(trimmed) >= 2 {
+		unit := trimmed[len(trimmed)-1]
+		if n, convErr := strconv.Atoi(trimmed[:len(trimmed)-1]); convErr == nil && n >= 0 {
+			var t time.Time
+			switch unit {
+			case 'd':
+				t = truncateDay(now).AddDate(0, 0, n)
+			case 'w':
+				t = truncateDay(now).AddDate(0, 0, 7*n)
+			case 'm':
+				t = truncateDay(now).AddDate(0, n, 0)
+			case 'y':
+				t = truncateDay(now).AddDate(n, 0, 0)
+			case 'h':
+				t = now.Add(time.Duration(n) * time.Hour)
+			}
+			if !t.IsZero() {
+				return t.UnixMilli(), t.AddDate(0, 0, 1).UnixMilli(), nil
+			}
+		}
+	}
+
+	if trimmed == "tomorrow" {
+		d := truncateDay(now).AddDate(0, 0, 1)
+		return d.UnixMilli(), d.AddDate(0, 0, 1).UnixMilli(), nil
+	}
+
+	return ParseDateValue(v)
+}
+
 func truncateDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }

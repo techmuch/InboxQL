@@ -5,41 +5,75 @@ import (
 	"testing"
 )
 
-func TestApplyFilters(t *testing.T) {
-	baseQuery := "SELECT * FROM messages"
-	filter := AnalyticsFilter{
-		Date:  "2026-02-25",
-		From:  "alice@tech.com",
-		Topic: "status",
+// The dashboard's widgets are queries now.
+//
+// These used to be GetTemporalVolume, GetTopSenders and GetTopicStats, three
+// functions with three copies of the filter logic that disagreed about what
+// `from` meant. What is asserted here is not that the SQL looks a particular
+// way — the old tests did that, and passed while the three implementations
+// diverged — but that the results are right.
+func TestDashboardWidgetsAreQueries(t *testing.T) {
+	openQueryFixture(t)
+
+	volume, err := RunQuery("| count by day", 0, 0)
+	if err != nil {
+		t.Fatalf("volume: %v", err)
+	}
+	if len(volume.Groups) != 5 {
+		t.Errorf("volume returned %d days, want 5", len(volume.Groups))
+	}
+	for _, g := range volume.Groups {
+		if g.Value != 1 {
+			t.Errorf("day %s counted %v, want 1", g.Label, g.Value)
+		}
 	}
 
-	var args []interface{}
-	finalQuery, finalArgs := applyFilters(baseQuery, filter, args)
-
-	expectedQuery := "SELECT * FROM messages WHERE strftime('%Y-%m-%d', date / 1000, 'unixepoch') = ? AND from_addr = ? AND subject LIKE ?"
-	if finalQuery != expectedQuery {
-		t.Errorf("Expected %q, got %q", expectedQuery, finalQuery)
+	// Top senders excludes the account's own addresses, which is what me()
+	// means. The fixture account is me@example.com, which never sends.
+	senders, err := RunQuery("-from:me() | top from 10", 0, 0)
+	if err != nil {
+		t.Fatalf("senders: %v", err)
+	}
+	if len(senders.Groups) != 5 {
+		t.Errorf("senders returned %d, want 5", len(senders.Groups))
 	}
 
-	if len(finalArgs) != 3 {
-		t.Errorf("Expected 3 arguments, got %d", len(finalArgs))
+	topics, err := RunQuery("| top topic 50", 0, 0)
+	if err != nil {
+		t.Fatalf("topics: %v", err)
+	}
+	labels := map[string]bool{}
+	for _, g := range topics.Groups {
+		labels[g.Label] = true
+	}
+	// The first word of the subject line, which is what this widget has always
+	// shown. "Re: Quarterly invoice attached" normalises to "re:".
+	for _, want := range []string{"quarterly", "lunch", "your", "weekly"} {
+		if !labels[want] {
+			t.Errorf("topics did not include %q: %v", want, labels)
+		}
 	}
 }
 
-func TestApplyFiltersEmpty(t *testing.T) {
-	baseQuery := "SELECT * FROM messages WHERE active = 1"
-	filter := AnalyticsFilter{}
+// A cross-filter and a folder have to compose, which is the thing three
+// separate filter implementations could not reliably do.
+func TestFilterAndAggregateCompose(t *testing.T) {
+	openQueryFixture(t)
 
-	var args []interface{}
-	finalQuery, finalArgs := applyFilters(baseQuery, filter, args)
-
-	expectedQuery := "SELECT * FROM messages WHERE active = 1"
-	if finalQuery != expectedQuery {
-		t.Errorf("Expected %q, got %q", expectedQuery, finalQuery)
+	res, err := RunQuery("from:*@acme.com | count by day", 0, 0)
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	if len(res.Groups) != 3 {
+		t.Errorf("acme mail spans %d days, want 3", len(res.Groups))
 	}
 
-	if len(finalArgs) != 0 {
-		t.Errorf("Expected 0 arguments, got %d", len(finalArgs))
+	res, err = RunQuery("on:2026-03-01 | count", 0, 0)
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	if res.Total != 1 {
+		t.Errorf("one day holds %d messages, want 1", res.Total)
 	}
 }
 

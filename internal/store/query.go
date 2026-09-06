@@ -31,8 +31,13 @@ type QueryResult struct {
 	Kind     string             `json:"kind"`
 	Count    int                `json:"count"`
 	Messages []*message.Message `json:"messages,omitempty"`
+	Tickets  []*Ticket          `json:"tickets,omitempty"`
 	Groups   []QueryGroup       `json:"groups,omitempty"`
 	Total    int64              `json:"total,omitempty"`
+	// GroupField and Bucket describe an aggregate result, so a chart can turn
+	// a clicked mark back into a query term.
+	GroupField string `json:"groupField,omitempty"`
+	Bucket     string `json:"bucket,omitempty"`
 	// SQL is the compiled statement, returned so `--explain` can show it and
 	// so a user learning the language can see what it became.
 	SQL  string `json:"sql,omitempty"`
@@ -57,6 +62,8 @@ func queryOptions(limit, offset int) query.Options {
 			return folderClause(folder), true
 		},
 		ThreadIDs:      ThreadMessageIDs,
+		SavedQuery:     savedQueryText,
+		SelfAddresses:  selfAddresses,
 		TimeField:      annotatorTimeField,
 		KnownAnnotator: annotatorExists,
 		FullText:       ftsEnabled.Load(),
@@ -120,9 +127,18 @@ func RunQuery(src string, limit, offset int) (*QueryResult, error) {
 		return nil, err
 	}
 
-	res := &QueryResult{Query: src, SQL: plan.SQL, Args: plan.Args}
+	res := &QueryResult{Query: src, SQL: plan.SQL, Args: plan.Args,
+		GroupField: plan.GroupField, Bucket: plan.Bucket}
 
 	switch plan.Kind {
+	case query.PlanTickets:
+		tickets, err := scanTickets(plan)
+		if err != nil {
+			return nil, err
+		}
+		res.Kind, res.Tickets, res.Count = "tickets", tickets, len(tickets)
+		return res, nil
+
 	case query.PlanScalar:
 		var n int64
 		if err := db.QueryRow(plan.SQL, plan.Args...).Scan(&n); err != nil {
@@ -178,6 +194,34 @@ func aliasedMessageColumns() string {
 		cols[i] = "m." + strings.TrimSpace(c)
 	}
 	return strings.Join(cols, ", ")
+}
+
+func scanTickets(plan *query.Plan) ([]*Ticket, error) {
+	rows, err := db.Query(plan.SQL, plan.Args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*Ticket{}
+	for rows.Next() {
+		t, err := scanTicket(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Evidence is loaded per ticket rather than joined in: a ticket has few
+	// sources, and joining would multiply the ticket rows by them.
+	for _, t := range out {
+		if t.Sources, err = ticketSources(t.ID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func scanGroups(plan *query.Plan) ([]QueryGroup, error) {
@@ -253,6 +297,8 @@ func ExplainQuery(src string) (*QueryResult, error) {
 		kind = "groups"
 	case query.PlanScalar:
 		kind = "count"
+	case query.PlanTickets:
+		kind = "tickets"
 	}
 	return &QueryResult{Query: src, Kind: kind, SQL: plan.SQL, Args: plan.Args}, nil
 }

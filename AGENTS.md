@@ -96,7 +96,19 @@ A query is a **filter**, optionally followed by **pipeline stages** after `|`.
 | `label: unlabeled: conf>` | annotator results — see below |
 | `extract:name.field>10` | extracted structured data |
 | `thread:<message-id>` | every message in that conversation |
+| `saved:<name>` | everything a saved query matches |
 | a bare word | full-text search |
+
+**Shorthands** worth knowing, because they save several terms each:
+
+```
+from:(alice OR bob)   a group scoped to one field
+from:me()             the configured accounts' own addresses
+has:cc                somebody was copied; -has:cc means nobody was
+```
+
+`me()` is the one to reach for rather than asking the user their address — it
+resolves from the accounts they already configured.
 
 **Match modes.** These are different questions and the language keeps them
 apart:
@@ -131,6 +143,7 @@ the response's `kind` field says which.
 | top <field> [n]                   the n largest groups
 | sort <field> [asc|desc]           reorder messages
 | limit <n>                         cap the rows
+| sample <n>                        a random draw, not the newest n
 | thread                            expand to whole conversations
 | participants                      who appears, and how often
 | extract <annotator>               read structured output
@@ -146,7 +159,35 @@ Responses are `{query, kind, count, ...}` where `kind` is `"messages"`,
 
 `--explain` returns the compiled SQL instead of running it. `--count` returns
 just the number. A malformed query exits **2** with the position of the
-problem, so fix the expression rather than retrying it.
+problem, so fix the expression rather than retrying it. An unknown field
+suggests the nearest real one, so read the error before guessing again.
+
+`--complete <pos>` reports what may be typed at a cursor position, which is
+also how the web editor offers completions. It answers on incomplete text and
+never fails, so it is safe to call while assembling a query:
+
+```
+iql --json query "from:al" --complete 7
+→ {"context":"value","field":"from","prefix":"al",
+   "candidates":[{"value":"alice@acme.com","detail":"142 messages"}, …]}
+```
+
+### `saved` — name and reuse a query
+
+```
+iql --json saved list
+iql --json saved show <name>
+iql saved save "Acme invoices" --query "from:*@acme.com subject:invoice"
+iql saved delete <name>
+```
+
+A saved query is a **building block**, not a bookmark: `saved:<name>` is a term,
+so `saved:acme-invoices after:7d` composes. The name is a slug of the title.
+
+Two rules: the query is compiled before it is stored, so an invalid one is
+refused where it is written; and saved queries **do not nest** — one cannot
+reference another. Deleting a saved query makes references to it fail rather
+than silently match nothing.
 
 ### `sql` — the escape hatch
 
@@ -398,6 +439,55 @@ makes them.
 
 ---
 
+## `ticket` — work derived from mail
+
+A ticket is an **entity with state that changes**; a message is an **immutable
+event**. That distinction is the design, and it matters to you:
+
+- Tickets are *seeded* by extractors and *owned* by the user. A re-run attaches
+  more evidence; it never rewrites a status, title or due date someone set.
+- Editing an extractor's instructions bumps its version and invalidates every
+  annotation — and changes nothing on the board.
+
+```
+iql --json ticket list [--query "status:todo due:7d"]
+iql --json ticket show <id>
+iql --json ticket board [--query <filter>]
+iql --json ticket propose <extractor> [--auto-accept 0.9] [--dry-run]
+iql ticket move <id> <status>
+iql ticket accept <id> | reject <id>
+```
+
+**Ticket fields are query terms**, so the same language filters both:
+
+| Term | Matches |
+|---|---|
+| `status:` | `proposed todo doing done rejected`; `status:*` means every ticket |
+| `priority:` | a ticket's priority |
+| `due:` | on or before this date — **forward-looking**, so `due:7d` is the next week |
+| `ticket:` | words in the title |
+| `raised:` | `human` or `annotator` |
+
+A query naming any of these is answered from the tickets table. A **message**
+field inside such a query asks about the ticket's *evidence*:
+`status:todo from:*@acme.com` is "tickets whose mail came from Acme", not
+"tickets that are from Acme". Negation asks whether *any* source matches.
+
+**Extraction proposes; it does not create.** `ticket propose` puts results below
+`--auto-accept` into `status:proposed` for a person to accept or reject. Do not
+accept on the user's behalf — surface the queue and let them rule. A rejection
+is kept rather than deleted, because it is the evidence that the extractor was
+wrong.
+
+Identity is **one ticket per conversation per annotator**, keyed on the thread.
+Re-running is therefore idempotent. Threads that should be one ticket, or
+tickets that should be several, are `ticket merge` — an explicit human action,
+never inferred.
+
+Every ticket carries the messages it came from; `ticket show` prints them with
+the `iql read` command for each. If you cannot trace a ticket to its mail,
+something is wrong.
+
 ## Administrative commands
 
 You will not usually need these, but they are available and all support
@@ -428,6 +518,16 @@ never from argv, because argv is visible in shell history and to `ps`. Set
 **Passwords are never returned.** `account list` omits the password field
 entirely. When updating an account, omitting the password preserves the stored
 one; sending an empty string does not clear it.
+
+**Except when the server changes.** An update that alters the IMAP host, port
+or username must send the password again — a credential for one server is not a
+credential for another, and InboxQL will not present it to a host it was not
+given for. Over HTTP that is a **400**; the fix is to supply the password, not
+to retry.
+
+**Creating an account will not overwrite one.** `POST /api/accounts` without an
+`id` derives one from the name and answers **409** if that collides. Pass the
+`id` explicitly to update an existing account.
 
 **The data directory is explicit.** Pass `--data <dir>` or set `INBOXQL_DATA`. No
 command except `init` will create one; the rest exit 5 with instructions. This
@@ -477,8 +577,11 @@ Do not promise the user any of this; none of it exists:
 - Reading mail as HTML. `body` is the plain-text part; `htmlBody` exists in the
   database but `search` and `read` return plain text. Extractors read
   `htmlBody` directly, because the structure behind a chart is the data.
-- Writing annotators over HTTP. The API serves `/api/query` and `/api/annotators`
-  read-only; defining and running them is CLI-only.
+- Running an annotator over HTTP. `/api/annotators` lists them and their
+  coverage; defining and running one is CLI-only, because a run can send the
+  mailbox to a provider and that decision belongs at a terminal.
+- Ingesting anything but mail. Any source renderable as RFC822 can enter
+  through `import`, but there is no calendar, webhook or chat connector.
 
 ## Authentication
 
@@ -490,7 +593,20 @@ A password is required whenever the audience widens:
 - the listen address is not loopback (`--addr :8080`, a LAN address);
 - the request arrived through a proxy — any of `X-Forwarded-For`, `X-Real-Ip`,
   `Forwarded`, `X-Forwarded-Host`. This one cannot be turned off;
+- the request came from a browser page on another origin. Neither can this one.
 - `--require-password` or `INBOXQL_REQUIRE_PASSWORD=1` is set.
+
+**Cross-origin requests get nothing.** A request carrying `Sec-Fetch-Site:
+cross-site` or `same-site`, or an `Origin` that does not match the `Host` it
+asked for, never gets passwordless access, and is refused outright (**403**) if
+it would change anything. This does not affect you: `curl`, the CLI and any
+local script send neither header, and the check is there because a browser
+cannot suppress them. If you are proxying requests from a browser and see a
+403, strip the `Origin` header rather than asking the user to disable
+something — there is no flag for it.
+
+**JSON endpoints require `Content-Type: application/json`** and answer **415**
+without it.
 
 Then authenticate by posting credentials to `/api/login` and keeping the
 `session_id` cookie.

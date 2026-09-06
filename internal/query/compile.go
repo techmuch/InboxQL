@@ -22,6 +22,11 @@ type Options struct {
 	// would have to sit at statement level, which stops `thread:` from
 	// composing inside OR and NOT like every other term.
 	ThreadIDs func(messageID string) ([]string, error)
+	// SavedQuery resolves a saved query's name to its text.
+	SavedQuery func(name string) (string, bool, error)
+	// SelfAddresses returns the addresses belonging to configured accounts,
+	// which is what me() means.
+	SelfAddresses func() ([]string, error)
 	// TimeField gives the JSON path holding an extraction's own timestamp.
 	//
 	// A weekly digest sent on Monday reports the previous week: charting it by
@@ -79,7 +84,12 @@ type Compiled struct {
 // The returned SQL is always parenthesised and never empty — "everything"
 // compiles to "1=1" so callers can concatenate without special cases.
 func CompileFilter(n Node, opt Options) (string, []any, error) {
-	c := &compiler{opt: opt}
+	return CompileFilterFor(n, opt, EntityMessage)
+}
+
+// CompileFilterFor compiles a filter against a named row source.
+func CompileFilterFor(n Node, opt Options, entity string) (string, []any, error) {
+	c := &compiler{opt: opt, entity: entity}
 	sql, err := c.node(n, false)
 	if err != nil {
 		return "", nil, err
@@ -90,6 +100,12 @@ func CompileFilter(n Node, opt Options) (string, []any, error) {
 type compiler struct {
 	opt  Options
 	args []any
+	// entity is the table this query is about. When it is a ticket query,
+	// message predicates are wrapped in a test over the ticket's evidence.
+	entity string
+	// resolving names the saved query currently being inlined, and is what
+	// stops one from referencing another.
+	resolving string
 }
 
 func (c *compiler) arg(v any) string {
@@ -155,6 +171,70 @@ func wrap(sql string, negated bool) string {
 }
 
 func (c *compiler) term(t *Term, negated bool) (string, error) {
+	// A bare word has no field to look up; everything else is checked against
+	// its declaration before any SQL is generated, so an unusable term is an
+	// error with a suggestion rather than a query that runs and returns the
+	// wrong rows.
+	if t.Field != "" {
+		f, ok := LookupField(t.Field)
+		if !ok {
+			return "", at(t, unknownFieldError(t.Field))
+		}
+		if err := f.validate(t); err != nil {
+			return "", at(t, err)
+		}
+	}
+
+	// In a ticket query, a predicate about mail is a question about the
+	// ticket's evidence: "tickets whose mail came from Stripe". Wrapping here
+	// rather than in every message case means each field is written once and
+	// works in both worlds.
+	//
+	// The predicate is always compiled unnegated and the negation applied
+	// outside it, because "no source message is from Stripe" is the question —
+	// negating inside would ask whether *some* source is from someone else,
+	// which is the same anti-join trap that `-to:` has over recipients.
+	// Compiling once also matters mechanically: each dispatch appends its
+	// arguments, so building both forms would bind twice as many values as the
+	// statement has placeholders.
+	if c.entity == EntityTicket && isMessageField(t.Field) {
+		inner, err := c.dispatch(t, false)
+		if err != nil {
+			return "", at(t, err)
+		}
+		exists := "EXISTS (SELECT 1 FROM ticket_sources ts JOIN messages m ON m.id = ts.message_id " +
+			"WHERE ts.ticket_id = t.id AND " + inner + ")"
+		return wrap(exists, negated), nil
+	}
+
+	sql, err := c.dispatch(t, negated)
+	if err != nil {
+		return "", at(t, err)
+	}
+	return sql, nil
+}
+
+// isMessageField reports whether a field describes mail rather than a ticket.
+func isMessageField(field string) bool {
+	if field == "" {
+		return true
+	}
+	f, ok := LookupField(field)
+	return ok && f.Entity == EntityMessage
+}
+
+// at attaches a term's position to an error that has none.
+func at(t *Term, err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := err.(*Error); ok {
+		return err
+	}
+	return &Error{Pos: t.Pos, Msg: err.Error()}
+}
+
+func (c *compiler) dispatch(t *Term, negated bool) (string, error) {
 	switch t.Field {
 	case "":
 		return c.freeText(t, negated)
@@ -215,9 +295,75 @@ func (c *compiler) term(t *Term, negated bool) (string, error) {
 	case "thread":
 		return c.threadTerm(t, negated)
 
+	case "saved":
+		return c.savedTerm(t, negated)
+
+	case "status", "raised":
+		col := "t." + ticketColumn(t.Field)
+		if t.Op == OpGlob {
+			return wrap(c.stringPredicate(col, t), negated), nil
+		}
+		return wrap(col+" = "+c.arg(strings.ToLower(t.Value)), negated), nil
+
+	case "priority":
+		return wrap(c.stringPredicate("t.priority", t), negated), nil
+
+	case "ticket":
+		return wrap(c.stringPredicate("t.title", t), negated), nil
+
+	case "due":
+		// Forward-looking: "due:7d" is the next seven days, not the last.
+		start, _, err := ParseFutureDate(t.Value)
+		if err != nil {
+			return "", fmt.Errorf("due: %w", err)
+		}
+		// Inclusive of the named day, and never matches a ticket with no due
+		// date — "due this week" is a question about tickets that have one.
+		return wrap("(t.due_at IS NOT NULL AND t.due_at < "+c.arg(start+dayMillis)+")", negated), nil
+
 	default:
-		return "", fmt.Errorf("unknown field %q (try: %s)", t.Field, strings.Join(KnownFields, ", "))
+		return "", unknownFieldError(t.Field)
 	}
+}
+
+// savedTerm inlines a saved query.
+//
+// Resolved at compile time rather than stored as a reference, so a saved query
+// is a building block — `saved:invoices after:7d` composes with everything
+// else, and a board column is just a query naming one.
+//
+// One level only. Allowing a saved query to reference another needs cycle
+// detection and turns "what does this query mean" into a resolution step
+// rather than something you can read.
+func (c *compiler) savedTerm(t *Term, negated bool) (string, error) {
+	if c.opt.SavedQuery == nil {
+		return "", fmt.Errorf("saved: is not available here")
+	}
+	if c.resolving != "" {
+		return "", fmt.Errorf("saved:%s is referenced from saved query %q, and saved queries cannot nest",
+			t.Value, c.resolving)
+	}
+
+	text, ok, err := c.opt.SavedQuery(t.Value)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("saved: no saved query named %q (list them with `iql query saved`)", t.Value)
+	}
+
+	q, err := Parse(text)
+	if err != nil {
+		return "", fmt.Errorf("saved query %q does not parse: %w", t.Value, err)
+	}
+	if len(q.Stages) > 0 {
+		return "", fmt.Errorf("saved query %q ends in a pipeline stage, so it selects groups rather than messages and cannot be used as a filter", t.Value)
+	}
+
+	c.resolving = t.Value
+	sql, err := c.node(q.Filter, negated)
+	c.resolving = ""
+	return sql, err
 }
 
 // stringPredicate builds a comparison against a text column.
@@ -265,10 +411,38 @@ func (c *compiler) participant(t *Term, negated bool) (string, error) {
 	if role != "" {
 		conds = append(conds, "p.role = "+c.arg(role))
 	}
-	conds = append(conds, c.stringPredicate("p.address", t))
+
+	if isSelfFunc(t.Value) {
+		// me() is the addresses of the configured accounts. Deriving it means
+		// "mail I sent" stops requiring you to know and type your own address,
+		// which is the most common thing a person wants and the most annoying
+		// to spell.
+		if c.opt.SelfAddresses == nil {
+			return "", fmt.Errorf("%s: me() is not available here", t.Field)
+		}
+		addrs, err := c.opt.SelfAddresses()
+		if err != nil {
+			return "", err
+		}
+		if len(addrs) == 0 {
+			return "", fmt.Errorf("%s: me() has nothing to resolve to — no account has an address configured (`iql account add --email ...`)", t.Field)
+		}
+		placeholders := make([]string, len(addrs))
+		for i, a := range addrs {
+			placeholders[i] = c.arg(strings.ToLower(a))
+		}
+		conds = append(conds, "p.address IN ("+strings.Join(placeholders, ", ")+")")
+	} else {
+		conds = append(conds, c.stringPredicate("p.address", t))
+	}
 
 	sql := "EXISTS (SELECT 1 FROM message_participants p WHERE " + strings.Join(conds, " AND ") + ")"
 	return wrap(sql, negated), nil
+}
+
+// isSelfFunc reports whether a value is the me() function.
+func isSelfFunc(v string) bool {
+	return strings.EqualFold(strings.TrimSpace(v), "me()")
 }
 
 // freeTextColumns are what a bare word searches.
@@ -378,8 +552,13 @@ func (c *compiler) hasTerm(t *Term, negated bool) (string, error) {
 		sql = "EXISTS (SELECT 1 FROM annotations a WHERE a.message_id = m.id AND a.status = 'ok')"
 	case "reply", "parent":
 		sql = "m.in_reply_to IS NOT NULL"
+	case "to", "cc", "bcc":
+		// Emptiness over a multi-valued field. `-has:cc` is "nobody was
+		// copied", which needs the same anti-join shape as -cc:someone.
+		sql = "EXISTS (SELECT 1 FROM message_participants p WHERE p.message_id = m.id AND p.role = " +
+			c.arg(strings.ToLower(t.Value)) + ")"
 	default:
-		return "", fmt.Errorf("has: %q is not a property (attachment, file, label, reply)", t.Value)
+		return "", fmt.Errorf("has: %q is not a property (attachment, file, label, reply, to, cc, bcc)", t.Value)
 	}
 	return wrap(sql, negated), nil
 }
@@ -607,6 +786,17 @@ func (c *compiler) threadTerm(t *Term, negated bool) (string, error) {
 		placeholders[i] = c.arg(id)
 	}
 	return wrap("m.id IN ("+strings.Join(placeholders, ", ")+")", negated), nil
+}
+
+// dayMillis is one day, for making a date bound inclusive of its own day.
+const dayMillis = int64(24 * 60 * 60 * 1000)
+
+// ticketColumn maps a ticket field name onto its column.
+func ticketColumn(field string) string {
+	if field == "raised" {
+		return "origin"
+	}
+	return field
 }
 
 func comparisonOperator(op Op, dflt string) (string, error) {

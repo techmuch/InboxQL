@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 17
+	SchemaVersion = 19
 )
 
 var (
@@ -68,18 +68,6 @@ type MailboxSyncState struct {
 type AnalyticsData struct {
 	Label string `json:"label"`
 	Value int    `json:"value"`
-}
-
-// AnalyticsFilter represents optional filters for analytics queries.
-type AnalyticsFilter struct {
-	Date  string `json:"date"`  // YYYY-MM-DD
-	From  string `json:"from"`  // email address
-	Topic string `json:"topic"` // keyword
-	// Folder additionally narrows the message list to one mailbox view. Only
-	// honoured by ListMessagesFiltered — the analytics aggregates deliberately
-	// cover every folder, since a chart of "mail per day" that silently
-	// excluded Sent would be misleading.
-	Folder string `json:"folder,omitempty"`
 }
 
 // MigrateLegacyDatabase automatically renames uea.db (and WAL/SHM) to inboxql.db if present.
@@ -776,6 +764,97 @@ func migrateDB(db *sql.DB) error {
 		currentVersion = 17
 	}
 
+	if currentVersion < 18 {
+		log.Println("Applying schema migration v18 (saved queries)...")
+		// A saved query is not a bookmark. `saved:invoices` is a term in the
+		// language, so a saved query is a building block other queries compose
+		// with — and a board column, later, is a query that names one.
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS saved_queries (
+				id          TEXT PRIMARY KEY,
+				name        TEXT NOT NULL UNIQUE,
+				title       TEXT NOT NULL,
+				query       TEXT NOT NULL,
+				description TEXT,
+				pinned      INTEGER NOT NULL DEFAULT 0,
+				created_at  INTEGER NOT NULL,
+				updated_at  INTEGER NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_saved_queries_pinned ON saved_queries(pinned DESC, name);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v18: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 18;"); err != nil {
+			return err
+		}
+		currentVersion = 18
+	}
+
+	if currentVersion < 19 {
+		log.Println("Applying schema migration v19 (tickets)...")
+		// A ticket is an entity; an annotation is evidence.
+		//
+		// This distinction is the whole design. An email is an immutable event
+		// and an annotation is derived from it — versioned, and invalidated
+		// when the annotator's instruction changes. That is right for a label
+		// and catastrophic for a ticket: editing an extraction prompt would
+		// wipe the board. So tickets live in their own table with their own
+		// lifecycle, seeded by annotations and never owned by them, and
+		// ticket_sources records which messages are the evidence.
+		//
+		// State a person set is theirs. A re-run may add evidence and propose
+		// new tickets; it never rewrites status, priority or due.
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS tickets (
+				id           TEXT PRIMARY KEY,
+				thread_key   TEXT,
+				title        TEXT NOT NULL,
+				body         TEXT,
+				status       TEXT NOT NULL DEFAULT 'proposed',
+				priority     TEXT,
+				due_at       INTEGER,
+				origin       TEXT NOT NULL DEFAULT 'human',
+				annotator_id TEXT,
+				confidence   REAL,
+				created_at   INTEGER NOT NULL,
+				updated_at   INTEGER NOT NULL,
+				closed_at    INTEGER,
+				FOREIGN KEY (annotator_id) REFERENCES annotators(id) ON DELETE SET NULL
+			);
+
+			CREATE TABLE IF NOT EXISTS ticket_sources (
+				ticket_id     TEXT NOT NULL,
+				message_id    TEXT NOT NULL,
+				annotation_id TEXT,
+				created_at    INTEGER NOT NULL,
+				PRIMARY KEY (ticket_id, message_id),
+				FOREIGN KEY (ticket_id)  REFERENCES tickets(id)  ON DELETE CASCADE,
+				FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_tickets_status     ON tickets(status);
+			CREATE INDEX IF NOT EXISTS idx_tickets_due        ON tickets(due_at);
+			CREATE INDEX IF NOT EXISTS idx_tickets_thread     ON tickets(thread_key);
+			CREATE INDEX IF NOT EXISTS idx_ticket_sources_msg ON ticket_sources(message_id);
+
+			-- One ticket per conversation per annotator. This is what makes a
+			-- re-run idempotent: the second pass finds the ticket it already
+			-- proposed rather than proposing it again.
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_thread_annotator
+				ON tickets(thread_key, annotator_id)
+				WHERE thread_key IS NOT NULL AND annotator_id IS NOT NULL;
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v19: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 19;"); err != nil {
+			return err
+		}
+		currentVersion = 19
+	}
+
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)
 	return nil
 }
@@ -1049,60 +1128,21 @@ func SaveMessage(m *message.Message) error {
 	return nil
 }
 
-func ListMessagesFiltered(accountID string, filter AnalyticsFilter, limit, offset int) ([]*message.Message, error) {
-	// messageColumns rather than a hand-written list: this one had already
-	// drifted, omitting `mailbox`, so the list view could not tell which
-	// folder a message came from even after the column existed.
-	query := "SELECT " + messageColumns + " FROM messages"
-	args := []interface{}{}
-
-	var clauses []string
+// ListMessages returns an account's messages, newest first.
+//
+// A thin wrapper over the query compiler rather than its own SQL: the
+// hand-written variant this replaced had already drifted, omitting the mailbox
+// column so the list could not tell which folder a message came from.
+func ListMessages(accountID string, limit, offset int) ([]*message.Message, error) {
+	q := ""
 	if accountID != "" {
-		clauses = append(clauses, "account_id = ?")
-		args = append(args, accountID)
+		q = "account:" + accountID
 	}
-	if filter.Date != "" {
-		clauses = append(clauses, "strftime('%Y-%m-%d', date / 1000, 'unixepoch') = ?")
-		args = append(args, filter.Date)
-	}
-	if filter.From != "" {
-		clauses = append(clauses, "from_addr = ?")
-		args = append(args, filter.From)
-	}
-	if filter.Topic != "" {
-		clauses = append(clauses, "subject LIKE ?")
-		args = append(args, "%"+filter.Topic+"%")
-	}
-	if c := folderClause(filter.Folder); c != "" {
-		clauses = append(clauses, c)
-	}
-
-	if len(clauses) > 0 {
-		query += " WHERE " + strings.Join(clauses, " AND ")
-	}
-
-	query += " ORDER BY date DESC LIMIT ? OFFSET ?"
-	args = append(args, limit, offset)
-
-	rows, err := db.Query(query, args...)
+	res, err := RunQuery(q, limit, offset)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var msgs []*message.Message
-	for rows.Next() {
-		m, err := scanMessage(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		msgs = append(msgs, m)
-	}
-	return msgs, rows.Err()
-}
-
-func ListMessages(accountID string, limit, offset int) ([]*message.Message, error) {
-	return ListMessagesFiltered(accountID, AnalyticsFilter{}, limit, offset)
+	return res.Messages, nil
 }
 
 func GetMessageByID(id string) (*message.Message, error) {
@@ -1152,142 +1192,6 @@ func GetMailboxSyncState(id string) (*MailboxSyncState, error) {
 		return nil, nil
 	}
 	return s, err
-}
-
-// Analytics Helpers
-func applyFilters(query string, filter AnalyticsFilter, args []interface{}) (string, []interface{}) {
-	var clauses []string
-	if filter.Date != "" {
-		clauses = append(clauses, "strftime('%Y-%m-%d', date / 1000, 'unixepoch') = ?")
-		args = append(args, filter.Date)
-	}
-	if filter.From != "" {
-		clauses = append(clauses, "from_addr = ?")
-		args = append(args, filter.From)
-	}
-	if filter.Topic != "" {
-		clauses = append(clauses, "subject LIKE ?")
-		args = append(args, "%"+filter.Topic+"%")
-	}
-
-	if len(clauses) > 0 {
-		if strings.Contains(strings.ToUpper(query), "WHERE") {
-			query += " AND " + strings.Join(clauses, " AND ")
-		} else {
-			query += " WHERE " + strings.Join(clauses, " AND ")
-		}
-	}
-	return query, args
-}
-
-// Analytics functions
-func GetTemporalVolume(filter AnalyticsFilter) ([]AnalyticsData, error) {
-	query := "SELECT strftime('%Y-%m-%d', date / 1000, 'unixepoch') as day, COUNT(*) FROM messages"
-	args := []interface{}{}
-	query, args = applyFilters(query, filter, args)
-
-	if !strings.Contains(strings.ToUpper(query), "WHERE") {
-		query += " WHERE date > 0"
-	} else {
-		query += " AND date > 0"
-	}
-	query += " GROUP BY day ORDER BY day ASC"
-
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var data []AnalyticsData
-	for rows.Next() {
-		var d AnalyticsData
-		if err := rows.Scan(&d.Label, &d.Value); err != nil {
-			return nil, err
-		}
-		data = append(data, d)
-	}
-	return data, nil
-}
-
-func GetTopSenders(filter AnalyticsFilter) ([]AnalyticsData, error) {
-	// "Excluding the user's own addresses" is derived from the configured
-	// accounts, not from a hardcoded literal: both the account's email and the
-	// IMAP login user are checked, since providers differ over which one shows
-	// up in the From header. Comparison is case-insensitive because header
-	// casing is not something a mail server guarantees.
-	query := `
-		SELECT from_addr, COUNT(*) as count
-		FROM messages
-		WHERE LOWER(from_addr) NOT IN (
-			SELECT LOWER(email) FROM accounts WHERE email IS NOT NULL AND email != ''
-			UNION
-			SELECT LOWER(user) FROM accounts WHERE user IS NOT NULL AND user != ''
-		)
-	`
-	args := []interface{}{}
-	query, args = applyFilters(query, filter, args)
-	query += " GROUP BY from_addr ORDER BY count DESC LIMIT 10"
-
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var data []AnalyticsData
-	for rows.Next() {
-		var d AnalyticsData
-		if err := rows.Scan(&d.Label, &d.Value); err != nil {
-			return nil, err
-		}
-		data = append(data, d)
-	}
-	return data, nil
-}
-
-func GetTopicStats(filter AnalyticsFilter) ([]AnalyticsData, error) {
-	ignoreStr, _ := GetSetting("ignore_words")
-	ignoreWords := strings.Split(strings.ToLower(ignoreStr), ",")
-
-	query := "SELECT LOWER(SUBSTR(subject, 1, INSTR(subject || ' ', ' ') - 1)) as topic, COUNT(*) as count FROM messages"
-	args := []interface{}{}
-	query, args = applyFilters(query, filter, args)
-
-	if !strings.Contains(strings.ToUpper(query), "WHERE") {
-		query += " WHERE topic != ''"
-	} else {
-		query += " AND topic != ''"
-	}
-	query += " GROUP BY topic ORDER BY count DESC LIMIT 50"
-
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var data []AnalyticsData
-	for rows.Next() {
-		var d AnalyticsData
-		if err := rows.Scan(&d.Label, &d.Value); err != nil {
-			return nil, err
-		}
-
-		isIgnored := false
-		for _, w := range ignoreWords {
-			cleanW := strings.TrimSpace(w)
-			if cleanW != "" && (d.Label == cleanW || len(d.Label) <= 2) {
-				isIgnored = true
-				break
-			}
-		}
-		if !isIgnored {
-			data = append(data, d)
-		}
-		if len(data) >= 10 {
-			break
-		}
-	}
-	return data, nil
 }
 
 func GetAccountStats(accountID string) (*account.AccountStats, error) {

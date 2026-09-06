@@ -102,6 +102,15 @@ func lex(src string) ([]token, error) {
 				i++ // closing quote
 				continue
 			}
+			// A zero-argument function is part of the word, not a group.
+			// `me()` has to survive lexing intact, while `from:(a OR b)` must
+			// still open a group — the difference is whether the paren is
+			// immediately closed.
+			if c == '(' && i+1 < len(src) && src[i+1] == ')' && sb.Len() > 0 {
+				sb.WriteString("()")
+				i += 2
+				continue
+			}
 			if isSpace(c) || c == '(' || c == ')' || c == '|' {
 				break
 			}
@@ -275,7 +284,7 @@ func (p *parser) parseTerm(t token) (Node, error) {
 	// A token quoted from the start is free text: quoting is how you search
 	// for something that contains a colon.
 	if t.quotedFrom == 0 {
-		return &Term{Field: "", Op: OpMatch, Value: text}, nil
+		return &Term{Field: "", Op: OpMatch, Value: text, Pos: t.pos}, nil
 	}
 
 	// Only the unquoted head may be read as syntax, so `subject:"a:b"` keeps
@@ -288,14 +297,14 @@ func (p *parser) parseTerm(t token) (Node, error) {
 	// `conf>0.9` and friends: an operator directly after the field name.
 	if !t.quoted {
 		if field, op, value, ok := splitComparison(text); ok {
-			return &Term{Field: canonicalField(field), Op: op, Value: value}, nil
+			return &Term{Field: canonicalField(field), Op: op, Value: value, Pos: t.pos}, nil
 		}
 	}
 
 	idx := strings.Index(head, ":")
 	if idx < 0 {
 		// Bare word: free text.
-		return &Term{Field: "", Op: matchOpFor(text, t.quoted), Value: text}, nil
+		return &Term{Field: "", Op: matchOpFor(text, t.quoted), Value: text, Pos: t.pos}, nil
 	}
 
 	field := canonicalField(text[:idx])
@@ -304,6 +313,25 @@ func (p *parser) parseTerm(t token) (Node, error) {
 	if field == "" {
 		return nil, &Error{Pos: t.pos, Msg: "missing field name before ':'"}
 	}
+
+	// `from:(alice OR bob)` — a group scoped to one field, which is Gmail's
+	// spelling and reads far better than repeating the field in every branch.
+	// The lexer already separates "from:" from the paren, so this is a rewrite
+	// of the parsed group rather than new syntax.
+	if value == "" && p.at(tokLParen) {
+		p.next()
+		inner, err := p.parseOr()
+		if err != nil {
+			return nil, err
+		}
+		if !p.at(tokRParen) {
+			return nil, &Error{Pos: p.peek().pos, Msg: "missing closing parenthesis"}
+		}
+		p.next()
+		applyField(inner, field)
+		return inner, nil
+	}
+
 	if value == "" {
 		return nil, &Error{Pos: t.pos, Msg: fmt.Sprintf("%s: needs a value", field)}
 	}
@@ -324,7 +352,7 @@ func (p *parser) parseTerm(t token) (Node, error) {
 	op := OpMatch
 	if t.quoted {
 		// The value arrived quoted: it means itself, operators included.
-		return &Term{Field: field, Op: OpMatch, Value: value, Qualifier: qualifier}, nil
+		return &Term{Field: field, Op: OpMatch, Value: value, Qualifier: qualifier, Pos: t.pos}, nil
 	}
 	switch {
 	case strings.HasPrefix(value, ">="):
@@ -345,7 +373,31 @@ func (p *parser) parseTerm(t token) (Node, error) {
 		return nil, &Error{Pos: t.pos, Msg: fmt.Sprintf("%s: needs a value after %s", field, op)}
 	}
 
-	return &Term{Field: field, Op: op, Value: value, Qualifier: qualifier}, nil
+	return &Term{Field: field, Op: op, Value: value, Qualifier: qualifier, Pos: t.pos}, nil
+}
+
+// applyField distributes a field name over the bare words in a group.
+//
+// Only terms that arrived without a field of their own are rewritten, so
+// `from:(alice OR to:bob)` still means what it says rather than being
+// flattened into nonsense.
+func applyField(n Node, field string) {
+	switch t := n.(type) {
+	case *And:
+		for _, c := range t.Nodes {
+			applyField(c, field)
+		}
+	case *Or:
+		for _, c := range t.Nodes {
+			applyField(c, field)
+		}
+	case *Not:
+		applyField(t.Node, field)
+	case *Term:
+		if t.Field == "" {
+			t.Field = field
+		}
+	}
 }
 
 // matchOpFor promotes a value containing * to a glob, unless it was quoted —
@@ -438,6 +490,17 @@ func (p *parser) parseStage() (Stage, error) {
 			}
 		}
 		return s, nil
+
+	case "sample":
+		f, ok := word()
+		if !ok {
+			return Stage{}, &Error{Pos: verb.pos, Msg: "sample: needs a number"}
+		}
+		n, err := strconv.Atoi(f)
+		if err != nil || n <= 0 {
+			return Stage{}, &Error{Pos: verb.pos, Msg: fmt.Sprintf("sample: %q is not a row count", f)}
+		}
+		return Stage{Kind: StageSample, N: n}, nil
 
 	case "limit":
 		f, ok := word()

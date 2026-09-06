@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/user/inboxql/internal/query"
 	"github.com/user/inboxql/internal/store"
@@ -11,16 +13,219 @@ import (
 
 // registerQueryRoutes adds the query-language surface.
 //
-// Read-only, deliberately. Defining and running annotators is a write, and the
-// HTTP API currently has no CSRF defence — the passwordless-loopback default
-// authenticates a cross-origin request that carries no cookie at all. Until
-// that is closed, the annotator write surface stays on the CLI, where the
-// caller is already on the machine.
+// Writes live here now that auth.Middleware refuses cross-origin state
+// changes; before that gate existed, any page the user visited could have
+// driven them.
 func registerQueryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/query", handleQuery)
 	mux.HandleFunc("/api/query/explain", handleQueryExplain)
 	mux.HandleFunc("/api/query/fields", handleQueryFields)
+	mux.HandleFunc("/api/query/complete", handleQueryComplete)
+	mux.HandleFunc("/api/query/values", handleQueryValues)
+	mux.HandleFunc("/api/queries", handleSavedQueries)
 	mux.HandleFunc("/api/annotators", handleAnnotators)
+	mux.HandleFunc("/api/tickets", handleTickets)
+	mux.HandleFunc("/api/tickets/board", handleBoard)
+}
+
+// handleTickets is the ticket surface: list, raise, move, remove.
+//
+// A move is a POST of the whole ticket, so the same handler serves editing a
+// title and dragging a card between columns — dragging writes the status
+// field, which is the inverse of the query that defined the column.
+func handleTickets(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if id := r.URL.Query().Get("id"); id != "" {
+			t, err := store.GetTicket(id)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if t == nil {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(t)
+			return
+		}
+
+		q := r.URL.Query().Get("q")
+		if strings.TrimSpace(q) == "" {
+			q = "-status:done -status:rejected"
+		}
+		limit, offset := clampPaging(r, 100, 500)
+		res, err := store.RunQuery(q, limit, offset)
+		if err != nil {
+			writeQueryError(w, err)
+			return
+		}
+		if res.Kind != "tickets" {
+			writeQueryError(w, fmt.Errorf(
+				"that query returns %s; name a ticket field such as status:", res.Kind))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(res.Tickets)
+
+	case http.MethodPost:
+		var t store.Ticket
+		if err := decodeJSON(w, r, &t); err != nil {
+			return
+		}
+		if err := store.SaveTicket(&t); err != nil {
+			writeQueryError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(t)
+
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "missing id parameter", http.StatusBadRequest)
+			return
+		}
+		if err := store.DeleteTicket(id); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleBoard returns the columns and their tickets.
+func handleBoard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	limit, _ := clampPaging(r, 50, 200)
+	columns, err := store.BoardColumns(r.URL.Query().Get("q"), limit)
+	if err != nil {
+		writeQueryError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(columns)
+}
+
+// handleQueryComplete answers what may be typed at a cursor position.
+//
+// Served by the parser rather than reimplemented in the frontend: a second
+// grammar in TypeScript drifts from this one, and the failure mode is an
+// editor confidently offering something the server rejects.
+func handleQueryComplete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	// Default to the end of the text, which is where a cursor usually is.
+	pos := len(q)
+	if v := r.URL.Query().Get("pos"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			pos = n
+		}
+	}
+
+	c, err := store.Complete(q, pos)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(c)
+}
+
+// handleQueryValues lists candidate values for one field.
+func handleQueryValues(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	field := r.URL.Query().Get("field")
+	if field == "" {
+		http.Error(w, "missing field parameter", http.StatusBadRequest)
+		return
+	}
+
+	values, err := store.FieldValues(field, r.URL.Query().Get("prefix"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if values == nil {
+		values = []query.Candidate{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"field": field, "candidates": values})
+}
+
+// handleSavedQueries is the CRUD behind the workbench's saved-query rail.
+func handleSavedQueries(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if name := r.URL.Query().Get("name"); name != "" {
+			q, err := store.GetSavedQuery(name)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if q == nil {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(q)
+			return
+		}
+
+		queries, err := store.ListSavedQueries()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(queries)
+
+	case http.MethodPost:
+		var q store.SavedQuery
+		if err := decodeJSON(w, r, &q); err != nil {
+			return
+		}
+		if err := store.SaveQuery(&q); err != nil {
+			// A query that does not compile is the caller's mistake, and the
+			// message says which part.
+			writeQueryError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(q)
+
+	case http.MethodDelete:
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "missing name parameter", http.StatusBadRequest)
+			return
+		}
+		if err := store.DeleteSavedQuery(name); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // clampPaging reads limit and offset, refusing the values that would ask the
@@ -96,13 +301,36 @@ func handleQueryFields(w http.ResponseWriter, r *http.Request) {
 		labels = append(labels, a.Name)
 	}
 
+	// The field list is the registry itself rather than a hand-kept copy of
+	// the names: a client rendering help or an editor offering completions
+	// needs the type and the summary, and a second list here is how the two
+	// drift apart.
+	type fieldInfo struct {
+		Name    string   `json:"name"`
+		Type    string   `json:"type"`
+		Entity  string   `json:"entity"`
+		Summary string   `json:"summary"`
+		Example string   `json:"example"`
+		Enum    []string `json:"enum,omitempty"`
+		Aliases []string `json:"aliases,omitempty"`
+	}
+	fields := make([]fieldInfo, 0, len(query.Registry))
+	for i := range query.Registry {
+		f := query.Registry[i]
+		fields = append(fields, fieldInfo{
+			Name: f.Name, Type: string(f.Type), Entity: f.Entity,
+			Summary: f.Summary, Example: f.Example, Enum: f.Enum, Aliases: f.Aliases,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"fields":     query.KnownFields,
+		"fields":     fields,
 		"folders":    store.Folders,
-		"buckets":    []string{"hour", "day", "week", "month", "year"},
-		"groupBy":    []string{"from", "domain", "to", "cc", "account", "mailbox", "label", "thread", "subject"},
-		"stages":     []string{"count", "top", "sort", "limit", "thread", "participants", "extract", "series", "sum", "avg", "min", "max"},
+		"buckets":    query.Buckets,
+		"groupBy":    query.GroupKeys,
+		"stages":     query.StageNames,
+		"sortKeys":   query.SortKeys,
 		"annotators": labels,
 		"fullText":   store.FullTextAvailable(),
 	})

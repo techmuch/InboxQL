@@ -34,8 +34,6 @@
 // in [Term]. See CompileFilter.
 package query
 
-import "strings"
-
 // Op is how a term compares its value.
 type Op int
 
@@ -102,6 +100,13 @@ type Term struct {
 	// Qualifier carries a secondary constraint the field defines for itself.
 	// Only labels use it today, for the confidence floor in `label:invoice@0.9`.
 	Qualifier string
+	// Pos is where this term started in the source.
+	//
+	// Kept so a semantic complaint — an unknown field, a value outside an
+	// enum, an unparseable date — can point at the offending token the way a
+	// syntax error does. Without it those errors arrive as prose and the
+	// reader has to find the problem by eye.
+	Pos int
 }
 
 func (*And) node()  {}
@@ -118,6 +123,7 @@ const (
 	StageTop          StageKind = "top"
 	StageSort         StageKind = "sort"
 	StageLimit        StageKind = "limit"
+	StageSample       StageKind = "sample"
 	StageSeries       StageKind = "series"
 	StageAggregate    StageKind = "sum" // sum/avg/min/max, distinguished by Func
 	StageExtract      StageKind = "extract"
@@ -153,6 +159,43 @@ type Query struct {
 	Source string
 }
 
+// Entity reports which table this query is about.
+//
+// Inferred from the fields used rather than declared, because a person writing
+// `status:todo from:acme` means one thing and should not have to say which
+// table it lives in. Any ticket field makes it a ticket query; message fields
+// inside one become a test over the ticket's evidence.
+func (q *Query) Entity() string {
+	if usesEntity(q.Filter, EntityTicket) {
+		return EntityTicket
+	}
+	return EntityMessage
+}
+
+func usesEntity(n Node, entity string) bool {
+	switch t := n.(type) {
+	case *And:
+		for _, c := range t.Nodes {
+			if usesEntity(c, entity) {
+				return true
+			}
+		}
+	case *Or:
+		for _, c := range t.Nodes {
+			if usesEntity(c, entity) {
+				return true
+			}
+		}
+	case *Not:
+		return usesEntity(t.Node, entity)
+	case *Term:
+		if f, ok := LookupField(t.Field); ok {
+			return f.Entity == entity
+		}
+	}
+	return false
+}
+
 // IsAggregate reports whether the pipeline reduces messages to groups rather
 // than returning messages.
 func (q *Query) IsAggregate() bool {
@@ -163,37 +206,4 @@ func (q *Query) IsAggregate() bool {
 		}
 	}
 	return false
-}
-
-// fieldAliases maps what people type onto canonical field names.
-var fieldAliases = map[string]string{
-	"since":      "after",
-	"until":      "before",
-	"sender":     "from",
-	"recipient":  "to",
-	"acct":       "account",
-	"attachment": "has",
-	"larger":     "larger",
-	"bigger":     "larger",
-	"smaller":    "smaller",
-}
-
-func canonicalField(f string) string {
-	f = strings.ToLower(strings.TrimSpace(f))
-	if c, ok := fieldAliases[f]; ok {
-		return c
-	}
-	return f
-}
-
-// KnownFields is every field the compiler understands, for error messages and
-// shell completion.
-var KnownFields = []string{
-	"from", "to", "cc", "bcc", "anyone",
-	"subject", "body", "text",
-	"account", "folder", "mailbox",
-	"is", "has",
-	"after", "before", "on",
-	"larger", "smaller",
-	"label", "unlabeled", "conf", "extract", "thread",
 }

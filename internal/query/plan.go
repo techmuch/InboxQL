@@ -15,6 +15,8 @@ const (
 	PlanGroups
 	// PlanScalar returns a single count.
 	PlanScalar
+	// PlanTickets returns ticket rows.
+	PlanTickets
 )
 
 // Plan is a compiled query ready to execute.
@@ -27,6 +29,13 @@ type Plan struct {
 	// Ordered records whether the caller asked for a specific order, so a
 	// group result can be left in value order rather than re-sorted.
 	Ordered bool
+	// Entity is the table the plan reads from: messages, or tickets.
+	Entity string
+	// GroupField and Bucket name what an aggregate grouped by. A chart cannot
+	// build a drill-down from labels alone — it needs to know that "2026-03"
+	// came from `month` and not from a sender called 2026-03.
+	GroupField string
+	Bucket     string
 }
 
 // threadKeyExpr names the column that identifies a conversation.
@@ -42,12 +51,13 @@ const threadKeyExpr = "m.thread_key"
 // `m` alias. It is passed in rather than hardcoded so the store keeps one
 // canonical column list and this package stays out of the schema's business.
 func Build(q *Query, opt Options, selectList string) (*Plan, error) {
-	where, args, err := CompileFilter(q.Filter, opt)
+	entity := q.Entity()
+	where, args, err := CompileFilterFor(q.Filter, opt, entity)
 	if err != nil {
 		return nil, err
 	}
 
-	p := &pipeline{opt: opt, where: where, args: args, selectList: selectList}
+	p := &pipeline{opt: opt, where: where, args: args, selectList: selectList, entity: entity}
 	if err := p.read(q.Stages); err != nil {
 		return nil, err
 	}
@@ -59,12 +69,14 @@ type pipeline struct {
 	where      string
 	args       []any
 	selectList string
+	entity     string
 
 	extractor string
 	terminal  *Stage
 	sort      *Stage
 	limit     int
 	expand    bool
+	sample    bool
 }
 
 // read validates the stage list and reduces it to the few things a statement
@@ -85,6 +97,15 @@ func (p *pipeline) read(stages []Stage) error {
 
 		case StageLimit:
 			p.limit = s.N
+
+		case StageSample:
+			// A random sample, not the newest n.
+			//
+			// Judging an annotator by reading its most recent results is how
+			// you conclude it works: recent mail is the mail you already know
+			// about. Reading a random draw is how you find out.
+			p.limit = s.N
+			p.sample = true
 
 		case StageCount, StageTop, StageSeries, StageAggregate, StageParticipants:
 			if p.terminal != nil {
@@ -124,6 +145,9 @@ func (p *pipeline) effectiveWhere() string {
 }
 
 func (p *pipeline) build() (*Plan, error) {
+	if p.entity == EntityTicket {
+		return p.buildTickets()
+	}
 	if p.terminal == nil {
 		return p.buildMessages()
 	}
@@ -149,6 +173,10 @@ func (p *pipeline) build() (*Plan, error) {
 func (p *pipeline) buildMessages() (*Plan, error) {
 	order := "m.date DESC"
 	ordered := false
+	if p.sample {
+		order = "RANDOM()"
+		ordered = true
+	}
 	if p.sort != nil {
 		col, err := sortColumn(p.sort.Field)
 		if err != nil {
@@ -175,6 +203,114 @@ func (p *pipeline) buildMessages() (*Plan, error) {
 	}
 
 	return &Plan{SQL: sql, Args: args, Kind: PlanMessages, Limit: limit, Ordered: ordered}, nil
+}
+
+// buildTickets plans a query over the tickets table.
+//
+// A deliberately smaller surface than the message pipeline: tickets are
+// listed, counted and grouped by their own fields. Time-bucketed series over
+// extracted values are a question about mail, not about tickets.
+func (p *pipeline) buildTickets() (*Plan, error) {
+	args := append([]any{}, p.args...)
+
+	if p.sample {
+		// Tickets are a working set, not a population to sample.
+		return nil, fmt.Errorf("sample applies to messages, not tickets")
+	}
+	if p.terminal != nil {
+		switch p.terminal.Kind {
+		case StageCount:
+			if p.terminal.Field == "" {
+				return &Plan{
+					SQL:    "SELECT COUNT(*) FROM tickets t WHERE " + p.where,
+					Args:   args,
+					Kind:   PlanScalar,
+					Entity: EntityTicket,
+				}, nil
+			}
+			return p.buildTicketGroups(p.terminal.Field, p.clampLimit(200))
+		case StageTop:
+			return p.buildTicketGroups(p.terminal.Field, p.clampLimit(p.terminal.N))
+		default:
+			return nil, fmt.Errorf("%s does not apply to tickets; it reads extracted message data", p.terminal.Kind)
+		}
+	}
+
+	order := "COALESCE(t.due_at, t.updated_at) ASC"
+	if p.sort != nil {
+		col, err := ticketSortColumn(p.sort.Field)
+		if err != nil {
+			return nil, err
+		}
+		dir := "ASC"
+		if p.sort.Desc {
+			dir = "DESC"
+		}
+		order = col + " " + dir
+	}
+
+	limit := p.clampLimit(p.opt.defaultLimit())
+	args = append(args, limit)
+	sql := "SELECT " + ticketSelectList + " FROM tickets t WHERE " + p.where +
+		" ORDER BY " + order + " LIMIT ?"
+	if p.opt.Offset > 0 {
+		sql += " OFFSET ?"
+		args = append(args, p.opt.Offset)
+	}
+	return &Plan{SQL: sql, Args: args, Kind: PlanTickets, Limit: limit, Entity: EntityTicket}, nil
+}
+
+func (p *pipeline) buildTicketGroups(field string, limit int) (*Plan, error) {
+	expr, err := ticketGroupKey(field)
+	if err != nil {
+		return nil, err
+	}
+	args := append([]any{}, p.args...)
+	args = append(args, limit)
+
+	sql := "SELECT " + expr + " AS label, COUNT(*) AS value FROM tickets t WHERE " + p.where +
+		" GROUP BY label ORDER BY value DESC, label ASC LIMIT ?"
+	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true,
+		Entity: EntityTicket, GroupField: strings.ToLower(field)}, nil
+}
+
+// ticketSelectList is the column list store.scanTicket expects.
+const ticketSelectList = `t.id, COALESCE(t.thread_key, ''), t.title, COALESCE(t.body, ''), t.status,
+	COALESCE(t.priority, ''), t.due_at, t.origin, COALESCE(t.annotator_id, ''), t.confidence,
+	t.created_at, t.updated_at, t.closed_at`
+
+func ticketGroupKey(field string) (string, error) {
+	switch strings.ToLower(field) {
+	case "status", "":
+		return "t.status", nil
+	case "priority":
+		return "COALESCE(t.priority, '(none)')", nil
+	case "raised", "origin":
+		return "t.origin", nil
+	case "day", "week", "month", "year":
+		return bucketExpr("t.created_at", strings.ToLower(field))
+	default:
+		return "", fmt.Errorf("cannot group tickets by %q (try: status, priority, raised, day, week, month, year)", field)
+	}
+}
+
+func ticketSortColumn(field string) (string, error) {
+	switch strings.ToLower(field) {
+	case "due", "":
+		return "COALESCE(t.due_at, t.updated_at)", nil
+	case "created":
+		return "t.created_at", nil
+	case "updated":
+		return "t.updated_at", nil
+	case "status":
+		return "t.status", nil
+	case "priority":
+		return "t.priority", nil
+	case "title", "ticket":
+		return "t.title", nil
+	default:
+		return "", fmt.Errorf("cannot sort tickets by %q (try: due, created, updated, status, priority, title)", field)
+	}
 }
 
 func (p *pipeline) buildScalarCount() (*Plan, error) {
@@ -214,7 +350,17 @@ func (p *pipeline) buildGroupCount(field string, limit int, desc bool) (*Plan, e
 	sql += " LIMIT ?"
 	args = append(args, limit)
 
-	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true}, nil
+	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true,
+		GroupField: strings.ToLower(field), Bucket: bucketOf(field)}, nil
+}
+
+// bucketOf reports whether a grouping key is itself a time bucket.
+func bucketOf(field string) string {
+	switch strings.ToLower(field) {
+	case "hour", "day", "week", "month", "year":
+		return strings.ToLower(field)
+	}
+	return ""
 }
 
 // buildSeries sums an extracted numeric field into time buckets.
@@ -299,7 +445,8 @@ func (p *pipeline) buildAggregate(s Stage) (*Plan, error) {
 	sql += " LIMIT ?"
 	args = append(args, limit)
 
-	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true}, nil
+	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true,
+		GroupField: s.Field, Bucket: s.Bucket}, nil
 }
 
 // senderJoin reaches the normalised sender address.
@@ -360,6 +507,17 @@ func groupKey(field string) (group, error) {
 	case "subject":
 		return group{expr: "m.subject"}, nil
 
+	case "topic":
+		// The first word of the subject line. This is a placeholder and always
+		// was — there is no topic modelling here — but it is the placeholder
+		// the dashboard's Topic Trends widget has always shown, and expressing
+		// it as a grouping key is what let the hand-rolled GetTopicStats go.
+		// Real topics are a job for an annotator.
+		return group{
+			expr:   "LOWER(SUBSTR(m.subject, 1, INSTR(m.subject || ' ', ' ') - 1))",
+			having: "m.subject != ''",
+		}, nil
+
 	case "thread":
 		return group{expr: threadKeyExpr}, nil
 
@@ -371,7 +529,7 @@ func groupKey(field string) (group, error) {
 		}, nil
 
 	default:
-		return group{}, fmt.Errorf("cannot group by %q (try: from, domain, to, day, week, month, year, account, mailbox, label, thread)", field)
+		return group{}, fmt.Errorf("cannot group by %q (try: %s)", field, strings.Join(GroupKeys, ", "))
 	}
 }
 

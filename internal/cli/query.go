@@ -34,7 +34,13 @@ Filter terms
   label: unlabeled: conf>     annotator results
   extract:name.field>10       extracted structured data
   thread:<message-id>         every message in that conversation
+  saved:<name>                everything a saved query matches
   a bare word                 full-text search
+
+Shorthands
+  from:(alice OR bob)         a group scoped to one field
+  from:me()                   your own configured addresses
+  has:cc                      somebody was copied; -has:cc means nobody was
 
 Match modes
   from:acme        contains "acme" — also matches notacme@x.com
@@ -67,8 +73,35 @@ Flags
   --limit n    rows to return (default 50)
   --offset n   skip n rows; messages only
   --explain    print the compiled SQL instead of running it
-  --count      return only how many messages match`,
+  --count      return only how many messages match
+  --complete n list what may be typed at cursor position n`,
 		Run: runQuery,
+	})
+
+	register(&Command{
+		Name:    "saved",
+		Aliases: []string{"queries"},
+		Summary: "name and reuse queries",
+		Usage: `iql saved <list|show|save|delete> [flags]
+
+A saved query is a building block, not a bookmark: ` + "`saved:<name>`" + ` is a term
+in the language, so a saved query composes with everything else.
+
+  iql saved save "Acme invoices" --query "from:*@acme.com subject:invoice"
+  iql query "saved:acme-invoices after:7d"
+  iql saved list
+
+save flags:
+  --query <expr>       the query text; - reads stdin
+  --name <slug>        the handle used by saved: (default: a slug of the title)
+  --description <text> what it is for
+  --pinned             sort it to the top
+
+The query is compiled before it is stored, so a saved query that does not work
+is rejected at the point you write it rather than from wherever you use it.
+
+Saved queries do not nest: one cannot reference another.`,
+		Run: runSaved,
 	})
 
 	register(&Command{
@@ -147,6 +180,159 @@ func isDefinedFlag(fs *flag.FlagSet, arg string) bool {
 	return fs.Lookup(name) != nil
 }
 
+func runSaved(ctx *Context, args []string) error {
+	sub, rest := subcommand(args)
+	switch sub {
+	case "list", "":
+		return savedList(ctx, rest)
+	case "show":
+		return savedShow(ctx, rest)
+	case "save", "add", "create":
+		return savedSave(ctx, rest)
+	case "delete", "rm", "remove":
+		return savedDelete(ctx, rest)
+	default:
+		return Fail(ExitUsage, "unknown subcommand %q (want list, show, save or delete)", sub)
+	}
+}
+
+func savedList(ctx *Context, args []string) error {
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	queries, err := store.ListSavedQueries()
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	if ctx.JSON {
+		return ctx.EmitJSON(queries)
+	}
+	if len(queries) == 0 {
+		ctx.Printf("No saved queries. Create one with `iql saved save \"Name\" --query \"...\"`\n")
+		return nil
+	}
+
+	p := ctx.Printer()
+	t := p.NewTable("NAME", "TITLE", "QUERY")
+	for _, q := range queries {
+		title := q.Title
+		if q.Pinned {
+			title = "* " + title
+		}
+		t.Row(q.Name, ui.Truncate(title, 28), ui.Truncate(q.Query, 48))
+	}
+	return t.Flush()
+}
+
+func savedShow(ctx *Context, args []string) error {
+	name, _ := subcommand(args)
+	if name == "" {
+		return Fail(ExitUsage, "which saved query?")
+	}
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	q, err := store.GetSavedQuery(name)
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	if q == nil {
+		return Fail(ExitNotFound, "no saved query named %q", name)
+	}
+	if ctx.JSON {
+		return ctx.EmitJSON(q)
+	}
+
+	p := ctx.Printer()
+	ctx.Printf("%s %s\n\n", p.Bold(q.Title), p.Dim("("+q.Name+")"))
+	ctx.Printf("  %s\n", q.Query)
+	if q.Description != "" {
+		ctx.Printf("\n  %s\n", p.Dim(q.Description))
+	}
+	ctx.Printf("\nUse it: %s\n", p.Dim("iql query \"saved:"+q.Name+"\""))
+	return nil
+}
+
+func savedSave(ctx *Context, args []string) error {
+	title, rest := subcommand(args)
+	if title == "" {
+		return Fail(ExitUsage, "give the saved query a name")
+	}
+
+	fs := flag.NewFlagSet("saved save", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	queryText := fs.String("query", "", "the query text; - reads stdin")
+	name := fs.String("name", "", "the handle saved: will use")
+	description := fs.String("description", "", "what it is for")
+	pinned := fs.Bool("pinned", false, "sort it to the top")
+	// The query itself may begin with a dash, so flags are separated the same
+	// way `iql query` separates them.
+	expr, err := parseQueryArgs(fs, rest)
+	if err != nil {
+		return Fail(ExitUsage, "invalid flags")
+	}
+
+	text := *queryText
+	if text == "" {
+		text = expr
+	}
+	if text == "-" {
+		b, err := readAll(ctx.Stdin)
+		if err != nil {
+			return Fail(ExitError, "reading the query from stdin: %v", err)
+		}
+		text = strings.TrimSpace(string(b))
+	}
+	if text == "" {
+		return Fail(ExitUsage, "--query is required")
+	}
+
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	q := &store.SavedQuery{
+		Title: title, Name: *name, Query: text,
+		Description: *description, Pinned: *pinned,
+	}
+	if err := store.SaveQuery(q); err != nil {
+		return Fail(ExitUsage, "%v", err)
+	}
+
+	if ctx.JSON {
+		return ctx.EmitJSON(q)
+	}
+	p := ctx.Printer()
+	ctx.Printf("Saved %s as %s.\n\n", p.Bold(q.Title), p.Bold(q.Name))
+	ctx.Printf("Use it: %s\n", p.Dim("iql query \"saved:"+q.Name+"\""))
+	return nil
+}
+
+func savedDelete(ctx *Context, args []string) error {
+	name, _ := subcommand(args)
+	if name == "" {
+		return Fail(ExitUsage, "which saved query?")
+	}
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	if err := store.DeleteSavedQuery(name); err != nil {
+		return Fail(ExitNotFound, "%v", err)
+	}
+	if ctx.JSON {
+		return ctx.EmitJSON(map[string]any{"deleted": name})
+	}
+	ctx.Printf("Deleted %s. Queries referencing it will now fail rather than match nothing.\n", name)
+	return nil
+}
+
 func runQuery(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("query", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
@@ -154,6 +340,7 @@ func runQuery(ctx *Context, args []string) error {
 	offset := fs.Int("offset", 0, "rows to skip")
 	explain := fs.Bool("explain", false, "print the compiled SQL without running it")
 	countOnly := fs.Bool("count", false, "return only the number of matches")
+	complete := fs.Int("complete", -1, "list what may be typed at this cursor position")
 	expr, err := parseQueryArgs(fs, args)
 	if err != nil {
 		return Fail(ExitUsage, "invalid flags")
@@ -163,6 +350,26 @@ func runQuery(ctx *Context, args []string) error {
 		return err
 	}
 	defer store.CloseDB()
+
+	if *complete >= 0 {
+		c, err := store.Complete(expr, *complete)
+		if err != nil {
+			return Fail(ExitError, "%v", err)
+		}
+		if ctx.JSON {
+			return ctx.EmitJSON(c)
+		}
+		p := ctx.Printer()
+		ctx.Printf("%s\n\n", p.Dim(string(c.Context)+" completion"))
+		for _, cand := range c.Candidates {
+			if cand.Detail != "" {
+				ctx.Printf("  %-28s %s\n", cand.Value, p.Dim(cand.Detail))
+			} else {
+				ctx.Printf("  %s\n", cand.Value)
+			}
+		}
+		return nil
+	}
 
 	if *explain {
 		res, err := store.ExplainQuery(expr)
@@ -226,6 +433,21 @@ func printQueryResult(ctx *Context, res *store.QueryResult) error {
 				label = "(none)"
 			}
 			t.Row(ui.Truncate(label, 60), formatNumber(g.Value))
+		}
+		return t.Flush()
+
+	case "tickets":
+		if len(res.Tickets) == 0 {
+			ctx.Printf("No tickets matched.\n")
+			return nil
+		}
+		t := p.NewTable("ID", "STATUS", "DUE", "TITLE")
+		for _, tk := range res.Tickets {
+			due := ""
+			if tk.DueAt != nil {
+				due = tk.DueAt.Format("2006-01-02")
+			}
+			t.Row(ui.Truncate(tk.ID, 8), tk.Status, due, ui.Truncate(tk.Title, 56))
 		}
 		return t.Flush()
 

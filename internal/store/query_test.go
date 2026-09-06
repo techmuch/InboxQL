@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -384,5 +385,174 @@ func TestValuesAreParameterised(t *testing.T) {
 
 	if n := countOf(t, ""); n != 5 {
 		t.Fatalf("mailbox has %d messages after injection attempts, want 5", n)
+	}
+}
+
+// A field-scoped group distributes the field over the bare words inside it,
+// so `from:(a OR b)` says once what would otherwise be said twice.
+func TestFieldScopedSubexpressions(t *testing.T) {
+	openQueryFixture(t)
+
+	eq(t, ids(t, "from:(alice OR stripe)"), "m1", "m2", "m3")
+	eq(t, ids(t, "from:(alice OR stripe)"), ids(t, "from:alice OR from:stripe")...)
+	eq(t, ids(t, "-from:(alice OR stripe)"), "m4", "m5")
+
+	// A term that brought its own field keeps it.
+	eq(t, ids(t, "from:(alice OR to:alice@acme.com)"), "m1", "m2", "m5")
+}
+
+// me() resolves to the configured accounts' addresses, so "mail I sent" stops
+// requiring you to know and type your own address.
+func TestSelfFunction(t *testing.T) {
+	openQueryFixture(t)
+
+	// The fixture account is me@example.com, a recipient on four messages.
+	eq(t, ids(t, "to:me()"), "m1", "m2", "m3", "m5")
+	eq(t, ids(t, "-to:me()"), "m4")
+	eq(t, ids(t, "from:me()"))
+
+	// The partition invariant holds for a resolved function like any term.
+	if pos, neg := countOf(t, "to:me()"), countOf(t, "-to:me()"); pos+neg != countOf(t, "") {
+		t.Errorf("to:me() %d + -to:me() %d does not partition the mailbox", pos, neg)
+	}
+}
+
+// has: over a recipient role is emptiness, and negates as an anti-join.
+func TestRecipientEmptiness(t *testing.T) {
+	openQueryFixture(t)
+
+	eq(t, ids(t, "has:cc"), "m3")
+	eq(t, ids(t, "-has:cc"), "m1", "m2", "m4", "m5")
+	eq(t, ids(t, "-has:to"), "m4")
+}
+
+// A saved query is a building block, not a bookmark.
+func TestSavedQueryComposition(t *testing.T) {
+	openQueryFixture(t)
+
+	if err := SaveQuery(&SavedQuery{Title: "Acme mail", Query: "from:*@acme.com"}); err != nil {
+		t.Fatalf("SaveQuery: %v", err)
+	}
+
+	eq(t, ids(t, "saved:acme-mail"), "m1", "m2", "m5")
+	eq(t, ids(t, "saved:acme-mail is:unread"), "m1", "m5")
+	eq(t, ids(t, "-saved:acme-mail"), "m3", "m4")
+
+	// A reference to something that does not exist is an error, not an empty
+	// result that reads as "nothing matched".
+	if _, err := RunQuery("saved:nosuch", 10, 0); err == nil {
+		t.Error("a dangling saved: reference succeeded")
+	}
+}
+
+// Saved queries do not nest, and the refusal names the query being defined
+// rather than surfacing later from whatever referenced it.
+func TestSavedQueriesDoNotNest(t *testing.T) {
+	openQueryFixture(t)
+
+	if err := SaveQuery(&SavedQuery{Title: "Acme", Query: "from:*@acme.com"}); err != nil {
+		t.Fatalf("SaveQuery: %v", err)
+	}
+	err := SaveQuery(&SavedQuery{Title: "Acme unread", Query: "saved:acme is:unread"})
+	if err == nil {
+		t.Fatal("a nested saved query was accepted")
+	}
+	if !strings.Contains(err.Error(), "cannot reference another") {
+		t.Errorf("error was %q, which does not explain the rule", err)
+	}
+}
+
+// A saved query that does not compile is worse than none: it fails later, from
+// wherever it was referenced, naming something the user did not type.
+func TestSavedQueriesAreValidatedOnSave(t *testing.T) {
+	openQueryFixture(t)
+
+	for _, bad := range []string{"nosuchfield:x", "(unclosed", "is:purple"} {
+		if err := SaveQuery(&SavedQuery{Title: "Bad", Query: bad}); err == nil {
+			t.Errorf("SaveQuery accepted %q", bad)
+		}
+	}
+	if err := SaveQuery(&SavedQuery{Title: "", Query: "from:x"}); err == nil {
+		t.Error("SaveQuery accepted an empty name")
+	}
+}
+
+// The registry rejects an operator a field does not take, before any SQL runs.
+func TestFieldsRejectOperatorsTheyDoNotTake(t *testing.T) {
+	openQueryFixture(t)
+
+	for _, bad := range []string{
+		"after:>2026-01", // the comparison is already in the field name
+		"is:>unread",     // an enum has nothing to compare
+		"folder:*box",    // nor a glob
+	} {
+		if _, err := RunQuery(bad, 10, 0); err == nil {
+			t.Errorf("RunQuery(%q) succeeded, want a rejection", bad)
+		}
+	}
+
+	// A misspelling gets a suggestion rather than a list of everything.
+	_, err := RunQuery("form:alice", 10, 0)
+	if err == nil {
+		t.Fatal("an unknown field succeeded")
+	}
+	if !strings.Contains(err.Error(), "did you mean from") {
+		t.Errorf("error was %q, which does not suggest the obvious fix", err)
+	}
+}
+
+// An aggregate reports what it grouped by, so a chart click can build the
+// drill-down term rather than guessing from the label's shape.
+func TestAggregatesReportTheirGroupField(t *testing.T) {
+	openQueryFixture(t)
+
+	res, err := RunQuery("| count by month", 0, 0)
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	if res.GroupField != "month" || res.Bucket != "month" {
+		t.Errorf("groupField = %q bucket = %q, want month and month", res.GroupField, res.Bucket)
+	}
+
+	res, err = RunQuery("| top from 5", 0, 0)
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	if res.GroupField != "from" || res.Bucket != "" {
+		t.Errorf("groupField = %q bucket = %q, want from and no bucket", res.GroupField, res.Bucket)
+	}
+}
+
+// Completion draws real values out of the user's own mail.
+func TestCompletionUsesRealData(t *testing.T) {
+	openQueryFixture(t)
+
+	c, err := Complete("from:al", 7)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	var found bool
+	for _, cand := range c.Candidates {
+		if cand.Value == "alice@acme.com" {
+			found = true
+			if cand.Detail == "" {
+				t.Error("an address candidate carried no message count")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("completing from:al did not offer alice@acme.com: %+v", c.Candidates)
+	}
+
+	// A saved query completes by name.
+	if err := SaveQuery(&SavedQuery{Title: "Acme mail", Query: "from:*@acme.com"}); err != nil {
+		t.Fatalf("SaveQuery: %v", err)
+	}
+	c, err = Complete("saved:", 6)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if len(c.Candidates) != 1 || c.Candidates[0].Value != "acme-mail" {
+		t.Errorf("saved: offered %+v, want acme-mail", c.Candidates)
 	}
 }

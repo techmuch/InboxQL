@@ -32,6 +32,7 @@ func Router() (http.Handler, error) {
 	// Public API Routes
 	mux.HandleFunc("/api/login", handleLogin)
 	mux.HandleFunc("/api/logout", handleLogout)
+	mux.HandleFunc("/api/version", handleVersion)
 
 	// Sub-mux for the /api/accounts/* subtree only. Every other protected route
 	// is an exact-match registration on the parent mux below, which always wins
@@ -164,6 +165,33 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// VersionInfo carries the running version, revision, and dev-mode flag for clients.
+type VersionInfo struct {
+	Version    string `json:"version"`
+	Revision   string `json:"revision,omitempty"`
+	Dev        bool   `json:"dev"`
+	InstanceID string `json:"instanceId"`
+}
+
+var currentVersionInfo = VersionInfo{
+	Version: "0.0.31",
+}
+
+// SetVersionInfo sets the version metadata served at /api/version.
+func SetVersionInfo(info VersionInfo) {
+	currentVersionInfo = info
+}
+
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	json.NewEncoder(w).Encode(currentVersionInfo)
 }
 
 func handleProfile(w http.ResponseWriter, r *http.Request) {

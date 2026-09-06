@@ -2,6 +2,7 @@ package cli
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -252,6 +253,21 @@ func runStart(ctx *Context, args []string) error {
 
 	// The API needs the data directory for the attachment blob store.
 	api.SetDataDir(ctx.DataDir)
+
+	revision := ""
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" {
+				revision = s.Value
+			}
+		}
+	}
+	api.SetVersionInfo(api.VersionInfo{
+		Version:    Version,
+		Revision:   revision,
+		Dev:        *devFlag || os.Getenv("INBOXQL_DEV_CHILD") == "1",
+		InstanceID: fmt.Sprintf("%d", time.Now().UnixNano()),
+	})
 
 	handler, err := api.Router()
 	if err != nil {

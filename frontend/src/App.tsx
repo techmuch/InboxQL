@@ -10,6 +10,7 @@ import { ErrorLog } from './views/ErrorLog';
 import { QueryWorkbench } from './views/QueryWorkbench';
 import { Board } from './views/Board';
 import { openTool, openMessage, openErrorLog, openQuery, useViewerStore } from './lib/tabs';
+import { useDevReload } from './lib/devReload';
 import { version as appVersion } from '../package.json';
 import 'nexus-shell/style.css';
 import './App.css';
@@ -1343,6 +1344,7 @@ function App() {
   // shell only binds them when this hook is mounted, and it never was. The
   // menus were displaying keystrokes that did nothing.
   useKeyboardShortcuts();
+  useDevReload();
 
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);

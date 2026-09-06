@@ -27,6 +27,7 @@ InboxQL is in active early development. The table below is the honest state of p
 | Search | FTS5 full-text index; lexical, not semantic. No embeddings or vector search |
 | Threading | Follows `References` headers |
 | Labels and extraction (`iql annotate`) | Working — rule engine and LLM engine |
+| Tickets and board (`iql ticket`) | Working — proposed by extractors, owned by you |
 | Topic discovery | Placeholder (first word of subject); no LDA or clustering |
 | Visual AI Agent Builder | **Design preview only** — topologies can be drawn and saved, but there is no Eino runtime, so agents cannot execute |
 | LLM gateway | Working — Ollama and any OpenAI-compatible endpoint |
@@ -59,6 +60,15 @@ connection *looks* local no matter who sent it. InboxQL refuses passwordless
 access for any request carrying `X-Forwarded-For`, `X-Real-Ip`, `Forwarded` or
 `X-Forwarded-Host`.
 
+Neither is the other one: **a page on another site cannot drive the API.**
+Passwordless access authenticates a request with no cookie, so `SameSite` does
+not help — any page you visited could otherwise have reached `localhost:8080`.
+InboxQL refuses passwordless access, and refuses writes outright, for any
+request a browser marks as coming from elsewhere (`Sec-Fetch-Site`, or an
+`Origin` that does not match the address asked for). Command-line tools send
+neither header and are unaffected, which is the point: a browser cannot
+suppress them and a script never sets them.
+
 `--trust-local` forces passwordless access on despite a public listen address.
 It prints a warning, and you should not need it.
 
@@ -66,6 +76,7 @@ It prints a warning, and you should not need it.
 
 *   **Credentials at rest**: IMAP/SMTP passwords are sealed with AES-256-GCM using a machine-local key stored at `data/vault.key` (mode `0600`). **Back this file up alongside your database** — without it, stored passwords cannot be recovered. Passwords are never returned to the browser by the API.
 *   **Transport**: IMAP TLS connections verify the server certificate. There is no option to disable this.
+*   **Changing an account's server**: editing an account's IMAP host, port or username requires entering the password again. A credential stored for one server is not carried across to another.
 *   **Default account**: `iql init` creates `admin@inboxql.local` with a randomly generated password, printed once and never recoverable. Set `INBOXQL_ADMIN_PASSWORD` (and optionally `INBOXQL_ADMIN_USER`) before running init if you want to choose it yourself, or reset it later with `iql user passwd`.
 
 ## Getting Started
@@ -177,6 +188,35 @@ what would leave the machine. With Ollama, nothing does.
 
 Corrections outrank the machine: `iql annotate correct billing <id> --yes`
 survives every re-run and every version bump.
+
+## Tickets and the board
+
+An extractor that pulls actions out of your mail can raise tickets, which are
+entities with their own state rather than another view of the annotation:
+
+```bash
+iql ticket propose actions --dry-run       # what would be raised
+iql ticket propose actions --auto-accept 0.9
+iql ticket list --query "status:proposed"  # the queue, for you to rule on
+iql ticket board
+```
+
+**Extraction proposes; it does not create.** Anything below the confidence bar
+waits in `status:proposed`. A task list you cannot trust is worse than none.
+
+Ticket fields are query terms, so one language filters both, and a message field
+inside a ticket query asks about the ticket's *evidence*:
+
+```bash
+iql query "status:todo due:7d"
+iql query "status:* from:*@acme.com"     # tickets whose mail came from Acme
+iql query "status:* | count by status"
+```
+
+**A re-run never rewrites what you set.** Editing an extractor's prompt bumps
+its version and invalidates every annotation — and changes nothing on your
+board. Tickets are seeded by annotations and owned by you; `ticket_sources`
+records which messages are the evidence, and `iql ticket show` prints them.
 
 Run `iql --help` for the full list, and `iql help <command>` — or
 `iql <command> --help`, which is the same page — for detail on any one of them.

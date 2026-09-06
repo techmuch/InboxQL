@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -65,7 +66,12 @@ func Router() (http.Handler, error) {
 	// The query language surface. Read-only; see registerQueryRoutes.
 	queryMux := http.NewServeMux()
 	registerQueryRoutes(queryMux)
-	for _, route := range []string{"/api/query", "/api/query/explain", "/api/query/fields", "/api/annotators"} {
+	for _, route := range []string{
+		"/api/query", "/api/query/explain", "/api/query/fields",
+		"/api/query/complete", "/api/query/values",
+		"/api/queries", "/api/annotators",
+		"/api/tickets", "/api/tickets/board",
+	} {
 		mux.Handle(route, auth.Middleware(queryMux))
 	}
 
@@ -77,6 +83,29 @@ func Router() (http.Handler, error) {
 	mux.Handle("/", http.FileServer(http.FS(content)))
 
 	return mux, nil
+}
+
+// decodeJSON reads a JSON body, insisting that it was sent as JSON.
+//
+// A third barrier behind the origin checks in auth.Middleware, and an
+// independent one: a cross-origin request may only set Content-Type to
+// text/plain, form-urlencoded or multipart without triggering a preflight, and
+// the preflight fails because no CORS headers are served. Handlers that decode
+// whatever arrives regardless of Content-Type give that restriction away for
+// nothing.
+func decodeJSON(w http.ResponseWriter, r *http.Request, into any) error {
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		if mediaType, _, err := mime.ParseMediaType(ct); err != nil || mediaType != "application/json" {
+			err := fmt.Errorf("expected Content-Type: application/json")
+			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+			return err
+		}
+	}
+	if err := json.NewDecoder(r.Body).Decode(into); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return err
+	}
+	return nil
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -147,8 +176,7 @@ func handleProfile(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var update store.User
-		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
-			http.Error(w, "invalid request", http.StatusBadRequest)
+		if err := decodeJSON(w, r, &update); err != nil {
 			return
 		}
 		user.DisplayName = update.DisplayName
@@ -182,21 +210,48 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var acc account.Account
-		if err := json.NewDecoder(r.Body).Decode(&acc); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if err := decodeJSON(w, r, &acc); err != nil {
 			return
 		}
+
+		// An omitted id used to be derived from the name, so a create whose
+		// slug collided with an existing account silently overwrote it. An
+		// update now has to name the account it is updating.
+		derived := false
 		if acc.ID == "" {
 			acc.ID = strings.ToLower(strings.ReplaceAll(acc.Name, " ", "-"))
+			derived = true
 		}
 
-		// Because GET redacts the password, an edit that does not touch the
-		// password field submits it empty. Treat that as "leave it alone"
-		// rather than wiping a working credential; a caller that genuinely
-		// wants no password can delete and recreate the account.
-		if acc.Password == "" {
-			if existing, err := store.GetAccount(acc.ID); err == nil && existing != nil {
-				acc.Password = existing.Password
+		existing, err := store.GetAccount(acc.ID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if existing != nil && derived {
+			http.Error(w, "an account with this name already exists; pass its id to update it",
+				http.StatusConflict)
+			return
+		}
+
+		if existing != nil {
+			// Because GET redacts the password, an edit that does not touch
+			// the password field submits it empty. Treat that as "leave it
+			// alone" rather than wiping a working credential.
+			//
+			// Except when the server changed. A password for imap.gmail.com is
+			// not a password for some other host, and carrying it across would
+			// present the user's credential to whatever was named here. That
+			// is wrong on its own terms, and it independently breaks the
+			// retarget-then-sync path that made the CSRF hole worth exploiting.
+			if acc.Password == "" {
+				if sameServer(existing, &acc) {
+					acc.Password = existing.Password
+				} else {
+					http.Error(w, "the IMAP host or port changed, so the stored password no longer applies; send the password again",
+						http.StatusBadRequest)
+					return
+				}
 			}
 		}
 
@@ -226,6 +281,14 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// sameServer reports whether an update leaves the account pointed at the same
+// mailbox, and so may keep the credential stored for it.
+func sameServer(existing, updated *account.Account) bool {
+	return strings.EqualFold(existing.Host, updated.Host) &&
+		existing.Port == updated.Port &&
+		strings.EqualFold(existing.User, updated.User)
 }
 
 func handleAccountStats(w http.ResponseWriter, r *http.Request) {
@@ -307,14 +370,16 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		msgs, err = store.DraftsAsMessages(accountID, limit, offset)
 
 	default:
-		// One path for both, so a folder and a dashboard cross-filter compose:
-		// picking Sent while a date is selected means "sent, on that date".
-		msgs, err = store.ListMessagesFiltered(accountID, store.AnalyticsFilter{
-			Date:   r.URL.Query().Get("date"),
-			From:   r.URL.Query().Get("from"),
-			Topic:  r.URL.Query().Get("topic"),
-			Folder: folder,
-		}, limit, offset)
+		// The legacy parameters are composed into a query rather than served by
+		// their own SQL. There is one filter implementation now, so a folder
+		// and a cross-filter compose because they are terms in one expression
+		// rather than fields in a struct three functions each read differently.
+		res, qerr := store.RunQuery(legacyFilterQuery(r, accountID, folder), limit, offset)
+		if qerr != nil {
+			writeQueryError(w, qerr)
+			return
+		}
+		msgs = res.Messages
 	}
 
 	if err != nil {
@@ -374,35 +439,105 @@ func handleMessage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(msg)
 }
 
-func handleAnalytics(w http.ResponseWriter, r *http.Request) {
-	queryType := r.URL.Query().Get("type")
-	filter := store.AnalyticsFilter{
-		Date:  r.URL.Query().Get("date"),
-		From:  r.URL.Query().Get("from"),
-		Topic: r.URL.Query().Get("topic"),
+// legacyFilterQuery composes the pre-language query parameters into an
+// expression.
+//
+// `q` wins when it is given; these remain for callers written before the
+// language existed. Values are quoted rather than interpolated bare, because a
+// sender address or a subject word can contain characters the parser would
+// otherwise read as syntax.
+func legacyFilterQuery(r *http.Request, accountID, folder string) string {
+	if q := r.URL.Query().Get("q"); q != "" {
+		return q
 	}
-	var data interface{}
-	var err error
 
-	switch queryType {
-	case "volume":
-		data, err = store.GetTemporalVolume(filter)
-	case "senders":
-		data, err = store.GetTopSenders(filter)
-	case "topics":
-		data, err = store.GetTopicStats(filter)
-	default:
+	var terms []string
+	add := func(field, value string) {
+		if value != "" {
+			terms = append(terms, field+":\""+strings.ReplaceAll(value, `"`, `""`)+"\"")
+		}
+	}
+	add("account", accountID)
+	add("on", r.URL.Query().Get("date"))
+	add("from", r.URL.Query().Get("from"))
+	add("subject", r.URL.Query().Get("topic"))
+	if folder != "" && folder != store.FolderAll {
+		add("folder", folder)
+	}
+	return strings.Join(terms, " ")
+}
+
+// analyticsQueries are the dashboard's widgets, as queries.
+//
+// Each was a hand-written function with its own copy of the filter logic, and
+// the three disagreed with each other about what `from` meant. They are three
+// strings now, and adding a widget is a fourth rather than a fourth function.
+var analyticsQueries = map[string]string{
+	"volume": "| count by day",
+	// The user's own addresses are excluded because a chart of who writes to
+	// you should not be topped by you. me() is that exclusion, expressed once.
+	"senders": "-from:me() | top from 10",
+	"topics":  "| top topic 50",
+}
+
+func handleAnalytics(w http.ResponseWriter, r *http.Request) {
+	stage, ok := analyticsQueries[r.URL.Query().Get("type")]
+	if !ok {
 		http.Error(w, "invalid analytics type", http.StatusBadRequest)
 		return
 	}
 
+	filter := legacyFilterQuery(r, "", "")
+	expr := strings.TrimSpace(filter + " " + stage)
+
+	res, err := store.RunQuery(expr, 0, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		// me() has nothing to resolve to until an account has an address, and
+		// a dashboard that errors on a fresh install is worse than one that
+		// shows everyone.
+		if strings.Contains(err.Error(), "me()") {
+			res, err = store.RunQuery(strings.TrimSpace(filter+" | top from 10"), 0, 0)
+		}
+		if err != nil {
+			writeQueryError(w, err)
+			return
+		}
 	}
 
+	groups := res.Groups
+	if r.URL.Query().Get("type") == "topics" {
+		groups = withoutIgnoredWords(groups)
+	}
+
+	// The dashboard reads {label, value}, which is what a group already is.
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	json.NewEncoder(w).Encode(groups)
+}
+
+// withoutIgnoredWords drops the topic words the user asked not to see.
+//
+// Applied to the result rather than compiled into the query: it is a display
+// preference, and pushing it into the language would mean every topic query
+// silently honoured a setting the query does not mention.
+func withoutIgnoredWords(groups []store.QueryGroup) []store.QueryGroup {
+	setting, err := store.GetSetting("ignore_words")
+	if err != nil || strings.TrimSpace(setting) == "" {
+		return groups
+	}
+	ignored := map[string]bool{}
+	for _, w := range strings.Split(strings.ToLower(setting), ",") {
+		if w = strings.TrimSpace(w); w != "" {
+			ignored[w] = true
+		}
+	}
+
+	out := make([]store.QueryGroup, 0, len(groups))
+	for _, g := range groups {
+		if g.Label != "" && !ignored[strings.ToLower(g.Label)] {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 func handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -426,8 +561,7 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 			Key   string `json:"key"`
 			Value string `json:"value"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if err := decodeJSON(w, r, &req); err != nil {
 			return
 		}
 		if err := store.UpdateSetting(req.Key, req.Value); err != nil {
@@ -470,8 +604,7 @@ func handleAgents(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var agent store.Agent
-		if err := json.NewDecoder(r.Body).Decode(&agent); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if err := decodeJSON(w, r, &agent); err != nil {
 			return
 		}
 		if agent.ID == "" {

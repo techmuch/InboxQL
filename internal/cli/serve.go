@@ -300,7 +300,24 @@ func runStart(ctx *Context, args []string) error {
 		}()
 	}
 
-	if err := http.ListenAndServe(*addr, handler); err != nil {
+	// A zero-value http.Server has no timeouts at all, so a client that opens
+	// a connection and sends a header byte a minute holds a goroutine
+	// indefinitely. Harmless on loopback with one user; --addr is a documented,
+	// supported mode where it is not.
+	//
+	// WriteTimeout is generous because a large query or an export legitimately
+	// takes a while, and cutting one off mid-response is worse than the
+	// slow-client risk it defends against.
+	srv := &http.Server{
+		Addr:              *addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      5 * time.Minute,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	if err := srv.ListenAndServe(); err != nil {
 		return Fail(ExitError, "server stopped: %v", err)
 	}
 	return nil

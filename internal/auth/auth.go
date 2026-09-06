@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -103,6 +104,66 @@ func viaProxy(r *http.Request) bool {
 	return false
 }
 
+// safeMethod reports whether a request only reads.
+//
+// The CORS rules stop a page from reading a cross-origin response, so a
+// cross-origin GET leaks nothing even when it is authenticated. It is the
+// state-changing methods that need refusing.
+func safeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	return false
+}
+
+// crossOrigin reports whether a browser issued this request from another origin.
+//
+// This is the control that closes the hole passwordless access opened. Because
+// the loopback path authenticates a request carrying no cookie at all,
+// SameSite does nothing and any page the user visits could drive the API with
+// simple requests — retarget an account's IMAP host, then trigger a sync, and
+// the stored credential is presented to the attacker's server.
+//
+// Sec-Fetch-Site is the right signal because it is a forbidden header name:
+// page JavaScript can neither set nor suppress it, so every browser-originated
+// request carries it and no CLI client ever does. That asymmetry is exactly
+// the line worth drawing, since passwordless access exists to serve local
+// tooling rather than browsers.
+//
+// The Origin comparison is the fallback for browsers older than the header
+// (Safari before 16.4). It compares against the request's own Host so that
+// localhost:8080 and 127.0.0.1:8080 both work without configuring a list.
+//
+// A request with neither header is not from a browser, and gets the benefit of
+// the doubt — that is `curl`, the CLI, and any local script.
+func crossOrigin(r *http.Request) bool {
+	switch strings.ToLower(r.Header.Get("Sec-Fetch-Site")) {
+	case "cross-site", "same-site":
+		// same-site counts: localhost:5173 and localhost:8080 are the same
+		// site, so a Vite dev server can reach the API with a Lax cookie.
+		return true
+	case "same-origin", "none":
+		return false
+	}
+
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return !originMatchesHost(origin, r.Host)
+	}
+	return false
+}
+
+// originMatchesHost compares an Origin header against the host that was asked for.
+func originMatchesHost(origin, host string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		// "null", or something unparseable. Both are opaque origins, and an
+		// opaque origin is not this one.
+		return false
+	}
+	return strings.EqualFold(u.Host, host)
+}
+
 // Middleware protects routes and injects the authenticated user into the
 // context. A valid session cookie always authenticates.
 //
@@ -119,14 +180,20 @@ func viaProxy(r *http.Request) bool {
 // keyboard, which is why the forwarded headers are checked here per request
 // rather than trusted away at startup.
 //
-// Known gap: this authenticates a request that carries no cookie, so a page in
-// the user's browser can reach the API cross-origin. Closing that means
-// refusing the passwordless path for a request with a cross-site
-// Sec-Fetch-Site or a foreign Origin — browsers always send those and CLI
-// callers never do.
+// Cross-origin browser requests get neither passwordless access nor the right
+// to change anything; see crossOrigin.
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var user *store.User
+
+		foreign := crossOrigin(r)
+
+		// Refused before authenticating rather than after, so the answer does
+		// not depend on whether the session cookie happened to be valid.
+		if foreign && !safeMethod(r.Method) {
+			http.Error(w, "cross-origin request refused", http.StatusForbidden)
+			return
+		}
 
 		cookie, err := r.Cookie("session_id")
 		if err == nil && cookie != nil && cookie.Value != "" {
@@ -140,7 +207,7 @@ func Middleware(next http.Handler) http.Handler {
 			}
 		}
 
-		if user == nil && trustLocal && IsLoopback(r.RemoteAddr) && !viaProxy(r) {
+		if user == nil && trustLocal && IsLoopback(r.RemoteAddr) && !viaProxy(r) && !foreign {
 			if defaultUser, err := store.GetDefaultUser(); err == nil && defaultUser != nil {
 				user = defaultUser
 			}

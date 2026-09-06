@@ -7,31 +7,48 @@ import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
 import { MessageViewer } from './views/MessageViewer';
 import { ErrorLog } from './views/ErrorLog';
-import { openTool, openMessage, openErrorLog, useViewerStore } from './lib/tabs';
+import { QueryWorkbench } from './views/QueryWorkbench';
+import { Board } from './views/Board';
+import { openTool, openMessage, openErrorLog, openQuery, useViewerStore } from './lib/tabs';
 import { version as appVersion } from '../package.json';
 import 'nexus-shell/style.css';
 import './App.css';
 
 // --- Filter Store ---
+/**
+ * The dashboard's cross-filters, as query terms.
+ *
+ * These used to be three named fields — date, from, topic — which meant a
+ * fourth kind of filter needed a fourth field here, a fourth parameter on the
+ * API, and a fourth branch in three separate SQL builders. They are terms in
+ * one language now, so the store holds a list of strings and the server is
+ * sent an expression.
+ *
+ * The visible consequence is the point: what narrows a chart is text, so it can
+ * be read, carried to the workbench, edited and saved.
+ */
 interface FilterState {
-  date: string | null;
-  from: string | null;
-  topic: string | null;
-  setDate: (date: string | null) => void;
-  setFrom: (from: string | null) => void;
-  setTopic: (topic: string | null) => void;
+  terms: string[];
+  /** Add a term, or remove it if it is already applied. */
+  toggle: (term: string) => void;
+  remove: (term: string) => void;
   clearAll: () => void;
 }
 
 const useFilterStore = create<FilterState>((set) => ({
-  date: null,
-  from: null,
-  topic: null,
-  setDate: (date) => set((state) => ({ ...state, date: state.date === date ? null : date })),
-  setFrom: (from) => set((state) => ({ ...state, from: state.from === from ? null : from })),
-  setTopic: (topic) => set((state) => ({ ...state, topic: state.topic === topic ? null : topic })),
-  clearAll: () => set({ date: null, from: null, topic: null }),
+  terms: [],
+  toggle: (term) => set((state) => ({
+    terms: state.terms.includes(term)
+      ? state.terms.filter(t => t !== term)
+      : [...state.terms.filter(t => t.split(':')[0] !== term.split(':')[0]), term],
+  })),
+  remove: (term) => set((state) => ({ terms: state.terms.filter(t => t !== term) })),
+  clearAll: () => set({ terms: [] }),
 }));
+
+/** Quote a value so a chart label containing spaces or a colon stays one term. */
+const asTerm = (field: string, value: string): string =>
+  `${field}:"${String(value).replace(/"/g, '""')}"`;
 
 // --- Login View ---
 const LoginView = ({ onLogin }: { onLogin: (user: any) => void }) => {
@@ -134,17 +151,20 @@ const Dashboard = () => {
   const [senders, setSenders] = useState<any[]>([]);
   const [topics, setTopics] = useState<any[]>([]);
   const { theme } = useThemeStore();
-  const { date, from, topic, setDate, setFrom, setTopic, clearAll } = useFilterStore();
+  const { terms, toggle, remove, clearAll } = useFilterStore();
+  const filter = terms.join(' ');
+  // Each widget highlights when a term for its own field is applied. The value
+  // is read back out of the term so the heading can name it.
+  const applied = (field: string) => terms.find(t => t.startsWith(`${field}:`));
+  const appliedValue = (field: string) => {
+    const term = applied(field);
+    return term ? term.slice(field.length + 1).replace(/^"|"$/g, '').replace(/""/g, '"') : null;
+  };
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const query = new URLSearchParams();
-        if (date) query.append('date', date);
-        if (from) query.append('from', from);
-        if (topic) query.append('topic', topic);
-        const qs = query.toString() ? `&${query.toString()}` : '';
-
+        const qs = filter ? `&${new URLSearchParams({ q: filter })}` : '';
         const [vRes, sRes, tRes] = await Promise.all([
           fetch(`/api/analytics?type=volume${qs}`),
           fetch(`/api/analytics?type=senders${qs}`),
@@ -158,7 +178,7 @@ const Dashboard = () => {
       }
     };
     fetchData();
-  }, [date, from, topic]);
+  }, [filter]);
 
   const calendarData = useMemo(() => {
     return (volume || []).map(d => ({
@@ -175,30 +195,40 @@ const Dashboard = () => {
     <div className="p-6 overflow-auto h-full bg-background text-foreground">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Analytics Pulse</h2>
-        {(date || from || topic) && (
+        {terms.length > 0 && (
           <button onClick={clearAll} className="flex items-center gap-1.5 text-[10px] font-semibold text-primary hover:bg-primary/20 bg-primary/10 px-2.5 py-1  transition-colors">
             <X className="w-2.5 h-2.5" /> Clear Filters
           </button>
         )}
       </div>
 
-      {(date || from || topic) && (
+      {terms.length > 0 && (
         <div className="bg-primary/5 border border-primary/10  px-4 py-2 flex items-center gap-3 mb-6">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-primary/60">Active Filters:</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-primary/60">Query:</span>
           <div className="flex flex-1 gap-2 overflow-auto no-scrollbar">
-            {date && <span className="px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-semibold  flex items-center gap-1 shadow-sm">Date: {date} <X onClick={() => setDate(null)} className="w-2.5 h-2.5 cursor-pointer" /></span>}
-            {from && <span className="px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-semibold  flex items-center gap-1 shadow-sm">From: {from} <X onClick={() => setFrom(null)} className="w-2.5 h-2.5 cursor-pointer" /></span>}
-            {topic && <span className="px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-semibold  flex items-center gap-1 shadow-sm">Topic: {topic} <X onClick={() => setTopic(null)} className="w-2.5 h-2.5 cursor-pointer" /></span>}
+            {terms.map(t => (
+              <span key={t} className="px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-mono flex items-center gap-1 shadow-sm whitespace-nowrap">
+                {t} <X onClick={() => remove(t)} className="w-2.5 h-2.5 cursor-pointer" />
+              </span>
+            ))}
           </div>
+          {/* The filters are a query, so they can go somewhere they can be
+              edited and saved rather than only cleared. */}
+          <button
+            onClick={() => openQuery(filter)}
+            className="text-[10px] font-semibold text-primary hover:bg-primary/20 bg-primary/10 px-2.5 py-1 whitespace-nowrap transition-colors"
+          >
+            Open in Query
+          </button>
         </div>
       )}
       
       <div className="space-y-6">
         {/* Temporal Volume - Calendar Heatmap */}
-        <div className={`p-6 bg-card border  shadow-sm min-h-80 flex flex-col group transition-colors ${date ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
+        <div className={`p-6 bg-card border  shadow-sm min-h-80 flex flex-col group transition-colors ${terms.some(t => t.startsWith('on:')) ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
           <div className="flex items-center gap-3 mb-4">
             <BarChart2 className="w-5 h-5 text-primary" />
-            <span className="font-bold text-lg text-foreground">Communication Intensity {date ? `on ${date}` : ''}</span>
+            <span className="font-bold text-lg text-foreground">Communication Intensity {appliedValue('on') ? `on ${appliedValue('on')}` : ''}</span>
           </div>
           <div className="flex-1 h-64 min-h-64">
             {calendarData.length > 0 ? (
@@ -217,7 +247,7 @@ const Dashboard = () => {
                   text: { fill: theme === 'dark' ? '#a1a1aa' : '#71717a', fontSize: 10, fontWeight: 600 },
                   tooltip: { container: { background: theme === 'dark' ? '#18181b' : '#ffffff', color: theme === 'dark' ? '#fafafa' : '#18181b' } }
                 }}
-                onClick={(datum) => setDate(datum.day)}
+                onClick={(datum) => toggle(`on:${datum.day}`)}
               />
             ) : (
               <div className="h-full flex items-center justify-center text-xs text-muted-foreground italic">
@@ -228,17 +258,17 @@ const Dashboard = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className={`p-6 bg-card border  shadow-sm min-h-64 flex flex-col group transition-colors ${from ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
+          <div className={`p-6 bg-card border  shadow-sm min-h-64 flex flex-col group transition-colors ${terms.some(t => t.startsWith('from:')) ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
             <div className="flex items-center gap-3 mb-4">
               <Mail className="w-5 h-5 text-primary" />
-              <span className="font-bold text-lg text-foreground">Top Senders {from ? `(Filtered)` : ''}</span>
+              <span className="font-bold text-lg text-foreground">Top Senders {applied('from') ? `(Filtered)` : ''}</span>
             </div>
             <div className="flex-1 space-y-3">
               {(senders || []).slice(0, 5).map((d, i) => (
                 <button 
                   key={i} 
-                  onClick={() => setFrom(d.label)}
-                  className={`w-full flex items-center gap-2.5 p-1.5  transition-all ${from === d.label ? 'bg-primary/10 ring-1 ring-primary' : 'hover:bg-accent'}`}
+                  onClick={() => toggle(asTerm('from', d.label))}
+                  className={`w-full flex items-center gap-2.5 p-1.5  transition-all ${appliedValue('from') === d.label ? 'bg-primary/10 ring-1 ring-primary' : 'hover:bg-accent'}`}
                 >
                   <div className="w-7 h-7  bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary">
                     {d.label[0]?.toUpperCase() || '?'}
@@ -247,27 +277,27 @@ const Dashboard = () => {
                     <div className="text-xs font-semibold truncate leading-tight">{d.label}</div>
                     <div className="text-[9px] text-muted-foreground uppercase tracking-tighter">{d.value} messages</div>
                   </div>
-                  {from === d.label && <Check className="w-2.5 h-2.5 text-primary" />}
+                  {appliedValue('from') === d.label && <Check className="w-2.5 h-2.5 text-primary" />}
                 </button>
               ))}
               {(!senders || senders.length === 0) && <span className="text-xs text-muted-foreground italic text-center pt-10 block">No senders found for these filters</span>}
             </div>
           </div>
 
-          <div className={`p-6 bg-card border  shadow-sm min-h-64 flex flex-col group transition-colors ${topic ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
+          <div className={`p-6 bg-card border  shadow-sm min-h-64 flex flex-col group transition-colors ${terms.some(t => t.startsWith('subject:')) ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
             <div className="flex items-center gap-3 mb-4">
               <Layout className="w-5 h-5 text-primary" />
-              <span className="font-bold text-lg text-foreground">Topic Trends {topic ? `(Filtered)` : ''}</span>
+              <span className="font-bold text-lg text-foreground">Topic Trends {applied('subject') ? `(Filtered)` : ''}</span>
             </div>
             <div className="flex-1 flex flex-wrap gap-1.5 content-start">
               {(topics || []).map((d, i) => (
                 <button 
                   key={i} 
-                  onClick={() => setTopic(d.label)}
-                  className={`px-2.5 py-1  text-[10px] font-semibold flex items-center gap-1.5 transition-all ${topic === d.label ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted hover:bg-primary/10 hover:text-primary'}`}
+                  onClick={() => toggle(asTerm('subject', d.label))}
+                  className={`px-2.5 py-1  text-[10px] font-semibold flex items-center gap-1.5 transition-all ${appliedValue('subject') === d.label ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted hover:bg-primary/10 hover:text-primary'}`}
                 >
                   <span className="truncate max-w-[100px]">{d.label}</span>
-                  <span className={`text-[9px] ${topic === d.label ? 'text-primary-foreground/70' : 'opacity-50 font-mono'}`}>{d.value}</span>
+                  <span className={`text-[9px] ${appliedValue('subject') === d.label ? 'text-primary-foreground/70' : 'opacity-50 font-mono'}`}>{d.value}</span>
                 </button>
               ))}
               {(!topics || topics.length === 0) && <span className="text-xs text-muted-foreground italic text-center pt-10 w-full block">No topics found for these filters</span>}
@@ -285,7 +315,8 @@ const MailClient = () => {
   const openMessageId = useViewerStore(s => s.messageId);
   const [loading, setLoading] = useState(true);
   const [folder, setFolder] = useState('inbox');
-  const { date, from, topic, clearAll } = useFilterStore();
+  const { terms, clearAll } = useFilterStore();
+  const filter = terms.join(' ');
 
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
@@ -294,6 +325,10 @@ const MailClient = () => {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const [counts, setCounts] = useState<Record<string, { total: number; unread: number }>>({});
+
+  useEffect(() => {
+    useViewerStore.getState().setSelectedCount(selectedMessageIds.size);
+  }, [selectedMessageIds.size]);
 
   const fetchMessages = async (currentOffset = 0) => {
     const isLoadMore = currentOffset > 0;
@@ -305,10 +340,9 @@ const MailClient = () => {
       query.append('offset', currentOffset.toString());
       query.append('folder', folder);
       // The dashboard's cross-filters compose with the folder rather than
-      // replacing it: Sent plus a date means "sent, on that date".
-      if (date) query.append('date', date);
-      if (from) query.append('from', from);
-      if (topic) query.append('topic', topic);
+      // replacing it: Sent plus a date means "sent, on that date". They are
+      // terms in one expression now, so composing is concatenation.
+      if (filter) query.append('q', `${filter} folder:${folder}`);
 
       const res = await fetch(`/api/messages?${query.toString()}`);
       if (res.status === 401) {
@@ -356,11 +390,11 @@ const MailClient = () => {
 
   useEffect(() => {
     fetchMessages(0);
-  }, [folder, date, from, topic]);
+  }, [folder, filter]);
 
   useEffect(() => {
     fetchCounts();
-  }, [folder, date, from, topic]);
+  }, [folder, filter]);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -462,7 +496,39 @@ const MailClient = () => {
 
       <div className="flex-1 flex flex-col" tabIndex={0} onKeyDown={handleKeyDown}>
         <div className="h-12 border-b border-border flex items-center px-4 gap-2 sticky top-0 bg-background/80 backdrop-blur-md z-10">
-          <button className="p-2 hover:bg-accent  transition-colors"><input type="checkbox" className="border-border" /></button>
+          <div className="p-2 flex items-center">
+            <input 
+              type="checkbox" 
+              className="border-border cursor-pointer"
+              checked={messages.length > 0 && selectedMessageIds.size === messages.length}
+              ref={(el) => {
+                if (el) {
+                  el.indeterminate = selectedMessageIds.size > 0 && selectedMessageIds.size < messages.length;
+                }
+              }}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setSelectedMessageIds(new Set(messages.map(m => m.id)));
+                } else {
+                  setSelectedMessageIds(new Set());
+                }
+              }}
+              title={selectedMessageIds.size === messages.length ? "Deselect all" : "Select all"}
+            />
+          </div>
+          {selectedMessageIds.size > 0 && (
+            <div className="flex items-center gap-2 pl-1 pr-2 animate-in fade-in">
+              <span className="text-xs font-semibold text-primary px-2 py-0.5 bg-primary/10 rounded">
+                {selectedMessageIds.size} selected
+              </span>
+              <button 
+                onClick={() => setSelectedMessageIds(new Set())}
+                className="text-xs text-muted-foreground hover:text-foreground underline transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          )}
           <button onClick={() => { fetchMessages(0); fetchCounts(); }} className={`p-2 hover:bg-accent  transition-colors ${loading ? 'animate-spin' : ''}`}>
             <RefreshCw className="w-4 h-4 text-muted-foreground" />
           </button>
@@ -475,14 +541,17 @@ const MailClient = () => {
           </div>
         </div>
 
-        {(date || from || topic) && (
+        {terms.length > 0 && (
           <div className="bg-primary/5 border-b border-primary/10 px-4 py-1.5 flex items-center gap-3">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-primary/60">Active Filters:</span>
+            <span className="text-[9px] font-bold uppercase tracking-wider text-primary/60">Query:</span>
             <div className="flex flex-1 gap-1.5 overflow-auto no-scrollbar">
-              {date && <span className="px-2 py-0.5 bg-primary text-primary-foreground text-[9px] font-semibold  flex items-center gap-1 shadow-sm">Date: {date} <X onClick={() => useFilterStore.getState().setDate(null)} className="w-2 h-2 cursor-pointer" /></span>}
-              {from && <span className="px-2 py-0.5 bg-primary text-primary-foreground text-[9px] font-semibold  flex items-center gap-1 shadow-sm">From: {from} <X onClick={() => useFilterStore.getState().setFrom(null)} className="w-2 h-2 cursor-pointer" /></span>}
-              {topic && <span className="px-2 py-0.5 bg-primary text-primary-foreground text-[9px] font-semibold  flex items-center gap-1 shadow-sm">Topic: {topic} <X onClick={() => useFilterStore.getState().setTopic(null)} className="w-2 h-2 cursor-pointer" /></span>}
+              {terms.map(t => (
+                <span key={t} className="px-2 py-0.5 bg-primary text-primary-foreground text-[9px] font-mono flex items-center gap-1 shadow-sm whitespace-nowrap">
+                  {t} <X onClick={() => useFilterStore.getState().remove(t)} className="w-2 h-2 cursor-pointer" />
+                </span>
+              ))}
             </div>
+            <button onClick={() => openQuery(`${filter} folder:${folder}`)} className="text-[9px] font-bold text-primary hover:bg-primary/10 px-2 py-0.5 transition-colors uppercase tracking-tighter whitespace-nowrap">Open in Query</button>
             <button onClick={clearAll} className="text-[9px] font-bold text-primary hover:bg-primary/10 px-2 py-0.5 transition-colors uppercase tracking-tighter">Clear All</button>
           </div>
         )}
@@ -495,7 +564,7 @@ const MailClient = () => {
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground space-y-4 px-8 text-center">
                 <EmptyIcon className="w-12 h-12 opacity-10" />
                 <span className="italic">{meta?.empty ?? 'Nothing here.'}</span>
-                {(date || from || topic) && (
+                {terms.length > 0 && (
                   <button onClick={clearAll} className="text-xs font-semibold text-primary hover:underline not-italic">
                     Filters are active — clear them
                   </button>
@@ -511,6 +580,8 @@ const MailClient = () => {
             const who = isDraft
               ? (msg.to?.length ? `To: ${msg.to.join(', ')}` : 'No recipient')
               : (msg.from || '(No Sender)');
+            const isOpen = msg.id === openMessageId;
+            const isSelected = selectedMessageIds.has(msg.id);
             return (
               <div 
                 key={msg.id}
@@ -530,15 +601,20 @@ const MailClient = () => {
                   }
                   openMessage(msg);
                 }}
-                className={`flex items-center px-4 py-2 border-b border-border/50 cursor-pointer transition-colors group ${
-                  selectedMessageIds.has(msg.id) || msg.id === openMessageId ? 'bg-primary/10 ring-1 ring-inset ring-primary/40'
-                  : isUnread ? 'bg-accent/20' : 'hover:bg-accent/40'
+                className={`flex items-center px-4 py-2 border-b border-border/50 cursor-pointer transition-all group relative ${
+                  isOpen
+                    ? 'bg-primary/15 ring-1 ring-inset ring-primary/40 border-l-4 border-l-primary z-[1]'
+                    : isSelected
+                    ? 'bg-primary/5 hover:bg-primary/10 ring-1 ring-inset ring-primary/20 border-l-4 border-l-transparent'
+                    : isUnread
+                    ? 'bg-accent/20 hover:bg-accent/40 border-l-4 border-l-transparent'
+                    : 'hover:bg-accent/40 border-l-4 border-l-transparent'
                 }`}
               >
-                <div className="flex items-center gap-3 mr-4">
+                <div className="flex items-center gap-2.5 mr-3 shrink-0">
                   <input 
                     type="checkbox" 
-                    checked={selectedMessageIds.has(msg.id)} 
+                    checked={isSelected} 
                     onChange={(e) => {
                       const newSelected = new Set(selectedMessageIds);
                       if (e.target.checked) newSelected.add(msg.id);
@@ -546,11 +622,18 @@ const MailClient = () => {
                       setSelectedMessageIds(newSelected);
                     }}
                     onClick={(e) => e.stopPropagation()} 
-                    className="border-border" 
+                    className="border-border cursor-pointer" 
                   />
                   <Star className="w-4 h-4 text-muted-foreground/40 hover:text-yellow-500 transition-colors" />
+                  <div className="w-4 flex items-center justify-center" title={isOpen ? "Currently viewing this message" : undefined}>
+                    {isOpen ? (
+                      <Eye 
+                        className="w-3.5 h-3.5 text-primary shrink-0 animate-in fade-in" 
+                      />
+                    ) : null}
+                  </div>
                 </div>
-                <div className={`w-48 truncate mr-4 text-sm flex items-center gap-2 ${isUnread ? 'font-bold' : 'text-foreground/70'}`}>
+                <div className={`w-48 truncate mr-4 text-sm flex items-center gap-2 ${isOpen ? 'font-bold text-foreground' : isUnread ? 'font-bold' : 'text-foreground/70'}`}>
                   {isDraft && (
                     <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400">
                       Draft
@@ -559,10 +642,10 @@ const MailClient = () => {
                   <span className={`truncate ${isDraft && !msg.to?.length ? 'italic text-muted-foreground' : ''}`}>{who}</span>
                 </div>
                 <div className="flex-1 truncate flex items-center gap-2 text-foreground/90">
-                  <span className={`text-sm ${isUnread ? 'font-bold' : 'font-medium'}`}>{msg.subject || '(No Subject)'}</span>
+                  <span className={`text-sm ${isOpen ? 'font-semibold text-foreground' : isUnread ? 'font-bold' : 'font-medium'}`}>{msg.subject || '(No Subject)'}</span>
                   <span className="text-sm text-muted-foreground opacity-60">— {msg.body?.substring(0, 100).replace(/\n/g, ' ')}</span>
                 </div>
-                <div className={`ml-4 text-xs tabular-nums whitespace-nowrap ${isUnread ? 'font-bold text-primary' : 'text-muted-foreground'}`}>
+                <div className={`ml-4 text-xs tabular-nums whitespace-nowrap ${isOpen ? 'font-bold text-primary' : isUnread ? 'font-bold text-primary' : 'text-muted-foreground'}`}>
                   {formatDate(msg.date)}
                 </div>
               </div>
@@ -1252,6 +1335,8 @@ componentRegistry.register('settings', SettingsView);
 componentRegistry.register('agents', AgentManager);
 componentRegistry.register('message', MessageViewer);
 componentRegistry.register('errors', ErrorLog);
+componentRegistry.register('query', QueryWorkbench);
+componentRegistry.register('board', Board);
 
 function App() {
   // Every menu advertises a shortcut — Control+Shift+D and the rest — but the
@@ -1344,6 +1429,20 @@ function App() {
       execute: () => openToolCb('search', 'Search'),
     });
     commandRegistry.registerCommand({
+      id: 'iql.open-query',
+      label: 'Query Workbench',
+      keybinding: 'Control+Shift+Q',
+      execute: () => openToolCb('query', 'Query'),
+    });
+    commandRegistry.registerCommand({
+      id: 'iql.open-board',
+      label: 'Ticket Board',
+      // Not Control+Shift+B: Chrome binds that to the bookmarks bar and the
+      // key never reaches the page.
+      keybinding: 'Control+Shift+K',
+      execute: () => openToolCb('board', 'Board'),
+    });
+    commandRegistry.registerCommand({
       id: 'iql.open-agents',
       label: 'AI Agents',
       keybinding: 'Control+Shift+A',
@@ -1377,6 +1476,8 @@ function App() {
       'Tools': [
         { id: 'tools.dashboard', label: 'Analytics Dashboard', commandId: 'iql.open-dashboard' },
         { id: 'tools.mail', label: 'Mailbox', commandId: 'iql.open-mail' },
+        { id: 'tools.query', label: 'Query Workbench', commandId: 'iql.open-query' },
+        { id: 'tools.board', label: 'Ticket Board', commandId: 'iql.open-board' },
         { id: 'tools.search', label: 'Search Email', commandId: 'iql.open-search' },
         { id: 'tools.agents', label: 'AI Agents', commandId: 'iql.open-agents' },
       ],

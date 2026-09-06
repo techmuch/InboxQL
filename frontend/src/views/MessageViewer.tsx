@@ -18,6 +18,7 @@ import { useViewerStore } from '../lib/tabs';
  */
 export const MessageViewer = () => {
   const message = useViewerStore(s => s.message);
+  const selectedCount = useViewerStore(s => s.selectedCount);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw'>('html');
   const [copied, setCopied] = useState(false);
@@ -120,6 +121,11 @@ export const MessageViewer = () => {
             </span>
           )}
           <span className="truncate">{isDraft ? 'Not sent' : message.from}</span>
+          {selectedCount > 1 && (
+            <span className="shrink-0 px-2 py-0.5 text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20 rounded animate-in fade-in">
+              1 of {selectedCount} selected
+            </span>
+          )}
         </span>
 
         {/* View Mode Toggle: HTML / Text / Raw */}

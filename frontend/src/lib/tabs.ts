@@ -57,7 +57,9 @@ interface ViewerState {
   /** The message currently shown in the viewer tab, if any. */
   messageId: string | null;
   message: any | null;
+  selectedCount: number;
   setMessage: (message: any) => void;
+  setSelectedCount: (count: number) => void;
   clear: () => void;
 }
 
@@ -70,8 +72,10 @@ interface ViewerState {
 export const useViewerStore = create<ViewerState>((set) => ({
   messageId: null,
   message: null,
+  selectedCount: 0,
   setMessage: (message) => set({ message, messageId: message?.id ?? null }),
-  clear: () => set({ message: null, messageId: null }),
+  setSelectedCount: (selectedCount) => set({ selectedCount }),
+  clear: () => set({ message: null, messageId: null, selectedCount: 0 }),
 }));
 
 /** Component id of the message viewer tab. */
@@ -102,4 +106,30 @@ export const useErrorLogStore = create<ErrorLogState>((set) => ({
 export const openErrorLog = (jobId?: string): void => {
   useErrorLogStore.getState().setJobFilter(jobId ?? null);
   openTool(ERROR_LOG_TAB, 'Error Log');
+};
+
+/** Component id of the query workbench tab. */
+export const QUERY_TAB = 'query';
+
+interface WorkbenchState {
+  /** A query handed to the workbench by something else, consumed on arrival. */
+  pending: string | null;
+  setPending: (query: string | null) => void;
+}
+
+export const useWorkbenchStore = create<WorkbenchState>((set) => ({
+  pending: null,
+  setPending: (pending) => set({ pending }),
+}));
+
+/**
+ * Open the workbench on a query.
+ *
+ * This is what makes the dashboard's filters more than a dead end: whatever
+ * narrowed a chart is a query, so it can be carried somewhere it can be read,
+ * edited and saved rather than only cleared.
+ */
+export const openQuery = (query: string): void => {
+  useWorkbenchStore.getState().setPending(query);
+  openTool(QUERY_TAB, 'Query');
 };

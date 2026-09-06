@@ -97,7 +97,18 @@ A query is a **filter**, optionally followed by **pipeline stages** after `|`.
 | `extract:name.field>10` | extracted structured data |
 | `thread:<message-id>` | every message in that conversation |
 | `saved:<name>` | everything a saved query matches |
+| `in:<kind>` | what the query is about: `mail`, `drafts`, `tickets` |
 | a bare word | full-text search |
+
+**A query is about one kind of thing.** Mail is the default. `in:` says
+otherwise, and a field only one kind has says it for you — `due:` means
+tickets, `origin:` means drafts. Where a name belongs to several kinds it names
+none of them: **`status:` means tickets** unless the query says `in:drafts`.
+`in:` cannot be negated; it selects the source rather than filtering it.
+
+A field that exists for another kind says so rather than reporting itself
+unknown, and a field the kind cannot answer says why — a draft has no flags,
+attachments or thread, because it has never been mail.
 
 **Shorthands** worth knowing, because they save several terms each:
 
@@ -357,6 +368,28 @@ reports blocked: the user drags messages out of Mail.app into a folder, and you
 import that.
 
 ---
+
+## `in:drafts` — drafts are their own kind
+
+A draft is outgoing and unsent, and deliberately not a row in `messages` so it
+cannot be deduplicated against real mail. It is queried like anything else:
+
+```
+iql --json query "in:drafts status:queued"
+iql --json query "in:drafts origin:agent after:7d"
+iql --json draft list --query "origin:agent"
+```
+
+| Term | Matches |
+|---|---|
+| `status:` | `draft queued sent failed` — needs `in:drafts` |
+| `origin:` | `human` or `agent`; unique to drafts, so it implies `in:drafts` |
+| `to: cc: bcc: subject: body: account: after: before: on:` | as for mail |
+
+`folder:drafts` still works and means `in:drafts`.
+
+Results come back under `drafts` with `kind: "drafts"`, not under `messages` —
+a draft has no id in the message store, so do not pass one to `read`.
 
 ## `annotate` — labels and extracted data
 

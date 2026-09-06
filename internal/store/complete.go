@@ -210,3 +210,111 @@ func FieldValues(field, prefix string) ([]query.Candidate, error) {
 	}
 	return append(out, values...), nil
 }
+
+// AddressCoverage reports whether an account's own addresses appear in the mail
+// stored for it.
+//
+// An account whose configured address matches nothing in its own mailbox is a
+// silent, wide failure: `me()` resolves to an address no message names, so
+// `from:me()` and `to:me()` match nothing, `folder:sent` is empty because
+// sqlIsSent uses the same list, and Top Senders stops excluding you. Every one
+// of those returns a confident, wrong, empty answer.
+//
+// It happens easily — the account is added with one address and the mail is
+// imported from another, or from someone else's export.
+type AddressCoverage struct {
+	AccountID string   `json:"accountId"`
+	Addresses []string `json:"addresses"`
+	Matched   int64    `json:"matched"`
+	Messages  int64    `json:"messages"`
+}
+
+// OrphanedMessages counts messages whose account no longer exists.
+//
+// messages.account_id has a foreign key to accounts with ON DELETE CASCADE, so
+// this should be impossible — but the enforcement pragma was added after the
+// table was, and rows written before it survive their account's deletion.
+//
+// The consequence is the same silent emptiness a mismatched address causes:
+// me() has no account to resolve through, folder:sent finds nothing, and the
+// Top Senders exclusion stops excluding. The mail is all still there and all
+// still searchable, which is why nothing complains.
+func OrphanedMessages() (map[string]int64, error) {
+	rows, err := db.Query(`
+		SELECT m.account_id, COUNT(*) AS n
+		FROM messages m
+		LEFT JOIN accounts a ON a.id = m.account_id
+		WHERE a.id IS NULL
+		GROUP BY m.account_id
+		ORDER BY n DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]int64{}
+	for rows.Next() {
+		var id string
+		var n int64
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+// AccountAddressCoverage checks every configured account.
+func AccountAddressCoverage() ([]AddressCoverage, error) {
+	rows, err := db.Query(`
+		SELECT id,
+		       COALESCE(LOWER(NULLIF(email, '')), ''),
+		       COALESCE(LOWER(NULLIF(user, '')), '')
+		FROM accounts ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	type acct struct{ id, email, user string }
+	var accounts []acct
+	for rows.Next() {
+		var a acct
+		if err := rows.Scan(&a.id, &a.email, &a.user); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		accounts = append(accounts, a)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]AddressCoverage, 0, len(accounts))
+	for _, a := range accounts {
+		cov := AddressCoverage{AccountID: a.id}
+		seen := map[string]bool{}
+		for _, addr := range []string{a.email, a.user} {
+			if addr != "" && strings.Contains(addr, "@") && !seen[addr] {
+				seen[addr] = true
+				cov.Addresses = append(cov.Addresses, addr)
+			}
+		}
+		if err := db.QueryRow(
+			"SELECT COUNT(*) FROM messages WHERE account_id = ?", a.id).Scan(&cov.Messages); err != nil {
+			return nil, err
+		}
+		for _, addr := range cov.Addresses {
+			var n int64
+			if err := db.QueryRow(`
+				SELECT COUNT(DISTINCT p.message_id)
+				FROM message_participants p
+				JOIN messages m ON m.id = p.message_id
+				WHERE m.account_id = ? AND p.address = ?`, a.id, addr).Scan(&n); err != nil {
+				return nil, err
+			}
+			cov.Matched += n
+		}
+		out = append(out, cov)
+	}
+	return out, nil
+}

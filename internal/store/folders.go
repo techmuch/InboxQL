@@ -63,12 +63,27 @@ const (
 // sent from another client that never landed in a folder InboxQL fetched — but it
 // would wrongly claim a message you merely appear in the From of, which is why
 // the folder check comes first.
+// The sender test goes through message_participants rather than from_addr.
+// from_addr holds the raw header, so `Me <me@example.com>` never equalled the
+// bare account address and mail sent from any client that writes a display
+// name — which is most of them — was missing from Sent. The participant row
+// carries the normalised address, which is what the account list holds too.
+//
+// The correlation is written as an unqualified `id` on purpose: this predicate
+// is spliced into statements that sometimes alias the table (`FROM messages m`,
+// in the query compiler) and sometimes do not (FolderCounts). Unqualified, it
+// resolves to the outer row either way; `messages.id` would fail wherever the
+// alias is in force.
 const sqlIsSent = `(
 	LOWER(COALESCE(mailbox, '')) LIKE '%sent%'
-	OR LOWER(from_addr) IN (
-		SELECT LOWER(email) FROM accounts WHERE email IS NOT NULL AND email != ''
-		UNION
-		SELECT LOWER(user)  FROM accounts WHERE user  IS NOT NULL AND user  != ''
+	OR EXISTS (
+		SELECT 1 FROM message_participants p
+		WHERE p.message_id = id AND p.role = 'from'
+		  AND p.address IN (
+			SELECT LOWER(email) FROM accounts WHERE email IS NOT NULL AND email != ''
+			UNION
+			SELECT LOWER(user)  FROM accounts WHERE user  IS NOT NULL AND user  != ''
+		  )
 	)
 )`
 

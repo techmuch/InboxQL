@@ -53,6 +53,17 @@ func openFolderFixture(t *testing.T) {
 	}
 }
 
+// newFolderMessage builds a message in the folder fixture's account.
+func newFolderMessage(id, from, mailbox string, flags []string) *message.Message {
+	now := time.Now()
+	return &message.Message{
+		ID: id, AccountID: "acct", ContentHash: id,
+		From: from, Mailbox: mailbox, Flags: flags,
+		MessageID: "<" + id + "@test>",
+		Date:      now, InternalDate: now,
+	}
+}
+
 func folderIDs(t *testing.T, folder string) []string {
 	t.Helper()
 	msgs, err := SearchMessages(SearchQuery{Folder: folder, Limit: 100})

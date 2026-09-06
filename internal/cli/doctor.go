@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/user/inboxql/internal/cli/ui"
@@ -148,6 +150,45 @@ func runDoctor(ctx *Context, args []string) error {
 		rep.add("full-text index", statusWarn,
 			"this binary was built without FTS5; text queries fall back to substring scans",
 			"rebuild with `go build -tags sqlite_fts5`, or use a released binary")
+	}
+
+	// An account whose own address matches nothing in its mailbox breaks
+	// me(), folder:sent and the Top Senders exclusion all at once, and every
+	// one of them fails by returning nothing rather than by complaining.
+	// Mail whose account was deleted, or never existed. Same silent emptiness
+	// as a mismatched address, by a different route.
+	if orphans, err := store.OrphanedMessages(); err != nil {
+		rep.add("message ownership", statusWarn, err.Error())
+	} else if len(orphans) > 0 {
+		var total int64
+		names := make([]string, 0, len(orphans))
+		for id, n := range orphans {
+			total += n
+			names = append(names, fmt.Sprintf("%s (%d)", id, n))
+		}
+		sort.Strings(names)
+		rep.add("message ownership", statusFail,
+			fmt.Sprintf("%d message(s) belong to accounts that do not exist: %s — me(), folder:sent and the Top Senders exclusion all match nothing for them",
+				total, strings.Join(names, ", ")),
+			"re-create the account with that id, or re-import the mail under a real one")
+	}
+
+	if coverage, err := store.AccountAddressCoverage(); err != nil {
+		rep.add("account address", statusWarn, err.Error())
+	} else {
+		for _, c := range coverage {
+			switch {
+			case len(c.Addresses) == 0 && c.Messages > 0:
+				rep.add("account address: "+c.AccountID, statusWarn,
+					"no address configured, so me() and Sent cannot work",
+					"iql account add --email <your address>")
+			case c.Messages > 0 && c.Matched == 0:
+				rep.add("account address: "+c.AccountID, statusFail,
+					fmt.Sprintf("%s appears in none of this account's %d messages — me(), folder:sent and the Top Senders exclusion all match nothing",
+						strings.Join(c.Addresses, ", "), c.Messages),
+					"check the address with `iql account list`, or `iql query \"| top to 5\"` to see who this mail is actually addressed to")
+			}
+		}
 	}
 
 	if version, err := store.SchemaVersionOnDisk(); err != nil {

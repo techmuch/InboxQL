@@ -17,6 +17,8 @@ const (
 	PlanScalar
 	// PlanTickets returns ticket rows.
 	PlanTickets
+	// PlanDrafts returns draft rows.
+	PlanDrafts
 )
 
 // Plan is a compiled query ready to execute.
@@ -148,6 +150,9 @@ func (p *pipeline) build() (*Plan, error) {
 	if p.entity == EntityTicket {
 		return p.buildTickets()
 	}
+	if p.entity == EntityDraft {
+		return p.buildDrafts()
+	}
 	if p.terminal == nil {
 		return p.buildMessages()
 	}
@@ -203,6 +208,95 @@ func (p *pipeline) buildMessages() (*Plan, error) {
 	}
 
 	return &Plan{SQL: sql, Args: args, Kind: PlanMessages, Limit: limit, Ordered: ordered}, nil
+}
+
+// draftSelectList is the column list store.scanDraft expects.
+const draftSelectList = `d.id, d.account_id, d.in_reply_to, d.to_addrs, d.cc_addrs, d.bcc_addrs,
+	d.subject, d.body, d.status, d.origin, d.created_at, d.updated_at, d.queued_at, d.sent_at, d.last_error`
+
+// buildDrafts plans a query over the drafts table.
+//
+// Newest first, because a draft list is a working queue rather than an archive
+// — the one you were writing is the one you want.
+func (p *pipeline) buildDrafts() (*Plan, error) {
+	args := append([]any{}, p.args...)
+
+	if p.terminal != nil {
+		switch p.terminal.Kind {
+		case StageCount:
+			if p.terminal.Field == "" {
+				return &Plan{
+					SQL:    "SELECT COUNT(*) FROM drafts d WHERE " + p.where,
+					Args:   args,
+					Kind:   PlanScalar,
+					Entity: EntityDraft,
+				}, nil
+			}
+			return p.buildDraftGroups(p.terminal.Field, p.clampLimit(200))
+		case StageTop:
+			return p.buildDraftGroups(p.terminal.Field, p.clampLimit(p.terminal.N))
+		default:
+			return nil, fmt.Errorf("%s does not apply to drafts", p.terminal.Kind)
+		}
+	}
+
+	order := "d.updated_at DESC"
+	if p.sort != nil {
+		switch strings.ToLower(p.sort.Field) {
+		case "date", "updated", "":
+			order = "d.updated_at"
+		case "created":
+			order = "d.created_at"
+		case "subject":
+			order = "d.subject"
+		case "status":
+			order = "d.status"
+		default:
+			return nil, fmt.Errorf("cannot sort drafts by %q (try: date, created, subject, status)", p.sort.Field)
+		}
+		if p.sort.Desc {
+			order += " DESC"
+		} else {
+			order += " ASC"
+		}
+	}
+
+	limit := p.clampLimit(p.opt.defaultLimit())
+	args = append(args, limit)
+	sql := "SELECT " + draftSelectList + " FROM drafts d WHERE " + p.where +
+		" ORDER BY " + order + " LIMIT ?"
+	if p.opt.Offset > 0 {
+		sql += " OFFSET ?"
+		args = append(args, p.opt.Offset)
+	}
+	return &Plan{SQL: sql, Args: args, Kind: PlanDrafts, Limit: limit, Entity: EntityDraft}, nil
+}
+
+func (p *pipeline) buildDraftGroups(field string, limit int) (*Plan, error) {
+	var expr string
+	switch strings.ToLower(field) {
+	case "status", "":
+		expr = "d.status"
+	case "origin", "raised":
+		expr = "d.origin"
+	case "account":
+		expr = "d.account_id"
+	case "day", "week", "month", "year":
+		b, err := bucketExpr("d.created_at", strings.ToLower(field))
+		if err != nil {
+			return nil, err
+		}
+		expr = b
+	default:
+		return nil, fmt.Errorf("cannot group drafts by %q (try: status, origin, account, day, week, month, year)", field)
+	}
+
+	args := append([]any{}, p.args...)
+	args = append(args, limit)
+	sql := "SELECT " + expr + " AS label, COUNT(*) AS value FROM drafts d WHERE " + p.where +
+		" GROUP BY label ORDER BY value DESC, label ASC LIMIT ?"
+	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true,
+		Entity: EntityDraft, GroupField: strings.ToLower(field)}, nil
 }
 
 // buildTickets plans a query over the tickets table.

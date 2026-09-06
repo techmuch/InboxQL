@@ -37,7 +37,24 @@ const (
 const (
 	EntityMessage = "message"
 	EntityTicket  = "ticket"
+	EntityDraft   = "draft"
 )
+
+// Entities are the row sources a query can be about, and the values `in:`
+// accepts. Plural because that is how they read: `in:drafts`.
+var Entities = map[string]string{
+	"mail":     EntityMessage,
+	"mails":    EntityMessage,
+	"messages": EntityMessage,
+	"message":  EntityMessage,
+	"tickets":  EntityTicket,
+	"ticket":   EntityTicket,
+	"drafts":   EntityDraft,
+	"draft":    EntityDraft,
+}
+
+// EntityNames lists what `in:` accepts, for help and completion.
+var EntityNames = []string{"mail", "drafts", "tickets"}
 
 // Field declares one queryable field.
 type Field struct {
@@ -57,6 +74,14 @@ type Field struct {
 	// Summary is one line, shown in autocomplete and generated help.
 	Summary string
 	Example string
+	// Primary marks the declaration that wins when a field name belongs to
+	// several entities.
+	//
+	// `status:` means something to both tickets and drafts, with different
+	// values each. Without a tiebreak, `status:todo` would be ambiguous and
+	// every existing query naming it would start erroring. Tickets hold the
+	// name; drafts reach theirs through `in:drafts`.
+	Primary bool
 }
 
 // Value sources autocomplete can draw on. The store resolves these; the query
@@ -195,7 +220,7 @@ var Registry = []Field{
 	// is what "traceable to the mail that created it" means when it is a query
 	// rather than a claim.
 	{
-		Name: "status", Entity: EntityTicket, Type: TypeEnum,
+		Name: "status", Entity: EntityTicket, Type: TypeEnum, Primary: true,
 		Ops:     []Op{OpMatch, OpGlob},
 		Enum:    []string{"proposed", "todo", "doing", "done", "rejected"},
 		Summary: "where a ticket sits", Example: "status:todo",
@@ -221,6 +246,29 @@ var Registry = []Field{
 		Summary: "who raised the ticket", Example: "raised:annotator",
 	},
 
+	// --- drafts ------------------------------------------------------------
+	//
+	// A draft is outgoing and unsent, deliberately not a row in `messages` so
+	// it cannot be deduplicated against real mail. It is its own entity, and
+	// `in:drafts` is how a query says so.
+	{
+		Name: "status", Entity: EntityDraft, Type: TypeEnum,
+		Ops:     []Op{OpMatch, OpGlob},
+		Enum:    []string{"draft", "queued", "sent", "failed"},
+		Summary: "where a draft sits; needs in:drafts", Example: "in:drafts status:queued",
+	},
+	{
+		Name: "origin", Entity: EntityDraft, Type: TypeEnum,
+		Ops:     []Op{OpMatch, OpGlob},
+		Enum:    []string{"human", "agent"},
+		Summary: "who composed the draft", Example: "origin:agent",
+	},
+
+	{
+		Name: "in", Entity: EntityMessage, Type: TypeEnum,
+		Enum:    EntityNames,
+		Summary: "which kind of thing the query is about", Example: "in:drafts",
+	},
 	{
 		Name: "saved", Entity: EntityMessage, Type: TypeQuery,
 		Values:  ValuesSaved,
@@ -228,29 +276,122 @@ var Registry = []Field{
 	},
 }
 
+// draftServes names the message fields a drafts query can answer from the
+// drafts table's own columns. Everything else is about mail a draft does not
+// have.
+var draftServes = map[string]bool{
+	"to": true, "cc": true, "bcc": true,
+	"subject": true, "body": true, "text": true,
+	"account": true, "after": true, "before": true, "on": true,
+	// folder:drafts is how the mailbox names this entity; the compiler reads
+	// it as the selector it is rather than a predicate.
+	"folder": true,
+}
+
+// DraftServes reports whether a message field is answerable for a draft.
+func DraftServes(field string) bool { return draftServes[canonicalField(field)] }
+
 var (
-	byName  = map[string]*Field{}
-	aliases = map[string]string{}
+	byName   = map[string]*Field{}
+	byEntity = map[string]map[string]*Field{}
+	aliases  = map[string]string{}
 )
 
 func init() {
 	for i := range Registry {
 		f := &Registry[i]
-		byName[f.Name] = f
+		if byEntity[f.Entity] == nil {
+			byEntity[f.Entity] = map[string]*Field{}
+		}
+		byEntity[f.Entity][f.Name] = f
+
+		// The unscoped map keeps the first declaration unless a later one
+		// claims the name as primary.
+		if existing, taken := byName[f.Name]; !taken || (f.Primary && !existing.Primary) {
+			byName[f.Name] = f
+		}
 		for _, a := range f.Aliases {
 			aliases[a] = f.Name
 		}
 	}
 }
 
-// LookupField resolves a name or alias to its declaration.
-func LookupField(name string) (*Field, bool) {
+func canonicalName(name string) string {
 	n := strings.ToLower(strings.TrimSpace(name))
 	if canonical, ok := aliases[n]; ok {
-		n = canonical
+		return canonical
 	}
-	f, ok := byName[n]
+	return n
+}
+
+// LookupField resolves a name or alias without an entity in hand.
+//
+// Where a name belongs to several entities this returns the primary one, which
+// is what keeps `status:todo` meaning tickets.
+func LookupField(name string) (*Field, bool) {
+	f, ok := byName[canonicalName(name)]
 	return f, ok
+}
+
+// LookupFieldIn resolves a name against one entity.
+//
+// Falls back to the message declaration when the entity does not claim the
+// name itself, so `subject:` works in a drafts query without being declared
+// twice — DraftServes decides whether that fallback can actually be compiled.
+func LookupFieldIn(entity, name string) (*Field, bool) {
+	n := canonicalName(name)
+	if f, ok := byEntity[entity][n]; ok {
+		return f, true
+	}
+	if f, ok := byEntity[EntityMessage][n]; ok {
+		return f, true
+	}
+	return nil, false
+}
+
+// EntityOf reports which entity a field name uniquely identifies.
+//
+// A name claimed by several entities identifies none of them: `status:` cannot
+// say whether a query is about tickets or drafts, so it does not try. `in:`
+// exists for that.
+func EntityOf(name string) (string, bool) {
+	n := canonicalName(name)
+
+	var claimants []string
+	var primary string
+	for entity, fields := range byEntity {
+		f, ok := fields[n]
+		if !ok {
+			continue
+		}
+		claimants = append(claimants, entity)
+		if f.Primary {
+			primary = entity
+		}
+	}
+
+	switch {
+	case len(claimants) == 1 && claimants[0] != EntityMessage:
+		return claimants[0], true
+	case len(claimants) > 1 && primary != "" && primary != EntityMessage:
+		// Several entities claim the name and one holds it. `status:` means
+		// tickets unless a query says `in:drafts`, which keeps every query
+		// written before drafts existed meaning what it did.
+		return primary, true
+	}
+	return "", false
+}
+
+// ClaimedBy lists the entities that declare a field name, for error messages.
+func ClaimedBy(name string) []string {
+	n := canonicalName(name)
+	var out []string
+	for _, entity := range []string{EntityMessage, EntityDraft, EntityTicket} {
+		if _, ok := byEntity[entity][n]; ok {
+			out = append(out, entity)
+		}
+	}
+	return out
 }
 
 // canonicalField maps what someone typed onto the declared name.
@@ -380,6 +521,14 @@ func min3(a, b, c int) int {
 
 // unknownFieldError builds the message for a field nobody declared.
 func unknownFieldError(name string) error {
+	if owners := ClaimedBy(name); len(owners) > 0 {
+		plural := make([]string, 0, len(owners))
+		for _, o := range owners {
+			plural = append(plural, o+"s")
+		}
+		return fmt.Errorf("%s: belongs to %s — say %s",
+			name, strings.Join(plural, " and "), "in:"+plural[0])
+	}
 	if s := suggestField(name); s != "" {
 		return fmt.Errorf("unknown field %q — did you mean %s?", name, s)
 	}

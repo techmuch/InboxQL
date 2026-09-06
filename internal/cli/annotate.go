@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/user/inboxql/internal/annotate"
+	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/store"
 )
 
@@ -30,6 +32,7 @@ are the same mechanism, so they version, re-run and query the same way.
   run       apply it to messages that still need it
   plan      report what a run would do, without doing it
   correct   record a human ruling, which outranks the machine
+  probe     define, run and measure an annotator in one go
 
 create flags:
   --kind <label|extract>    yes/no, or structured records (default label)
@@ -79,6 +82,8 @@ func runAnnotate(ctx *Context, args []string) error {
 		return annotatePlan(ctx, rest)
 	case "correct":
 		return annotateCorrect(ctx, rest)
+	case "probe":
+		return annotateProbe(ctx, rest)
 	default:
 		return Fail(ExitUsage, "unknown subcommand %q (want list, show, create, delete, run, plan or correct)", sub)
 	}
@@ -452,6 +457,204 @@ func annotateRun(ctx *Context, args []string) error {
 	}
 	ctx.Printf("\nQuery it: %s\n", p.Dim(fmt.Sprintf("iql query \"label:%s\"", outcome.Annotator)))
 	return nil
+}
+
+// starterRules are the rule-engine definitions `probe` will create for you.
+//
+// Rules rather than prompts, so a probe costs nothing, needs no provider, and
+// sends nothing anywhere. They are a floor rather than a ceiling — the point of
+// a probe is to find out whether the yield is worth an LLM's time and money,
+// and a rule that finds a decent one has already answered that.
+var starterRules = map[string]string{
+	// Mail addressed to you that you have not replied to, from something that
+	// can be replied to. Automated senders are the bulk of most mailboxes and
+	// almost none of the work in them.
+	"actionable": `to:me() -is:answered ` +
+		`-from:*noreply* -from:*no-reply* -from:*donotreply* ` +
+		`-from:*notification* -from:*mailer-daemon*`,
+	"bills":      `subject:invoice OR subject:receipt OR subject:payment OR subject:statement`,
+	"deliveries": `subject:shipped OR subject:delivered OR subject:tracking OR subject:dispatch`,
+}
+
+// annotateProbe answers "is this worth building on?" in one command.
+//
+// The phase this exists for is a decision, not a feature: run something over
+// real mail, look at the yield, read a sample, and decide. Everything up to
+// "read a sample" is mechanical, and leaving it as four commands and an
+// evening was the reason it kept not happening.
+//
+// The sample is drawn at random. Reading the newest fifty results is how you
+// conclude an annotator works — recent mail is mail you already remember.
+func annotateProbe(ctx *Context, args []string) error {
+	name, rest := subcommand(args)
+	if name == "" {
+		names := make([]string, 0, len(starterRules))
+		for n := range starterRules {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		return Fail(ExitUsage, "which probe? built-in starters: %s — or name your own and pass --rule",
+			strings.Join(names, ", "))
+	}
+
+	fs := flag.NewFlagSet("annotate probe", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	scope := fs.String("scope", "", "only messages matching this query")
+	rule := fs.String("rule", "", "the rule expression; defaults to the built-in starter")
+	sample := fs.Int("sample", 20, "how many matches to draw at random for reading")
+	if err := parseArgs(fs, rest); err != nil {
+		return Fail(ExitUsage, "invalid flags")
+	}
+
+	instructions := *rule
+	if instructions == "" {
+		starter, ok := starterRules[name]
+		if !ok {
+			return Fail(ExitUsage, "no built-in starter called %q; pass --rule to define one", name)
+		}
+		instructions = starter
+	}
+
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	if err := store.ValidateQuery(instructions); err != nil {
+		return Fail(ExitUsage, "the rule is not a valid query: %v", err)
+	}
+
+	a := &store.Annotator{
+		Name: name, Kind: store.KindLabel, Engine: store.EngineRule,
+		Instructions: instructions,
+	}
+	if err := store.SaveAnnotator(a); err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	saved, err := store.GetAnnotator(name)
+	if err != nil || saved == nil {
+		return Fail(ExitError, "could not read back the annotator: %v", err)
+	}
+	if _, _, err := store.ApplyRule(saved, *scope); err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+
+	progress, err := store.Progress(saved, *scope)
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+
+	labelled := "label:" + name
+	if *scope != "" {
+		labelled = *scope + " " + labelled
+	}
+	byWeek, err := store.RunQuery(labelled+" | count by week", 0, 0)
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	drawn, err := store.RunQuery(fmt.Sprintf("%s | sample %d", labelled, *sample), 0, 0)
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+
+	rate := 0.0
+	if progress.Total > 0 {
+		rate = float64(progress.Matched) / float64(progress.Total) * 100
+	}
+
+	// Nothing matched, over mail that exists. Report why rather than a
+	// confident 0%: the answer to "is this worth building on?" is very
+	// different when the rule found nothing and when the rule could not run.
+	var diagnosis string
+	if progress.Matched == 0 && progress.Total > 0 {
+		diagnosis = diagnoseEmptyProbe(instructions, *scope)
+	}
+
+	if ctx.JSON {
+		return ctx.EmitJSON(map[string]any{
+			"annotator": name, "rule": instructions, "scope": *scope,
+			"total": progress.Total, "matched": progress.Matched,
+			"rate": rate, "byWeek": byWeek.Groups, "sample": drawn.Messages,
+		})
+	}
+
+	p := ctx.Printer()
+	ctx.Printf("%s %s\n\n", p.Bold(name), p.Dim("(rule engine — nothing left this machine)"))
+	ctx.Printf("  %s\n\n", p.Dim(instructions))
+	ctx.Printf("  %-10s %d of %d messages  %s\n", p.Dim("matched"),
+		progress.Matched, progress.Total, p.Bold(fmt.Sprintf("%.0f%%", rate)))
+
+	if diagnosis != "" {
+		ctx.Printf("\n  %s %s\n", p.Yellow("nothing matched:"), diagnosis)
+		ctx.Printf("  %s\n", p.Dim("That is a broken probe, not a finding. Fix it before drawing a conclusion."))
+		ctx.Printf("  %s\n", p.Dim("`iql doctor` reports the account problems that cause this."))
+		return nil
+	}
+
+	if len(byWeek.Groups) > 0 {
+		ctx.Printf("\n  %s\n", p.Dim("by week"))
+		max := 0.0
+		for _, g := range byWeek.Groups {
+			if g.Value > max {
+				max = g.Value
+			}
+		}
+		for _, g := range byWeek.Groups {
+			width := 1
+			if max > 0 {
+				width = int(g.Value / max * 32)
+			}
+			if width < 1 {
+				width = 1
+			}
+			ctx.Printf("  %s %s %s\n", p.Dim(g.Label),
+				strings.Repeat("█", width), p.Dim(fmt.Sprintf("%.0f", g.Value)))
+		}
+	}
+
+	if len(drawn.Messages) > 0 {
+		ctx.Printf("\n  %s\n", p.Dim(fmt.Sprintf("a random %d to read — not the newest, which you already remember", len(drawn.Messages))))
+		t := p.NewTable("DATE", "FROM", "SUBJECT")
+		for _, m := range drawn.Messages {
+			t.Row(m.Date.Format("2006-01-02"), ui.Truncate(m.From, 30), ui.Truncate(m.Subject, 56))
+		}
+		if err := t.Flush(); err != nil {
+			return err
+		}
+	}
+
+	ctx.Printf("\n%s\n", p.Dim("Read those. If enough are things you actually have to do, tickets are worth"))
+	ctx.Printf("%s\n", p.Dim("using: `iql annotate create "+name+" --engine llm --instructions ...` will do better"))
+	ctx.Printf("%s\n", p.Dim("than the rule, and `iql ticket propose` turns the results into work."))
+	ctx.Printf("%s\n", p.Dim("If they are mostly receipts and newsletters, the extraction layer is the"))
+	ctx.Printf("%s\n", p.Dim("valuable part and the board is a distraction."))
+	return nil
+}
+
+// diagnoseEmptyProbe explains a probe that matched nothing.
+//
+// The common causes are all about the account rather than the rule: me()
+// resolves through the configured account addresses, and if those are missing,
+// wrong, or belong to no account the mail is filed under, every term built on
+// them matches nothing while looking like a real answer.
+func diagnoseEmptyProbe(rule, scope string) string {
+	if orphans, err := store.OrphanedMessages(); err == nil && len(orphans) > 0 {
+		var total int64
+		for _, n := range orphans {
+			total += n
+		}
+		return fmt.Sprintf("%d message(s) belong to accounts that do not exist, so me() has no account to resolve through", total)
+	}
+
+	if strings.Contains(rule, "me()") {
+		n, err := store.CountQuery(strings.TrimSpace(scope + " anyone:me()"))
+		if err == nil && n == 0 {
+			return "me() resolves to an address that appears in none of this mail — check `iql account list` against `iql query \"| top to 5\"`"
+		}
+	}
+
+	// The rule genuinely selects nothing. Say so plainly; that is a finding.
+	return ""
 }
 
 func annotateCorrect(ctx *Context, args []string) error {

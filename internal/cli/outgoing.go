@@ -271,6 +271,10 @@ func draftList(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("draft list", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	status := fs.String("status", "", "filter by draft, queued, sent or failed")
+	// Drafts are a queryable entity, so the same language that filters mail
+	// filters them. --status stays: it is shorter for the common case and it
+	// is in the contract.
+	queryExpr := fs.String("query", "", "filter with the query language, e.g. \"origin:agent after:7d\"")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -280,7 +284,20 @@ func draftList(ctx *Context, args []string) error {
 	}
 	defer store.CloseDB()
 
-	drafts, err := store.ListDrafts(*status)
+	var drafts []*store.Draft
+	var err error
+	if *queryExpr != "" {
+		res, qerr := store.RunQuery("in:drafts "+*queryExpr, 200, 0)
+		if qerr != nil {
+			return Fail(ExitUsage, "%v", qerr)
+		}
+		if res.Kind != "drafts" {
+			return Fail(ExitUsage, "that query returns %s, not drafts", res.Kind)
+		}
+		drafts = res.Drafts
+	} else {
+		drafts, err = store.ListDrafts(*status)
+	}
 	if err != nil {
 		return Fail(ExitError, "failed to list drafts: %v", err)
 	}

@@ -32,6 +32,7 @@ type QueryResult struct {
 	Count    int                `json:"count"`
 	Messages []*message.Message `json:"messages,omitempty"`
 	Tickets  []*Ticket          `json:"tickets,omitempty"`
+	Drafts   []*Draft           `json:"drafts,omitempty"`
 	Groups   []QueryGroup       `json:"groups,omitempty"`
 	Total    int64              `json:"total,omitempty"`
 	// GroupField and Bucket describe an aggregate result, so a chart can turn
@@ -55,8 +56,10 @@ func queryOptions(limit, offset int) query.Options {
 				return "", false
 			}
 			if IsDraftFolder(folder) {
-				// Drafts live in their own table and have never been rows in
-				// messages, so no predicate over messages can select them.
+				// Drafts are their own entity. `folder:drafts` is kept as
+				// sugar for `in:drafts`, and Query.Entity resolves it before
+				// the compiler gets here — so reaching this point means a
+				// drafts folder was asked for in a query about mail.
 				return "1=0", true
 			}
 			return folderClause(folder), true
@@ -131,6 +134,14 @@ func RunQuery(src string, limit, offset int) (*QueryResult, error) {
 		GroupField: plan.GroupField, Bucket: plan.Bucket}
 
 	switch plan.Kind {
+	case query.PlanDrafts:
+		drafts, err := scanDrafts(plan)
+		if err != nil {
+			return nil, err
+		}
+		res.Kind, res.Drafts, res.Count = "drafts", drafts, len(drafts)
+		return res, nil
+
 	case query.PlanTickets:
 		tickets, err := scanTickets(plan)
 		if err != nil {
@@ -194,6 +205,24 @@ func aliasedMessageColumns() string {
 		cols[i] = "m." + strings.TrimSpace(c)
 	}
 	return strings.Join(cols, ", ")
+}
+
+func scanDrafts(plan *query.Plan) ([]*Draft, error) {
+	rows, err := db.Query(plan.SQL, plan.Args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*Draft{}
+	for rows.Next() {
+		d, err := scanDraft(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 func scanTickets(plan *query.Plan) ([]*Ticket, error) {
@@ -299,6 +328,8 @@ func ExplainQuery(src string) (*QueryResult, error) {
 		kind = "count"
 	case query.PlanTickets:
 		kind = "tickets"
+	case query.PlanDrafts:
+		kind = "drafts"
 	}
 	return &QueryResult{Query: src, Kind: kind, SQL: plan.SQL, Args: plan.Args}, nil
 }

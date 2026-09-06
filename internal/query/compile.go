@@ -175,13 +175,33 @@ func (c *compiler) term(t *Term, negated bool) (string, error) {
 	// its declaration before any SQL is generated, so an unusable term is an
 	// error with a suggestion rather than a query that runs and returns the
 	// wrong rows.
+	// `in:` selects the row source and contributes no predicate of its own —
+	// Query.Entity has already read it.
+	if t.Field == "in" {
+		if _, ok := Entities[strings.ToLower(t.Value)]; !ok {
+			return "", at(t, fmt.Errorf("in: %q is not a kind of thing (%s)",
+				t.Value, strings.Join(EntityNames, ", ")))
+		}
+		if negated {
+			return "", at(t, fmt.Errorf("in: cannot be negated; it says what the query is about"))
+		}
+		return "1=1", nil
+	}
+
 	if t.Field != "" {
-		f, ok := LookupField(t.Field)
+		f, ok := LookupFieldIn(c.entity, t.Field)
 		if !ok {
 			return "", at(t, unknownFieldError(t.Field))
 		}
 		if err := f.validate(t); err != nil {
 			return "", at(t, err)
+		}
+		// A field can be declared and still be unanswerable here: a draft has
+		// no flags, no attachments and no thread, so `is:unread` in a drafts
+		// query is a question about mail the draft is not.
+		if c.entity == EntityDraft && f.Entity == EntityMessage && !DraftServes(t.Field) {
+			return "", at(t, fmt.Errorf(
+				"%s: drafts have no %s — it is a property of received mail", t.Field, t.Field))
 		}
 	}
 
@@ -207,11 +227,73 @@ func (c *compiler) term(t *Term, negated bool) (string, error) {
 		return wrap(exists, negated), nil
 	}
 
+	if c.entity == EntityDraft {
+		sql, err := c.draftTerm(t, negated)
+		return sql, at(t, err)
+	}
+
 	sql, err := c.dispatch(t, negated)
 	if err != nil {
 		return "", at(t, err)
 	}
 	return sql, nil
+}
+
+// draftTerm compiles against the drafts table.
+//
+// Drafts keep their recipients as JSON columns rather than participant rows —
+// they have never been through the importer, and an unsent address is not a
+// correspondent yet — so the address fields are substring tests over that JSON
+// rather than the anti-join a message query uses. `-to:x` is still "no
+// recipient is x", because the column holds the whole list.
+func (c *compiler) draftTerm(t *Term, negated bool) (string, error) {
+	switch t.Field {
+	case "folder":
+		// Already read by Query.Entity; it selects the source, it does not
+		// filter within it.
+		if strings.EqualFold(t.Value, "drafts") {
+			return "1=1", nil
+		}
+		return "", fmt.Errorf("folder: a drafts query is not about mail folders")
+
+	case "status", "origin":
+		if t.Op == OpGlob {
+			return wrap(c.stringPredicate("d."+t.Field, t), negated), nil
+		}
+		return wrap("d."+t.Field+" = "+c.arg(strings.ToLower(t.Value)), negated), nil
+
+	case "to", "cc", "bcc":
+		return wrap(c.stringPredicate("d."+t.Field+"_addrs", t), negated), nil
+
+	case "subject":
+		return wrap(c.stringPredicate("d.subject", t), negated), nil
+
+	case "body":
+		return wrap(c.stringPredicate("d.body", t), negated), nil
+
+	case "", "text":
+		return wrap("("+c.stringPredicate("d.subject", t)+" OR "+
+			c.stringPredicate("d.body", t)+" OR "+
+			c.stringPredicate("d.to_addrs", t)+")", negated), nil
+
+	case "account":
+		return wrap("d.account_id = "+c.arg(t.Value), negated), nil
+
+	case "after", "before", "on":
+		start, end, err := ParseDateValue(t.Value)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", t.Field, err)
+		}
+		switch t.Field {
+		case "after":
+			return wrap("d.created_at >= "+c.arg(start), negated), nil
+		case "before":
+			return wrap("d.created_at < "+c.arg(start), negated), nil
+		default:
+			return wrap("(d.created_at >= "+c.arg(start)+" AND d.created_at < "+c.arg(end)+")", negated), nil
+		}
+	}
+	return "", fmt.Errorf("%s: not available for drafts", t.Field)
 }
 
 // isMessageField reports whether a field describes mail rather than a ticket.

@@ -9,7 +9,7 @@
 *   **Unified Dashboard**: Aggregate and analyze email data from multiple accounts in a single professional-grade interface powered by the `nexus-shell` framework.
 *   **Visual AI Agent Builder** *(design preview)*: Draft agent topologies on an interactive node-based canvas (`reactflow`). Graphs are saved as definitions; the Eino execution runtime is not implemented yet.
 *   **Interactive Analytics**: Explore your data with interactive heatmaps (powered by `@nivo/calendar`), dynamic donut charts, and topic treemaps. Drill down with deep cross-filtering between dates, senders, and topics.
-*   **Intelligent Mailbox**: Seamlessly pivot from high-level analytics to a high-performance email feed filtered precisely by your dashboard selections.
+*   **Desk**: One surface over mail, drafts and tickets. Folders are queries, the rail is a list of them, and the same view renders a message list, a chart or a count depending on what you asked.
 *   **Privacy-First**: Your data is stored locally, and no email content is ever sent to a third party without your explicit consent. Account passwords are encrypted at rest with AES-256-GCM.
 *   **Cross-Platform**: InboxQL is available for Windows, macOS, and Linux.
 
@@ -28,6 +28,8 @@ InboxQL is in active early development. The table below is the honest state of p
 | Threading | Follows `References` headers |
 | Labels and extraction (`iql annotate`) | Working — rule engine and LLM engine |
 | Tickets and board (`iql ticket`) | Working — proposed by extractors, owned by you |
+| Drafts as a queryable entity (`in:drafts`) | Working |
+| Desk — merged mailbox and query surface | Working |
 | Topic discovery | Placeholder (first word of subject); no LDA or clustering |
 | Visual AI Agent Builder | **Design preview only** — topologies can be drawn and saved, but there is no Eino runtime, so agents cannot execute |
 | LLM gateway | Working — Ollama and any OpenAI-compatible endpoint |

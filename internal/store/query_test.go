@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -554,5 +555,159 @@ func TestCompletionUsesRealData(t *testing.T) {
 	}
 	if len(c.Candidates) != 1 || c.Candidates[0].Value != "acme-mail" {
 		t.Errorf("saved: offered %+v, want acme-mail", c.Candidates)
+	}
+}
+
+// The starter rule behind `iql annotate probe actionable`.
+//
+// A probe is only worth running if its floor heuristic is credible, and the
+// thing it has to get right is the split between mail a person owes a reply to
+// and the automated bulk that makes up most of a mailbox. Pinned here because
+// the rule ships as a default and a silent regression in it would produce a
+// confident, wrong answer to "is this worth building on?".
+func TestActionableStarterRule(t *testing.T) {
+	openQueryFixture(t)
+
+	const rule = `to:me() -is:answered ` +
+		`-from:*noreply* -from:*no-reply* -from:*donotreply* ` +
+		`-from:*notification* -from:*mailer-daemon*`
+
+	now := time.Now()
+	add := func(id, from, to, subject string) {
+		m := &message.Message{
+			ID: id, AccountID: "acct", MessageID: "<" + id + "@t>", ContentHash: id,
+			From: from, Subject: subject, Body: "body",
+			Date: now, InternalDate: now, Mailbox: "INBOX",
+		}
+		if to != "" {
+			m.To = []string{to}
+		}
+		if err := SaveMessage(m); err != nil {
+			t.Fatalf("SaveMessage(%s): %v", id, err)
+		}
+	}
+
+	// Real asks, addressed to the account.
+	add("ask1", "alice@other.com", "me@example.com", "Can you review the contract?")
+	add("ask2", "landlord@rentals.com", "me@example.com", "Lease renewal, please sign")
+	// The automated bulk, in the spellings that actually occur.
+	add("bot1", "noreply@github.com", "me@example.com", "Build passed")
+	add("bot2", "no-reply@bank.com", "me@example.com", "Statement ready")
+	add("bot3", "donotreply@airline.com", "me@example.com", "Your itinerary")
+	add("bot4", "notifications@slack.com", "me@example.com", "3 mentions")
+	add("bot5", "mailer-daemon@x.com", "me@example.com", "Delivery failed")
+	// A list, not addressed to the account at all.
+	add("list1", "newsletter@list.org", "list@list.org", "Weekly digest")
+
+	matched := map[string]bool{}
+	for _, id := range ids(t, rule) {
+		matched[id] = true
+	}
+
+	for _, want := range []string{"ask1", "ask2"} {
+		if !matched[want] {
+			t.Errorf("the rule missed %s, which is a genuine ask", want)
+		}
+	}
+	for _, unwanted := range []string{"bot1", "bot2", "bot3", "bot4", "bot5", "list1"} {
+		if matched[unwanted] {
+			t.Errorf("the rule matched %s, which is automated", unwanted)
+		}
+	}
+
+	// And it still partitions, like every other predicate.
+	if pos, neg := countOf(t, rule), countOf(t, "-("+rule+")"); pos+neg != countOf(t, "") {
+		t.Errorf("%d matched + %d not = %d, want %d", pos, neg, pos+neg, countOf(t, ""))
+	}
+}
+
+// Mail whose account no longer exists breaks everything built on the account's
+// own address — me(), folder:sent, the Top Senders exclusion — and every one of
+// them fails by returning nothing rather than by complaining.
+//
+// It is reachable: messages.account_id has a foreign key with ON DELETE
+// CASCADE, but the enforcement pragma was added after the table, so rows
+// written before it outlive their account.
+func TestOrphanedMessagesAreDetectable(t *testing.T) {
+	openQueryFixture(t)
+
+	if orphans, err := OrphanedMessages(); err != nil {
+		t.Fatalf("OrphanedMessages: %v", err)
+	} else if len(orphans) != 0 {
+		t.Fatalf("the fixture starts with orphans: %v", orphans)
+	}
+
+	// Detach the mail from its account the way an unenforced cascade would.
+	//
+	// The cascade works today, so deleting the account normally takes the mail
+	// with it — which is why orphans can only come from rows written before
+	// the enforcement pragma existed. Reproducing that means turning the
+	// enforcement off, on a pinned connection: PRAGMA foreign_keys is
+	// per-connection, and the pool would otherwise hand the DELETE a different
+	// one with enforcement still on.
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatalf("pinning a connection: %v", err)
+	}
+	for _, stmt := range []string{
+		"PRAGMA foreign_keys = OFF",
+		"DELETE FROM accounts WHERE id = 'acct'",
+		"PRAGMA foreign_keys = ON",
+	} {
+		if _, err := conn.ExecContext(context.Background(), stmt); err != nil {
+			conn.Close()
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	conn.Close()
+
+	orphans, err2 := OrphanedMessages()
+	if err2 != nil {
+		t.Fatalf("OrphanedMessages: %v", err2)
+	}
+	if orphans["acct"] == 0 {
+		t.Fatalf("orphaned mail went unnoticed: %v", orphans)
+	}
+
+	// And the symptom it explains. With no account left, me() refuses outright
+	// rather than resolving to nothing — which is the behaviour worth having,
+	// because a term that quietly matches nothing reads as a real answer.
+	if _, err := RunQuery("to:me()", 10, 0); err == nil {
+		t.Error("to:me() succeeded with no account configured; it should refuse rather than match nothing")
+	}
+}
+
+// An account whose configured address appears nowhere in its own mail is the
+// other route to the same silent emptiness.
+func TestAddressCoverageNoticesAMismatch(t *testing.T) {
+	openQueryFixture(t)
+
+	coverage, err := AccountAddressCoverage()
+	if err != nil {
+		t.Fatalf("AccountAddressCoverage: %v", err)
+	}
+	if len(coverage) != 1 {
+		t.Fatalf("expected one account, got %d", len(coverage))
+	}
+	if coverage[0].Matched == 0 {
+		t.Errorf("the fixture's account address matches none of its own mail: %+v", coverage[0])
+	}
+
+	// Point the account at an address nothing is addressed to.
+	if _, err := db.Exec(
+		"UPDATE accounts SET email = 'nobody@nowhere.test', user = 'nobody@nowhere.test' WHERE id = 'acct'",
+	); err != nil {
+		t.Fatalf("updating the account: %v", err)
+	}
+
+	coverage, err = AccountAddressCoverage()
+	if err != nil {
+		t.Fatalf("AccountAddressCoverage: %v", err)
+	}
+	if coverage[0].Matched != 0 {
+		t.Errorf("a mismatched address still reported %d matches", coverage[0].Matched)
+	}
+	if coverage[0].Messages == 0 {
+		t.Error("coverage reported no messages for an account that has some")
 	}
 }

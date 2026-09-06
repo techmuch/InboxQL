@@ -34,6 +34,8 @@
 // in [Term]. See CompileFilter.
 package query
 
+import "strings"
+
 // Op is how a term compares its value.
 type Op int
 
@@ -161,39 +163,83 @@ type Query struct {
 
 // Entity reports which table this query is about.
 //
-// Inferred from the fields used rather than declared, because a person writing
-// `status:todo from:acme` means one thing and should not have to say which
-// table it lives in. Any ticket field makes it a ticket query; message fields
-// inside one become a test over the ticket's evidence.
+// Resolution order, and the order matters:
+//
+//  1. An explicit `in:` term. It always wins, and it is the only way to say
+//     something a field name cannot — `status:` belongs to both tickets and
+//     drafts, so it identifies neither.
+//  2. Otherwise, a field that belongs to exactly one non-message entity.
+//     `due:` means tickets; `origin:` means drafts.
+//  3. Otherwise mail, which is what most queries are about.
+//
+// Inferring rather than requiring a declaration is deliberate: someone writing
+// `status:todo from:acme` means one thing, and should not have to say which
+// table it lives in.
 func (q *Query) Entity() string {
-	if usesEntity(q.Filter, EntityTicket) {
-		return EntityTicket
+	if entity, ok := explicitEntity(q.Filter); ok {
+		return entity
+	}
+	if entity, ok := inferredEntity(q.Filter); ok {
+		return entity
 	}
 	return EntityMessage
 }
 
-func usesEntity(n Node, entity string) bool {
+// explicitEntity finds a term that names the row source outright.
+//
+// `folder:drafts` counts, and has to: it is the spelling the mailbox and
+// AGENTS.md already use, and drafts stopped being a folder over `messages` the
+// moment they became their own entity. Keeping it as sugar means no caller
+// written against the old contract breaks.
+func explicitEntity(n Node) (string, bool) {
+	var found string
+	var ok bool
+	walkTerms(n, func(t *Term) {
+		switch t.Field {
+		case "in":
+			if e, valid := Entities[strings.ToLower(t.Value)]; valid {
+				found, ok = e, true
+			}
+		case "folder":
+			if strings.EqualFold(t.Value, "drafts") {
+				found, ok = EntityDraft, true
+			}
+		}
+	})
+	return found, ok
+}
+
+// inferredEntity finds an entity named by a field that only one entity claims.
+func inferredEntity(n Node) (string, bool) {
+	var found string
+	var ok bool
+	walkTerms(n, func(t *Term) {
+		if ok {
+			return
+		}
+		if e, unique := EntityOf(t.Field); unique {
+			found, ok = e, true
+		}
+	})
+	return found, ok
+}
+
+// walkTerms visits every term in a filter.
+func walkTerms(n Node, visit func(*Term)) {
 	switch t := n.(type) {
 	case *And:
 		for _, c := range t.Nodes {
-			if usesEntity(c, entity) {
-				return true
-			}
+			walkTerms(c, visit)
 		}
 	case *Or:
 		for _, c := range t.Nodes {
-			if usesEntity(c, entity) {
-				return true
-			}
+			walkTerms(c, visit)
 		}
 	case *Not:
-		return usesEntity(t.Node, entity)
+		walkTerms(t.Node, visit)
 	case *Term:
-		if f, ok := LookupField(t.Field); ok {
-			return f.Entity == entity
-		}
+		visit(t)
 	}
-	return false
 }
 
 // IsAggregate reports whether the pipeline reduces messages to groups rather

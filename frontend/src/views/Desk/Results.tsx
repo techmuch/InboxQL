@@ -22,6 +22,10 @@ export const Results = ({ result, onDrillDown }: ResultsProps) => {
       return <CountResult total={result.total ?? 0} />;
     case 'groups':
       return <GroupResult result={result} onDrillDown={onDrillDown} />;
+    case 'tickets':
+      return <TicketResult result={result} />;
+    case 'drafts':
+      return <DraftResult result={result} />;
     default:
       return <MessageResult result={result} />;
   }
@@ -125,6 +129,89 @@ const MessageResult = ({ result }: { result: QueryResult }) => {
               </tr>
             );
           })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+/**
+ * Tickets, with the mail behind each one.
+ *
+ * The evidence column is not decoration: a ticket that cannot be traced back to
+ * the message that made it is a task in a worse task manager.
+ */
+const TicketResult = ({ result }: { result: QueryResult }) => {
+  const tickets = result.tickets ?? [];
+  if (tickets.length === 0) return <Empty label="No tickets matched" />;
+
+  return (
+    <div className="overflow-auto h-full">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-background border-b border-border">
+          <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th className="px-4 py-2 font-medium w-24">Status</th>
+            <th className="px-4 py-2 font-medium w-28">Due</th>
+            <th className="px-4 py-2 font-medium">Title</th>
+            <th className="px-4 py-2 font-medium w-56">From this mail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tickets.map(t => {
+            const overdue = t.dueAt ? new Date(t.dueAt) < new Date() : false;
+            const source = t.sources?.[0];
+            return (
+              <tr key={t.id} className="border-b border-border/50 hover:bg-accent/40">
+                <td className="px-4 py-1.5 font-mono text-xs">{t.status}</td>
+                <td className={`px-4 py-1.5 font-mono text-xs whitespace-nowrap ${
+                  overdue ? 'text-destructive' : 'text-muted-foreground'
+                }`}>
+                  {t.dueAt ? new Date(t.dueAt).toLocaleDateString() : ''}
+                </td>
+                <td className="px-4 py-1.5 truncate max-w-0">{t.title}</td>
+                <td className="px-4 py-1.5 truncate max-w-0 text-xs text-muted-foreground">
+                  {source ? (source.from || source.subject) : '—'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+/** Unsent drafts, which are their own entity rather than mail. */
+const DraftResult = ({ result }: { result: QueryResult }) => {
+  const drafts = result.drafts ?? [];
+  if (drafts.length === 0) return <Empty label="No drafts matched" />;
+
+  return (
+    <div className="overflow-auto h-full">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-background border-b border-border">
+          <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th className="px-4 py-2 font-medium w-24">Status</th>
+            <th className="px-4 py-2 font-medium w-20">By</th>
+            <th className="px-4 py-2 font-medium w-56">To</th>
+            <th className="px-4 py-2 font-medium">Subject</th>
+          </tr>
+        </thead>
+        <tbody>
+          {drafts.map(d => (
+            <tr key={d.id} className="border-b border-border/50 hover:bg-accent/40">
+              <td className="px-4 py-1.5 font-mono text-xs">{d.status}</td>
+              <td className={`px-4 py-1.5 font-mono text-xs ${
+                d.origin === 'agent' ? 'text-primary' : 'text-muted-foreground'
+              }`}>
+                {d.origin}
+              </td>
+              <td className="px-4 py-1.5 truncate max-w-0">{(d.to ?? []).join(', ')}</td>
+              <td className="px-4 py-1.5 truncate max-w-0">
+                {d.subject || <span className="text-muted-foreground">(no subject)</span>}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

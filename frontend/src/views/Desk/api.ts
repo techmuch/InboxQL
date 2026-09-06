@@ -43,12 +43,33 @@ export interface QueryGroup {
   value: number;
 }
 
+export interface Ticket {
+  id: string;
+  title: string;
+  status: string;
+  priority?: string;
+  dueAt?: string;
+  origin: string;
+  sources?: Array<{ messageId: string; subject?: string; from?: string }>;
+}
+
+export interface Draft {
+  id: string;
+  to?: string[];
+  subject: string;
+  status: string;
+  origin: string;
+  updatedAt?: string;
+}
+
 export interface QueryResult {
   query: string;
-  kind: 'messages' | 'groups' | 'count';
+  kind: 'messages' | 'groups' | 'count' | 'tickets' | 'drafts';
   count: number;
   messages?: QueryMessage[];
   groups?: QueryGroup[];
+  tickets?: Ticket[];
+  drafts?: Draft[];
   total?: number;
   /** What an aggregate grouped by, so a chart click can build a drill-down. */
   groupField?: string;
@@ -98,8 +119,9 @@ async function getJSON<T>(url: string): Promise<T> {
   return res.json();
 }
 
-export async function runQuery(q: string, limit = 100): Promise<QueryResult> {
+export async function runQuery(q: string, limit = 100, offset = 0): Promise<QueryResult> {
   const params = new URLSearchParams({ q, limit: String(limit) });
+  if (offset > 0) params.set('offset', String(offset));
   return getJSON<QueryResult>(`/api/query?${params}`);
 }
 

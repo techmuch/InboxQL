@@ -134,8 +134,8 @@ const (
 var commandOrder = []string{
 	"init", "start", "version", "doctor",
 	"account", "user", "vault", "llm", "maintenance", "backup", "restore",
-	"import", "export", "errors",
-	"search", "read", "analyze", "draft", "send", "outbox",
+	"import", "export", "errors", "annotate",
+	"query", "sql", "search", "read", "analyze", "draft", "send", "outbox",
 }
 
 func listedInOrder(name string) bool {
@@ -152,6 +152,10 @@ var commandGroup = map[string]string{
 	"account": groupAdmin, "user": groupAdmin, "vault": groupAdmin, "llm": groupAdmin,
 	"maintenance": groupAdmin, "backup": groupAdmin, "restore": groupAdmin,
 	"import": groupAdmin, "export": groupAdmin, "errors": groupAdmin,
+	"annotate": groupAdmin,
+	// query and sql lead the agent group: they are the general tools, and
+	// search is the narrow one kept for compatibility with existing callers.
+	"query": groupAgent, "sql": groupAgent,
 	"search": groupAgent, "read": groupAgent, "analyze": groupAgent,
 	"draft": groupAgent, "send": groupAgent, "outbox": groupAgent,
 }
@@ -267,6 +271,39 @@ func newCobraCommand(ctx *Context, c *Command) *cobra.Command {
 	return cmd
 }
 
+// expressionFlags lists the flags of the commands that take a query
+// expression, where a leading dash means negation rather than a flag.
+//
+// `iql query -invoice` excludes messages mentioning invoices. Rewriting that
+// to `--invoice` turns it into a double negation, which is not an error — it
+// silently returns the opposite of what was asked. So for these commands only
+// their own flags and the globals are rewritten, and everything else is left
+// for the query parser.
+var expressionFlags = map[string][]string{
+	"query": {"limit", "offset", "explain", "count"},
+	"q":     {"limit", "offset", "explain", "count"},
+	"sql":   {"limit", "schema"},
+}
+
+// flagNameRunes reports whether a token could be a flag name at all.
+//
+// A flag name is letters, digits and dashes. `-from:alice` contains a colon,
+// so it is a query term wherever it appears — including as the value of
+// `--instructions`, which is how a rule annotator is defined.
+func flagNameRunes(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // normaliseSingleDash rewrites `-flag` as `--flag` for multi-letter names.
 //
 // The stdlib flag package treats the two spellings as identical, so both are
@@ -275,7 +312,14 @@ func newCobraCommand(ctx *Context, c *Command) *cobra.Command {
 // keeps every invocation that used to work working. Single-letter flags are
 // left alone so real shorthands still behave, and everything after a bare `--`
 // is untouched.
-func normaliseSingleDash(args []string) []string {
+//
+// Two things are never rewritten, because for the query language a leading
+// dash is an operator: a token that cannot be a flag name at all, and — for
+// the commands that take an expression — anything that is not one of their
+// own flags or a global.
+func normaliseSingleDash(args []string, command string) []string {
+	known, restricted := expressionFlags[command]
+
 	out := make([]string, 0, len(args))
 	for i, a := range args {
 		if a == "--" {
@@ -283,17 +327,35 @@ func normaliseSingleDash(args []string) []string {
 			break
 		}
 		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
-			a = "-" + a
+			name := a[1:]
+			if eq := strings.Index(name, "="); eq >= 0 {
+				name = name[:eq]
+			}
+			if flagNameRunes(name) && (!restricted || isKnownFlag(name, known)) {
+				a = "-" + a
+			}
 		}
 		out = append(out, a)
 	}
 	return out
 }
 
+func isKnownFlag(name string, known []string) bool {
+	if _, ok := lookupGlobal("--" + name); ok {
+		return true
+	}
+	for _, k := range known {
+		if k == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Execute runs the CLI and returns a process exit code.
 func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	ctx := &Context{Stdin: stdin, Stdout: stdout, Stderr: stderr}
-	args = normaliseSingleDash(args)
+	args = normaliseSingleDash(args, commandName(args))
 
 	root := NewRootCommand(ctx)
 	root.Version = Version

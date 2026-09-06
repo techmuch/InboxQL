@@ -124,6 +124,17 @@ func runDoctor(ctx *Context, args []string) error {
 	defer store.CloseDB()
 	rep.add("database", statusOK, ctx.dbPath())
 
+	// Whether the full-text index exists depends on the build, not the
+	// database, so "search is slow" and "this binary has no index" are the same
+	// fact — and only one of them is visible without being told.
+	if store.FullTextAvailable() {
+		rep.add("full-text index", statusOK, "queries use the FTS5 index")
+	} else {
+		rep.add("full-text index", statusWarn,
+			"this binary was built without FTS5; text queries fall back to substring scans",
+			"rebuild with `go build -tags sqlite_fts5`, or use a released binary")
+	}
+
 	if version, err := store.SchemaVersionOnDisk(); err != nil {
 		rep.add("schema version", statusFail, err.Error())
 	} else if version != store.SchemaVersion {

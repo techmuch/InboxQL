@@ -72,14 +72,20 @@ analyze or draft runs. Ollama against localhost keeps everything local.`,
 	register(&Command{
 		Name:    "maintenance",
 		Summary: "vacuum, analyze and check the database",
-		Usage: `iql maintenance <vacuum|analyze|integrity|checkpoint>
+		Usage: `iql maintenance <vacuum|analyze|integrity|checkpoint|reindex>
 
   vacuum      rebuild the database, reclaiming freed space
   analyze     refresh query planner statistics
   integrity   run SQLite's integrity_check
   checkpoint  fold the write-ahead log back into the main file
+  reindex     rebuild the derived search and threading indexes
 
-Stop the server before vacuum: it needs exclusive access.`,
+Stop the server before vacuum: it needs exclusive access.
+
+reindex rebuilds the full-text index and the participant and reference tables
+from the stored messages. Those are derived data, so a database restored from a
+backup taken by a build without FTS5, or migrated by an older binary, can
+disagree with its own messages without anything reporting an error.`,
 		Run: runMaintenance,
 	})
 
@@ -442,8 +448,20 @@ func runMaintenance(ctx *Context, args []string) error {
 		action = store.IntegrityCheck
 	case "checkpoint":
 		action = store.Checkpoint
+	case "reindex":
+		// The full-text index and the participant/reference edges are all
+		// derived from `messages`. A database restored from a backup, or one
+		// migrated by an older build, can disagree with its source without
+		// anything reporting an error — reindex puts them back in agreement
+		// without a re-import.
+		action = func() error {
+			if err := store.RebuildFullTextIndex(); err != nil {
+				return err
+			}
+			return store.ReindexGraph()
+		}
 	case "":
-		return Fail(ExitUsage, "usage: iql maintenance <vacuum|analyze|integrity|checkpoint>")
+		return Fail(ExitUsage, "usage: iql maintenance <vacuum|analyze|integrity|checkpoint|reindex>")
 	default:
 		return Fail(ExitUsage, "unknown subcommand %q", sub)
 	}

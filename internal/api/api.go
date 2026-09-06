@@ -62,6 +62,13 @@ func Router() (http.Handler, error) {
 	registerErrorRoutes(errorMux)
 	mux.Handle("/api/errors", auth.Middleware(errorMux))
 
+	// The query language surface. Read-only; see registerQueryRoutes.
+	queryMux := http.NewServeMux()
+	registerQueryRoutes(queryMux)
+	for _, route := range []string{"/api/query", "/api/query/explain", "/api/query/fields", "/api/annotators"} {
+		mux.Handle(route, auth.Middleware(queryMux))
+	}
+
 	// Frontend Static Assets
 	content, err := embed.Content()
 	if err != nil {
@@ -197,8 +204,11 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.WriteHeader(http.StatusCreated)
+		// Content-Type before WriteHeader: headers set after the status line
+		// has been written are discarded, and this response was going out as
+		// text/plain with a JSON body.
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(acc.Redacted())
 
 	case http.MethodDelete:
@@ -264,17 +274,31 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := 50
-	offset := 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		fmt.Sscanf(v, "%d", &limit)
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		fmt.Sscanf(v, "%d", &offset)
-	}
+	limit, offset := clampPaging(r, 50, 500)
 
 	var msgs []*message.Message
 	var err error
+
+	// A `q` parameter hands the whole selection to the query language, which
+	// is how the dashboard's cross-filters arrive now: the UI composes a query
+	// string the user can see and edit rather than a hidden filter struct.
+	if q := r.URL.Query().Get("q"); q != "" && !store.IsDraftFolder(folder) {
+		res, err := store.RunQuery(q, limit, offset)
+		if err != nil {
+			writeQueryError(w, err)
+			return
+		}
+		if res.Kind != "messages" {
+			// An aggregate reached the message endpoint. Say so rather than
+			// returning an empty list that looks like "no matches".
+			writeQueryError(w, fmt.Errorf(
+				"this query aggregates; call /api/query for %s results", res.Kind))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(res.Messages)
+		return
+	}
 
 	switch {
 	case store.IsDraftFolder(folder):
@@ -457,8 +481,8 @@ func handleAgents(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.WriteHeader(http.StatusCreated)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(agent)
 
 	case http.MethodDelete:

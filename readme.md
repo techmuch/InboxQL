@@ -23,11 +23,15 @@ InboxQL is in active early development. The table below is the honest state of p
 | Message storage, dedup hashing, analytics dashboard | Working |
 | Authentication, encrypted credentials at rest | Working |
 | Cross-filtering (date / sender / topic) | Working |
-| Search | Basic `LIKE` on subject only — no FTS5, no semantic/vector search yet |
+| Query language (`iql query`) | Working — filters, negation, aggregation pipeline |
+| Search | FTS5 full-text index; lexical, not semantic. No embeddings or vector search |
+| Threading | Follows `References` headers |
+| Labels and extraction (`iql annotate`) | Working — rule engine and LLM engine |
 | Topic discovery | Placeholder (first word of subject); no LDA or clustering |
 | Visual AI Agent Builder | **Design preview only** — topologies can be drawn and saved, but there is no Eino runtime, so agents cannot execute |
-| LLM gateway, Bullet-to-Draft, sentiment analysis | Not implemented |
-| CLI suite (`doctor`, `maintenance`, `backup`) | Not implemented |
+| LLM gateway | Working — Ollama and any OpenAI-compatible endpoint |
+| Sentiment analysis | Not built in; definable as an annotator |
+| CLI suite (`doctor`, `maintenance`, `backup`) | Working |
 | Encrypted cloud backup | Not implemented |
 
 ## Running it
@@ -62,7 +66,7 @@ It prints a warning, and you should not need it.
 
 *   **Credentials at rest**: IMAP/SMTP passwords are sealed with AES-256-GCM using a machine-local key stored at `data/vault.key` (mode `0600`). **Back this file up alongside your database** — without it, stored passwords cannot be recovered. Passwords are never returned to the browser by the API.
 *   **Transport**: IMAP TLS connections verify the server certificate. There is no option to disable this.
-*   **Default account**: on first run InboxQL creates `admin@inboxql.local` with a well-known development password. Set `INBOXQL_ADMIN_PASSWORD` (and optionally `INBOXQL_ADMIN_USER`) before running InboxQL anywhere other than localhost.
+*   **Default account**: `iql init` creates `admin@inboxql.local` with a randomly generated password, printed once and never recoverable. Set `INBOXQL_ADMIN_PASSWORD` (and optionally `INBOXQL_ADMIN_USER`) before running init if you want to choose it yourself, or reset it later with `iql user passwd`.
 
 ## Getting Started
 
@@ -103,6 +107,76 @@ InboxQL also includes a powerful command-line interface (CLI) for managing your 
 *   `iql doctor`: Run diagnostics to check the health of your InboxQL installation.
 *   `iql maintenance`: Perform maintenance tasks such as re-indexing your data.
 *   `iql backup`: Create and manage backups of your InboxQL data.
+*   `iql query`: Search and aggregate with the query language.
+*   `iql sql`: Run a read-only SQL statement against your mailbox.
+*   `iql annotate`: Define labels and extractors, and run them over your mail.
+
+## The query language
+
+InboxQL's name is not decorative. `iql query` takes a filter expression with an
+optional pipeline:
+
+```bash
+iql query "from:stripe after:2026-01-01 has:attachment"
+iql query "is:unread -from:*@acme.com"
+iql query "| count by week"
+iql query "| top domain 10"
+```
+
+Three match modes, because they are three different questions:
+
+```bash
+iql query "from:acme"          # contains — also matches notacme@x.com
+iql query "from:=a@acme.com"   # exactly that address
+iql query "from:*@acme.com"    # glob
+```
+
+Negation is `-` (or `NOT`) and composes over anything: `-(from:alice
+after:2026-01)`. Over recipients it means *no recipient is x* rather than *some
+recipient is not x*, which is the reading that would otherwise match nearly
+everything.
+
+Whatever the language cannot express, `iql sql` will — read-only, against a
+documented schema. `iql sql --schema` lists the tables.
+
+## Labels and extracted data
+
+An annotator is a named, versioned instruction applied to your mail. A label
+answers yes or no; an extractor pulls structured records out of a body.
+
+A rule annotator is just a query, so it needs no model and runs over a whole
+mailbox in milliseconds:
+
+```bash
+iql annotate create billing --engine rule \
+  --instructions "from:*@stripe.com OR subject:invoice"
+iql annotate run billing
+iql query "label:billing | count by month"
+```
+
+An LLM annotator takes a prompt instead. Extractors turn recurring
+machine-generated mail into a queryable series:
+
+```bash
+iql annotate create metrics --kind extract --engine llm --time-field day \
+  --instructions "Extract each day's signup count from the weekly digest."
+iql annotate run metrics --dry-run     # what would be sent, and where
+iql annotate run metrics
+iql query "| extract metrics | series signups by week"
+```
+
+**Labels are three-valued.** `-label:billing` means *the annotator looked and
+said no* — it does not include mail the annotator has never seen. Ask for those
+with `unlabeled:billing`. Without that distinction, a negative query on a
+partly-labelled mailbox returns everything nobody has looked at yet and
+presents it as an answer.
+
+A run with a remote provider sends message bodies to that provider, so it
+refuses without recorded consent (`--allow-remote`) and `--dry-run` reports
+what would leave the machine. With Ollama, nothing does.
+
+Corrections outrank the machine: `iql annotate correct billing <id> --yes`
+survives every re-run and every version bump.
 
 Run `iql --help` for the full list, and `iql help <command>` — or
 `iql <command> --help`, which is the same page — for detail on any one of them.

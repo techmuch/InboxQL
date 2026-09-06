@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 14
+	SchemaVersion = 17
 )
 
 var (
@@ -164,6 +164,15 @@ func InitDB(dataDir string) (*sql.DB, error) {
 
 		if err = MigrateAccountPasswords(); err != nil {
 			err = fmt.Errorf("failed to encrypt stored account passwords: %w", err)
+			return
+		}
+
+		// Whether a full-text index can exist depends on how this binary was
+		// built, not on the database, so it is checked on every open rather
+		// than recorded as a schema version. A database written by a build
+		// with FTS5 must still open in one without it.
+		if err = ensureFullTextIndex(db); err != nil {
+			err = fmt.Errorf("failed to prepare the full-text index: %w", err)
 			return
 		}
 	})
@@ -626,6 +635,147 @@ func migrateDB(db *sql.DB) error {
 		currentVersion = 14
 	}
 
+	if currentVersion < 15 {
+		log.Println("Applying schema migration v15 (participant edges)...")
+		// Recipients lived only as a JSON array in to_addrs/cc_addrs/bcc_addrs,
+		// which can be substring-matched but not negated: "no recipient is
+		// alice" is a NOT EXISTS over rows, and there were no rows. Every
+		// multi-valued field needs this shape before the query language can
+		// offer negation that means what it says.
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS message_participants (
+				message_id TEXT NOT NULL,
+				role       TEXT NOT NULL,
+				address    TEXT NOT NULL,
+				name       TEXT,
+				PRIMARY KEY (message_id, role, address),
+				FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_participants_address ON message_participants(address);
+			CREATE INDEX IF NOT EXISTS idx_participants_role    ON message_participants(role, address);
+			CREATE INDEX IF NOT EXISTS idx_participants_message ON message_participants(message_id);
+
+			-- Date filtering was strftime() over every row, which no index can
+			-- serve. The query language compiles dates to epoch comparisons
+			-- against this column instead.
+			CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date DESC);
+			CREATE INDEX IF NOT EXISTS idx_messages_size ON messages(size);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v15: %w", err)
+		}
+		if err := backfillParticipants(db); err != nil {
+			return fmt.Errorf("failed to backfill participants: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 15;"); err != nil {
+			return err
+		}
+		currentVersion = 15
+	}
+
+	if currentVersion < 16 {
+		log.Println("Applying schema migration v16 (annotators)...")
+		// Labels and extractions are one mechanism. A label is an annotator
+		// whose schema is a boolean; an extraction is one whose schema has
+		// fields. They share every hard part — versioning, incremental re-run,
+		// confidence, provenance, consent — so they share a table.
+		//
+		// `status` is what makes negation honest: a missing row means "never
+		// evaluated", which is a different answer from "evaluated, no match".
+		// Without that distinction -label:x silently returns every message the
+		// annotator has not reached yet.
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS annotators (
+				id           TEXT PRIMARY KEY,
+				name         TEXT NOT NULL,
+				kind         TEXT NOT NULL,
+				engine       TEXT NOT NULL,
+				version      INTEGER NOT NULL DEFAULT 1,
+				instructions TEXT NOT NULL,
+				schema_json  TEXT NOT NULL DEFAULT '{}',
+				model        TEXT,
+				allow_remote INTEGER NOT NULL DEFAULT 0,
+				created_at   INTEGER NOT NULL,
+				updated_at   INTEGER NOT NULL
+			);
+
+			CREATE TABLE IF NOT EXISTS annotations (
+				id                TEXT PRIMARY KEY,
+				message_id        TEXT NOT NULL,
+				annotator_id      TEXT NOT NULL,
+				annotator_version INTEGER NOT NULL,
+				seq               INTEGER NOT NULL DEFAULT 0,
+				status            TEXT NOT NULL,
+				source            TEXT NOT NULL,
+				data_json         TEXT NOT NULL DEFAULT '{}',
+				confidence        REAL,
+				model             TEXT,
+				error             TEXT,
+				created_at        INTEGER NOT NULL,
+				FOREIGN KEY (message_id)   REFERENCES messages(id)   ON DELETE CASCADE,
+				FOREIGN KEY (annotator_id) REFERENCES annotators(id) ON DELETE CASCADE,
+				UNIQUE(message_id, annotator_id, annotator_version, seq)
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_annotations_lookup  ON annotations(annotator_id, annotator_version, status);
+			CREATE INDEX IF NOT EXISTS idx_annotations_message ON annotations(message_id);
+			CREATE INDEX IF NOT EXISTS idx_annotations_source  ON annotations(annotator_id, source);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v16: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 16;"); err != nil {
+			return err
+		}
+		currentVersion = 16
+	}
+
+	if currentVersion < 17 {
+		log.Println("Applying schema migration v17 (reference graph)...")
+		// Threading grouped by normalised subject, so two unrelated messages
+		// that share a subject line landed in one conversation. In-Reply-To and
+		// References were captured in the raw header blob and never parsed;
+		// this is the edge table that makes real threading a graph walk.
+		for _, stmt := range []string{
+			`ALTER TABLE messages ADD COLUMN in_reply_to TEXT;`,
+			// thread_key is the conversation a message belongs to, maintained
+			// on write. RFC 5322 puts the whole ancestry in References in
+			// order, so its first entry is the thread root; a message with no
+			// References is its own root. That makes a thread a single indexed
+			// equality rather than a recursive walk on every query.
+			`ALTER TABLE messages ADD COLUMN thread_key TEXT;`,
+		} {
+			if _, err := db.Exec(stmt); err != nil {
+				log.Printf("Warning v17: %v", err)
+			}
+		}
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS message_refs (
+				message_id TEXT NOT NULL,
+				ref        TEXT NOT NULL,
+				ordinal    INTEGER NOT NULL,
+				PRIMARY KEY (message_id, ref),
+				FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_message_refs_ref     ON message_refs(ref);
+			CREATE INDEX IF NOT EXISTS idx_message_refs_message ON message_refs(message_id);
+			CREATE INDEX IF NOT EXISTS idx_messages_in_reply_to ON messages(in_reply_to);
+			CREATE INDEX IF NOT EXISTS idx_messages_thread_key  ON messages(thread_key);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v17: %w", err)
+		}
+		if err := backfillRefs(db); err != nil {
+			return fmt.Errorf("failed to backfill reference graph: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 17;"); err != nil {
+			return err
+		}
+		currentVersion = 17
+	}
+
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)
 	return nil
 }
@@ -871,11 +1021,32 @@ func SaveMessage(m *message.Message) error {
 		header = []byte{}
 	}
 
-	_, err := db.Exec(`
+	res, err := db.Exec(`
 		INSERT OR IGNORE INTO messages (id, account_id, uid, message_id, content_hash, normalized_body, from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body, header, flags, size, internal_date, mailbox)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`, m.ID, m.AccountID, m.UID, m.MessageID, m.ContentHash, m.NormalizedBody, m.From, string(to), string(cc), string(bcc), m.Subject, m.Date.UnixMilli(), m.Body, m.HTMLBody, header, string(flags), m.Size, m.InternalDate.UnixMilli(), nullIfEmpty(m.Mailbox))
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Only index a row that was actually written. OR IGNORE above collapses a
+	// duplicate onto the existing row, whose id is not this message's id, so
+	// writing edges here would point at a message that does not exist and
+	// trip the foreign key.
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return err
+	}
+
+	// The participant and reference edges are derived data, but they are
+	// derived once here rather than recomputed per query: negation over
+	// recipients is a NOT EXISTS against these rows, and threading walks them.
+	if err := writeParticipants(db, m); err != nil {
+		return fmt.Errorf("indexing participants for %s: %w", m.ID, err)
+	}
+	if err := writeRefs(db, m); err != nil {
+		return fmt.Errorf("indexing references for %s: %w", m.ID, err)
+	}
+	return nil
 }
 
 func ListMessagesFiltered(accountID string, filter AnalyticsFilter, limit, offset int) ([]*message.Message, error) {

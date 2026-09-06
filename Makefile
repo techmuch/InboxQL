@@ -19,9 +19,16 @@ frontend:
 VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.29")
 LDFLAGS := -X github.com/user/inboxql/internal/cli.Version=$(VERSION)
 
+# FTS5 is a compile-time option in mattn/go-sqlite3, not a runtime one. Without
+# this tag the full-text index cannot be created and text queries silently fall
+# back to substring matching — correct, but a table scan per query. Released
+# binaries always carry it; `go test ./...` deliberately still works without it,
+# so a contributor does not need to remember a flag.
+TAGS ?= sqlite_fts5
+
 backend:
 	@echo "Building backend (v$(VERSION))..."
-	go build -ldflags "$(LDFLAGS)" -o bin/iql ./cmd/iql
+	go build -tags "$(TAGS)" -ldflags "$(LDFLAGS)" -o bin/iql ./cmd/iql
 
 install: build
 	@echo "Installing iql binary to $(BINDIR)..."
@@ -34,7 +41,9 @@ uninstall:
 
 test:
 	@echo "Running backend tests..."
-	go test ./...
+	go test -tags "$(TAGS)" ./...
+	@echo "Running backend tests without the full-text index..."
+	go test ./internal/store/ ./internal/query/
 	@echo "Running frontend tests..."
 	npm --prefix frontend test -- --run
 
@@ -42,7 +51,7 @@ test:
 # tag and stay out of `make test`. CI runs both.
 e2e:
 	@echo "Running end-to-end tests..."
-	go test -race -tags e2e -count=1 ./e2e/... -v
+	go test -race -tags "e2e $(TAGS)" -count=1 ./e2e/... -v
 
 test-all: test e2e
 

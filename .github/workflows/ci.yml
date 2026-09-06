@@ -17,6 +17,10 @@ env:
   # branch red overnight. go.mod requires 1.25.6.
   GO_VERSION: "1.25.6"
   NODE_VERSION: "22"
+  # FTS5 is a build tag in mattn/go-sqlite3, so a binary without it cannot
+  # create the full-text index. The store degrades to substring matching rather
+  # than failing, which is why the suite is run both ways below.
+  GO_TAGS: "sqlite_fts5"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -44,16 +48,21 @@ jobs:
           fi
 
       - name: Vet
-        run: go vet ./...
+        run: go vet -tags "$GO_TAGS" ./...
 
       # -race needs cgo, which this build requires anyway. It is worth the time:
       # sync runs goroutines against a single-writer database.
       - name: Test
-        run: go test -race -count=1 ./...
+        run: go test -race -tags "$GO_TAGS" -count=1 ./...
+
+      # The fallback path is a real path — `go run` and `go test` without the
+      # tag both take it — so it is tested rather than assumed.
+      - name: Test without the full-text index
+        run: go test -race -count=1 ./internal/store/... ./internal/query/...
 
       - name: Coverage summary
         run: |
-          go test -coverprofile=coverage.out ./... >/dev/null 2>&1 || true
+          go test -tags "$GO_TAGS" -coverprofile=coverage.out ./... >/dev/null 2>&1 || true
           go tool cover -func=coverage.out | tail -1
 
       - uses: actions/upload-artifact@v4
@@ -148,7 +157,7 @@ jobs:
           CGO_ENABLED: "1"
         run: |
           version=$(node -p "require('./frontend/package.json').version")
-          go build -trimpath \
+          go build -trimpath -tags "$GO_TAGS" \
             -ldflags "-s -w -X github.com/user/inboxql/internal/cli.Version=$version" \
             -o "${{ matrix.binary }}" ./cmd/iql
 
@@ -196,4 +205,4 @@ jobs:
       # -race here earns its keep: the first run of this suite under it found a
       # genuine data race in the harness itself.
       - name: Run end-to-end suite
-        run: go test -race -count=1 -tags e2e ./e2e/... -v
+        run: go test -race -count=1 -tags "e2e $GO_TAGS" ./e2e/... -v

@@ -59,8 +59,15 @@ func binary(t *testing.T) string {
 		}
 		binaryPath = filepath.Join(dir, name)
 
-		// ../cmd/iql relative to this package.
-		cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/iql")
+		// ../cmd/iql relative to this package. The build tags match the ones
+		// this suite was compiled with, so the binary under test is the one
+		// this configuration actually ships.
+		buildArgs := []string{"build"}
+		if binaryTags != "" {
+			buildArgs = append(buildArgs, "-tags", binaryTags)
+		}
+		buildArgs = append(buildArgs, "-o", binaryPath, "./cmd/iql")
+		cmd := exec.Command("go", buildArgs...)
 		cmd.Dir = ".."
 		if out, err := cmd.CombinedOutput(); err != nil {
 			buildErr = fmt.Errorf("building iql: %v\n%s", err, out)

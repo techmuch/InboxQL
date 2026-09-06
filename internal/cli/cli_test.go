@@ -298,17 +298,46 @@ func TestHelpFlagReachesTheWrittenHelp(t *testing.T) {
 // stdlib flag treated -flag and --flag alike, so both spellings are in the
 // docs and in muscle memory. pflag reads -version as a cluster of shorthands.
 func TestSingleDashLongFlagsStillWork(t *testing.T) {
-	if got := normaliseSingleDash([]string{"-version"}); got[0] != "--version" {
+	if got := normaliseSingleDash([]string{"-version"}, "version"); got[0] != "--version" {
 		t.Errorf("normaliseSingleDash(-version) = %q, want --version", got[0])
 	}
 	// Real shorthands must survive untouched.
-	if got := normaliseSingleDash([]string{"-v"}); got[0] != "-v" {
+	if got := normaliseSingleDash([]string{"-v"}, ""); got[0] != "-v" {
 		t.Errorf("a single-letter shorthand was rewritten: %q", got[0])
 	}
 	// Nothing after -- is rewritten.
-	got := normaliseSingleDash([]string{"--", "-literal"})
+	got := normaliseSingleDash([]string{"--", "-literal"}, "")
 	if got[1] != "-literal" {
 		t.Errorf("argument after -- was rewritten: %q", got[1])
+	}
+}
+
+// In the query language a leading dash is negation, and rewriting it to a
+// double dash does not fail — it silently returns the opposite of what was
+// asked. That made `iql query -from:alice` list exactly the messages it was
+// told to exclude.
+func TestQueryNegationIsNotRewrittenAsAFlag(t *testing.T) {
+	for _, arg := range []string{"-from:alice", "-invoice", "-label:billing", "-(a b)"} {
+		if got := normaliseSingleDash([]string{"query", arg}, "query")[1]; got != arg {
+			t.Errorf("normaliseSingleDash(%q) = %q, want it untouched", arg, got)
+		}
+	}
+
+	// The command's own flags and the globals still normalise.
+	for _, c := range []struct{ in, want string }{
+		{"-limit", "--limit"},
+		{"-json", "--json"},
+		{"-data", "--data"},
+	} {
+		if got := normaliseSingleDash([]string{"query", c.in}, "query")[1]; got != c.want {
+			t.Errorf("normaliseSingleDash(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+
+	// A token that cannot be a flag name is left alone for every command, so
+	// `--instructions "-from:x"` reaches the annotator intact.
+	if got := normaliseSingleDash([]string{"annotate", "-from:x"}, "annotate")[1]; got != "-from:x" {
+		t.Errorf("a query term was rewritten outside the query command: %q", got)
 	}
 }
 

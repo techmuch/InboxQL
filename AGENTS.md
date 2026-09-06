@@ -70,7 +70,96 @@ checks failed, so the answer is to read the findings.
 
 ## Agent tools
 
-### `search` — find messages
+### `query` — the query language
+
+```
+iql --json query "from:stripe after:2026-01-01 has:attachment"
+iql --json query "is:unread -from:*@acme.com | count by week"
+```
+
+This is the general tool; `search` below is the older flag-based form, kept
+working for existing callers. Prefer `query`: it composes, it negates, and it
+aggregates, so one invocation answers questions that would otherwise be
+several.
+
+A query is a **filter**, optionally followed by **pipeline stages** after `|`.
+
+| Term | Matches |
+|---|---|
+| `from: to: cc: bcc: anyone:` | addresses, substring by default |
+| `subject: body:` | words in the text |
+| `account: folder: mailbox:` | where the message lives |
+| `is:` | `unread read starred deleted draft answered junk reply` |
+| `has:` | `attachment file label reply` |
+| `after: before: on:` | `2026-08-15`, `2026-08`, `2026`, `today`, `7d` |
+| `larger: smaller:` | `5mb`, `500kb`, a byte count |
+| `label: unlabeled: conf>` | annotator results — see below |
+| `extract:name.field>10` | extracted structured data |
+| `thread:<message-id>` | every message in that conversation |
+| a bare word | full-text search |
+
+**Match modes.** These are different questions and the language keeps them
+apart:
+
+```
+from:acme          contains "acme" — also matches notacme@x.com
+from:=a@acme.com   exactly that address
+from:*@acme.com    glob; * matches any run of characters
+```
+
+Prose fields (`subject:`, `body:`, bare words) are **token** matches through
+the full-text index, so `subject:invoice` finds the word, not a fragment inside
+another word. Use `subject:*invoice*` for a substring.
+
+**Negation** is `-` or `NOT`, and it composes over anything:
+
+```
+-from:alice
+-(from:alice after:2026-01)
+from:*@acme.com -to:bob@acme.com
+```
+
+`-to:x` means *no recipient is x*, not *some recipient is not x*. This is worth
+knowing because the wrong reading is the plausible one and it would match
+almost every message with more than one recipient.
+
+**Pipeline stages.** A query with a stage returns groups rather than messages;
+the response's `kind` field says which.
+
+```
+| count [by <field>]                totals, or totals per group
+| top <field> [n]                   the n largest groups
+| sort <field> [asc|desc]           reorder messages
+| limit <n>                         cap the rows
+| thread                            expand to whole conversations
+| participants                      who appears, and how often
+| extract <annotator>               read structured output
+| series <field> by <bucket>        an extracted value over time
+| sum|avg|min|max <field> [by <bucket>]
+```
+
+Group and bucket names: `from domain to cc account mailbox label thread
+subject`, and `hour day week month year`.
+
+Responses are `{query, kind, count, ...}` where `kind` is `"messages"`,
+`"groups"` or `"count"`. Only one aggregate stage per query.
+
+`--explain` returns the compiled SQL instead of running it. `--count` returns
+just the number. A malformed query exits **2** with the position of the
+problem, so fix the expression rather than retrying it.
+
+### `sql` — the escape hatch
+
+```
+iql --json sql "SELECT from_addr, COUNT(*) FROM messages GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+iql --json sql --schema
+```
+
+Read-only: the connection is opened `mode=ro`, so nothing here can write
+whatever the statement says. Use it when `query` cannot express something.
+`--schema` lists the tables. `messages.date` is epoch **milliseconds**.
+
+### `search` — find messages (older form)
 
 ```
 iql --json search --query "invoice" --since 2026-08-01 --limit 20
@@ -89,11 +178,13 @@ iql --json search --query "invoice" --since 2026-08-01 --limit 20
 Returns `{query, count, results[]}`. Each result has `id`, `accountId`, `from`,
 `to`, `subject`, `date`, `unread`, `snippet`.
 
-**This is substring matching, not relevance ranking.** There is no full-text
-index and no semantic search. A single-word query on a large mailbox is a table
-scan and will be slow — narrow with `--account` or a date range. Because it is
-literal, a search for "invoice" will not find "billing"; issue several queries
-with different wordings rather than assuming one returned everything.
+**This is substring matching, not relevance ranking**, and it stays that way
+for compatibility. `iql query` uses the FTS5 index instead and is the better
+tool for text.
+
+Neither is semantic: a search for "invoice" will not find "billing". Issue
+several queries with different wordings rather than assuming one returned
+everything.
 
 ### `read` — get one message or a whole thread
 
@@ -105,10 +196,13 @@ iql --json read <message-id> --thread
 Without `--thread`, returns a single message object with its full `body`. With
 `--thread`, returns `{threadOf, count, messages[]}` oldest first.
 
-Threading groups by **normalised subject** (`Re:`/`Fwd:` prefixes stripped), not
-by `References` headers. An unrelated message that happens to share a subject
-line can appear in a thread. Sanity-check participants and dates before relying
-on a thread being one conversation.
+Threading follows the **`References` header**, so an unrelated message that
+merely shares a subject line is no longer pulled into a thread.
+
+One limit remains: a client that sends `In-Reply-To` without `References`
+starts a new conversation key at each reply, so a thread from such a client can
+split into pairs. Threads over-split rather than over-merge, which is the safer
+direction — but do not assume a short thread is the whole exchange.
 
 ### `analyze` — summarise, or get context to reason over
 
@@ -223,6 +317,87 @@ import that.
 
 ---
 
+## `annotate` — labels and extracted data
+
+An annotator is a named, versioned instruction applied to messages. A **label**
+answers yes or no; an **extractor** pulls structured records out of a body.
+Same mechanism, so they version, re-run and query the same way.
+
+```
+iql --json annotate list
+iql --json annotate show <name>
+iql --json annotate plan <name> [--scope <query>]
+iql --json annotate run  <name> [--scope <query>] [--limit n] [--dry-run]
+```
+
+Two engines:
+
+- **`rule`** — the instruction is a query expression. Evaluated by the database
+  in one pass, deterministic, no provider needed. Prefer this whenever the
+  question can be asked as a query.
+- **`llm`** — the instruction is a prompt, evaluated one message at a time.
+
+### Labels are three-valued, and this will trip you up
+
+A label has three states, not two: the annotator said yes, the annotator said
+no, or **the annotator has never seen this message**.
+
+```
+label:invoice        evaluated, yes
+-label:invoice       evaluated, no      ← NOT the unevaluated ones
+unlabeled:invoice    never evaluated
+```
+
+`-label:x` deliberately excludes messages the annotator has not reached. If an
+annotator has covered 10k of 200k messages, the other reading would return
+190k messages and present them as a negative result. When you want the loose
+reading, ask for it: `-label:x OR unlabeled:x`.
+
+Before reasoning from a negative label, check coverage with `annotate show` —
+`evaluated` against `total`. A label that has only seen a tenth of the mailbox
+supports "these are invoices", not "these are all the invoices".
+
+`label:invoice@0.9` sets a confidence floor. LLM labels carry one; rule labels
+are always 1.0.
+
+### Extracted data
+
+An extractor's records are queryable and aggregatable:
+
+```
+iql --json query "extract:saas-metrics.signups>1000"
+iql --json query "from:analytics@acme.com | extract saas-metrics | series signups by week"
+```
+
+One message can yield several records — a weekly digest with a bar per day is
+seven — and an extractor may declare which extracted field holds a record's own
+date. That matters: a digest sent on Monday reports the previous week, so
+bucketing by the message date shifts the whole series while still looking
+plausible.
+
+### Running one
+
+**Always `--dry-run` first.** It reports how many messages would be evaluated
+and, for a remote provider, roughly how much text would leave the machine.
+
+A run over a whole mailbox with a hosted provider sends **every message in
+scope** to that provider. That is a different act from `analyze` on one thread,
+and an annotator without recorded consent refuses rather than doing it — the
+error names the endpoint. Do not suggest working around it; tell the user what
+would be sent and where, and let them decide.
+
+`--scope <query>` narrows a run to matching messages, which is the cheap way to
+try a prompt before committing to the mailbox.
+
+### Corrections
+
+`annotate correct <name> <message-id> --yes|--no` records a human ruling. It
+outranks the machine result, survives version bumps and re-runs, and removes
+that message from the pending queue. You may suggest corrections; the user
+makes them.
+
+---
+
 ## Administrative commands
 
 You will not usually need these, but they are available and all support
@@ -272,6 +447,12 @@ one that worked.
 **`-flag` and `--flag` are both accepted** for multi-character names, as they
 always have been. `-v` remains the shorthand for `--version`.
 
+**The full-text index may be absent.** FTS5 is a compile-time option. Released
+binaries have it; one built without the `sqlite_fts5` tag falls back to
+substring matching — correct answers, table scans. `iql doctor` reports which,
+and `/api/query/fields` returns `fullText`. If text queries are slow, check
+that before assuming the mailbox is large.
+
 **Sync is synchronous.** `iql account sync <id>` returns only when the sync has
 finished, so it is safe in a script. It can take a while on a large mailbox.
 
@@ -281,17 +462,23 @@ finished, so it is safe in a script. It can take a while on a large mailbox.
 
 Do not promise the user any of this; none of it exists:
 
-- Semantic or vector search, FTS5, relevance ranking — `search` is `LIKE`.
-- Topic modelling or clustering. The dashboard's "topics" is the first word of
-  the subject line.
-- Sentiment analysis.
+- Semantic or vector search, embeddings, relevance ranking. `iql query` uses an
+  FTS5 index for token and phrase matching, which is lexical: it will not find
+  "billing" from "invoice". `search` remains plain `LIKE`.
+- Topic modelling or clustering. The dashboard's "topics" is still the first
+  word of the subject line. An LLM annotator is the way to get real topics, and
+  it has to be run first.
+- Sentiment analysis, except as an annotator someone defines.
 - Attachment extraction over IMAP. Sync stores bodies only. `iql import
   --attachments` does extract and store attachments from a desktop client, and
   `import scan --deep` counts them, but a synced mailbox has none.
 - Agent execution. The Visual AI Agent Builder in the web UI saves graph JSON
   and cannot run it — there is no Eino runtime.
 - Reading mail as HTML. `body` is the plain-text part; `htmlBody` exists in the
-  database but `search` and `read` return plain text.
+  database but `search` and `read` return plain text. Extractors read
+  `htmlBody` directly, because the structure behind a chart is the data.
+- Writing annotators over HTTP. The API serves `/api/query` and `/api/annotators`
+  read-only; defining and running them is CLI-only.
 
 ## Authentication
 

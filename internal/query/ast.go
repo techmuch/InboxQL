@@ -1,0 +1,199 @@
+// Package query implements InboxQL's query language: a filter expression with
+// an optional pipeline of aggregation stages, compiled to parameterised SQL.
+//
+// # Why a language
+//
+// Before this package there were three independent filter implementations —
+// SearchQuery, AnalyticsFilter and ListMessagesFiltered — which disagreed with
+// each other about what `from` meant (substring in one, equality in the other
+// two). Every new filter dimension cost a struct field and three edits. One
+// parser and one compiler replace all of it, and adding a dimension is a case
+// in compileTerm.
+//
+// # Shape
+//
+//	from:stripe after:2026-01-01 has:attachment
+//	is:unread -from:*@acme.com | count by week
+//	label:invoice conf>0.9 | sum amount by month
+//
+// A query is a filter followed by zero or more `|` stages. The filter selects
+// messages; the stages reshape the result.
+//
+// # Negation
+//
+// Negation is a unary operator over any node, not a property of a term, so
+// `-(from:alice after:2026-01)` parses and compiles like anything else.
+//
+// Multi-valued fields negate as NOT EXISTS over their edge rows rather than
+// as `!=` against a joined row. That distinction is the whole reason
+// message_participants exists: `-to:alice` must mean "no recipient is alice",
+// where `!=` inside a join would mean "some recipient is not alice" and match
+// nearly every message with more than one recipient.
+//
+// Labels are the deliberate exception to plain complement, and the reason is
+// in [Term]. See CompileFilter.
+package query
+
+import "strings"
+
+// Op is how a term compares its value.
+type Op int
+
+const (
+	// OpMatch is the field's natural default: a token match for prose
+	// (subject, body, free text) and a substring match for addresses. The two
+	// differ because they are asked different questions — nobody searches
+	// prose for a fragment inside a word, and everybody searches addresses for
+	// a domain fragment.
+	OpMatch          Op = iota
+	OpExact             // =value
+	OpGlob              // value containing *
+	OpGreater           // >value
+	OpGreaterOrEqual    // >=value
+	OpLess              // <value
+	OpLessOrEqual       // <=value
+)
+
+func (o Op) String() string {
+	switch o {
+	case OpExact:
+		return "="
+	case OpGlob:
+		return "glob"
+	case OpGreater:
+		return ">"
+	case OpGreaterOrEqual:
+		return ">="
+	case OpLess:
+		return "<"
+	case OpLessOrEqual:
+		return "<="
+	default:
+		return "match"
+	}
+}
+
+// Node is one element of a filter expression.
+type Node interface{ node() }
+
+// And matches when every child matches. Adjacent terms are implicitly ANDed.
+type And struct{ Nodes []Node }
+
+// Or matches when any child matches.
+type Or struct{ Nodes []Node }
+
+// Not inverts its child.
+//
+// For most nodes this is a plain SQL NOT. For a label term it is not: see
+// compileTerm, where "-label:x" means evaluated-and-false rather than
+// not-evaluated-true.
+type Not struct{ Node Node }
+
+// All matches every message. The empty query.
+type All struct{}
+
+// Term is a single field predicate.
+type Term struct {
+	// Field is the canonical field name, already lowercased and de-aliased.
+	// Empty means free text across the indexed columns.
+	Field string
+	Op    Op
+	Value string
+	// Qualifier carries a secondary constraint the field defines for itself.
+	// Only labels use it today, for the confidence floor in `label:invoice@0.9`.
+	Qualifier string
+}
+
+func (*And) node()  {}
+func (*Or) node()   {}
+func (*Not) node()  {}
+func (*All) node()  {}
+func (*Term) node() {}
+
+// StageKind identifies a pipeline verb.
+type StageKind string
+
+const (
+	StageCount        StageKind = "count"
+	StageTop          StageKind = "top"
+	StageSort         StageKind = "sort"
+	StageLimit        StageKind = "limit"
+	StageSeries       StageKind = "series"
+	StageAggregate    StageKind = "sum" // sum/avg/min/max, distinguished by Func
+	StageExtract      StageKind = "extract"
+	StageThread       StageKind = "thread"
+	StageParticipants StageKind = "participants"
+)
+
+// Stage is one step of the pipeline.
+type Stage struct {
+	Kind StageKind
+	// Func is the aggregate for StageAggregate: sum, avg, min, max.
+	Func string
+	// Field is what the stage operates on: the grouping key for count, the
+	// sort column for sort, the extracted field for series and aggregates.
+	Field string
+	// Bucket is the time granularity for series: day, week, month, year.
+	Bucket string
+	// N is the row cap for top and limit.
+	N int
+	// Desc reverses sort order.
+	Desc bool
+	// Annotator names the extractor for `extract` and for series/aggregates
+	// that read extracted values.
+	Annotator string
+}
+
+// Query is a parsed filter plus its pipeline.
+type Query struct {
+	Filter Node
+	Stages []Stage
+	// Source is the raw text, kept for error messages and for round-tripping
+	// a query back into the UI's search bar.
+	Source string
+}
+
+// IsAggregate reports whether the pipeline reduces messages to groups rather
+// than returning messages.
+func (q *Query) IsAggregate() bool {
+	for _, s := range q.Stages {
+		switch s.Kind {
+		case StageCount, StageTop, StageSeries, StageAggregate, StageParticipants:
+			return true
+		}
+	}
+	return false
+}
+
+// fieldAliases maps what people type onto canonical field names.
+var fieldAliases = map[string]string{
+	"since":      "after",
+	"until":      "before",
+	"sender":     "from",
+	"recipient":  "to",
+	"acct":       "account",
+	"attachment": "has",
+	"larger":     "larger",
+	"bigger":     "larger",
+	"smaller":    "smaller",
+}
+
+func canonicalField(f string) string {
+	f = strings.ToLower(strings.TrimSpace(f))
+	if c, ok := fieldAliases[f]; ok {
+		return c
+	}
+	return f
+}
+
+// KnownFields is every field the compiler understands, for error messages and
+// shell completion.
+var KnownFields = []string{
+	"from", "to", "cc", "bcc", "anyone",
+	"subject", "body", "text",
+	"account", "folder", "mailbox",
+	"is", "has",
+	"after", "before", "on",
+	"larger", "smaller",
+	"label", "unlabeled", "conf", "extract", "thread",
+}

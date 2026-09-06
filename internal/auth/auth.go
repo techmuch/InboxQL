@@ -64,14 +64,16 @@ func Authenticate(username, password string) (*store.Session, error) {
 
 // trustLocal controls whether a loopback connection may skip the password.
 //
-// Off by default, and that default is the whole point. It is set once at
-// startup by SetTrustLocal and only read afterwards, so no lock is needed.
+// Set once at startup by SetTrustLocal and only read afterwards, so no lock is
+// needed. The decision itself lives in cli.trustDecision, which turns it on for
+// a loopback listen address — reaching the port then means being on the machine
+// — and off as soon as the audience widens. Whatever this is set to, a request
+// that arrived through a proxy never gets it; see Middleware.
 var trustLocal bool
 
 // SetTrustLocal enables or disables passwordless access for loopback clients.
 //
-// Call this before serving. `iql serve --trust-local` is the only thing that
-// turns it on.
+// Call this before serving.
 func SetTrustLocal(enabled bool) { trustLocal = enabled }
 
 // TrustLocal reports whether passwordless loopback access is enabled.
@@ -104,17 +106,24 @@ func viaProxy(r *http.Request) bool {
 // Middleware protects routes and injects the authenticated user into the
 // context. A valid session cookie always authenticates.
 //
-// A loopback connection may additionally skip the password, but only when
-// `--trust-local` was passed. It is not enabled by default, and it cannot be,
-// because a loopback peer does not mean a local user.
+// A loopback connection may additionally skip the password when trustLocal is
+// set, which cli.trustDecision does for a loopback listen address: reaching a
+// port bound to 127.0.0.1 means being on the machine, and prompting the owner
+// of the machine for a password protects nothing.
 //
-// The case that forces this: a reverse proxy on the same host — the deployment
-// `iql serve` recommends in its own help text, since InboxQL terminates no TLS
-// — relays every request over loopback. The peer address is then 127.0.0.1 for
-// the entire internet, and auto-authenticating on it published every protected
-// endpoint, mail included. Nothing about the connection distinguishes that
-// from a person at the machine: the app binds loopback in both cases. Only the
-// operator knows which deployment this is, so only the operator can say.
+// The exception, which no setting overrides: a request that arrived through a
+// reverse proxy. A proxy on this host — the deployment `iql start` recommends
+// in its own help text, since InboxQL terminates no TLS — relays every request
+// over loopback, so the peer address is 127.0.0.1 for the entire internet.
+// Nothing about the connection distinguishes that from a person at the
+// keyboard, which is why the forwarded headers are checked here per request
+// rather than trusted away at startup.
+//
+// Known gap: this authenticates a request that carries no cookie, so a page in
+// the user's browser can reach the API cross-origin. Closing that means
+// refusing the passwordless path for a request with a cross-site
+// Sec-Fetch-Site or a foreign Origin — browsers always send those and CLI
+// callers never do.
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var user *store.User

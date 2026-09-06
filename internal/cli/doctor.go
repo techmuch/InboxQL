@@ -128,7 +128,22 @@ func runDoctor(ctx *Context, args []string) error {
 	// database, so "search is slow" and "this binary has no index" are the same
 	// fact — and only one of them is visible without being told.
 	if store.FullTextAvailable() {
-		rep.add("full-text index", statusOK, "queries use the FTS5 index")
+		indexed, total, err := store.FullTextCoverage()
+		switch {
+		case err != nil:
+			rep.add("full-text index", statusWarn, err.Error())
+		case indexed < total:
+			// A partial index is worse than none, because it fails quietly and
+			// backwards: a text search matches too little, so its negation
+			// matches too much and returns exactly what it was told to exclude.
+			rep.add("full-text index", statusFail,
+				fmt.Sprintf("only %d of %d messages are indexed; text searches and their negations will both be wrong",
+					indexed, total),
+				"iql maintenance reindex")
+		default:
+			rep.add("full-text index", statusOK,
+				fmt.Sprintf("%d message(s) indexed", indexed))
+		}
 	} else {
 		rep.add("full-text index", statusWarn,
 			"this binary was built without FTS5; text queries fall back to substring scans",

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useDevReload } from './devReload';
+import { version as appVersion } from '../../package.json';
 
 describe('useDevReload', () => {
   beforeEach(() => {
@@ -16,7 +17,7 @@ describe('useDevReload', () => {
   it('does nothing when dev is false', async () => {
     const fetchSpy = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ version: '0.0.31', dev: false, instanceId: '1' }),
+      json: async () => ({ version: appVersion, dev: false, instanceId: '1' }),
     });
     vi.stubGlobal('fetch', fetchSpy);
 
@@ -40,13 +41,13 @@ describe('useDevReload', () => {
       if (pollCount === 1) {
         return {
           ok: true,
-          json: async () => ({ version: '0.0.31', dev: true, instanceId: 'inst-1' }),
+          json: async () => ({ version: appVersion, dev: true, instanceId: 'inst-1' }),
         };
       }
       // Server restarted with new version
       return {
         ok: true,
-        json: async () => ({ version: '0.0.32', dev: true, instanceId: 'inst-2' }),
+        json: async () => ({ version: '99.0.0', dev: true, instanceId: 'inst-2' }),
       };
     });
     vi.stubGlobal('fetch', fetchSpy);

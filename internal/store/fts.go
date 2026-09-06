@@ -88,11 +88,13 @@ func ensureFullTextIndex(db *sql.DB) error {
 // current, but a database restored from a backup taken by a build without
 // FTS5 arrives with no index at all.
 func rebuildFullTextIndex(db *sql.DB) error {
-	var indexed, total int64
-	if err := db.QueryRow("SELECT COUNT(*) FROM messages_fts").Scan(&indexed); err != nil {
+	var total int64
+	if err := db.QueryRow("SELECT COUNT(*) FROM messages").Scan(&total); err != nil {
 		return err
 	}
-	if err := db.QueryRow("SELECT COUNT(*) FROM messages").Scan(&total); err != nil {
+
+	indexed, err := indexedDocuments(db)
+	if err != nil {
 		return err
 	}
 	if indexed == total {
@@ -106,6 +108,46 @@ func rebuildFullTextIndex(db *sql.DB) error {
 		log.Printf("Built the full-text index over %d message(s).", total)
 	}
 	return nil
+}
+
+// indexedDocuments counts what the full-text index actually holds.
+//
+// Not `SELECT COUNT(*) FROM messages_fts`. This is an external-content table,
+// so querying it reads through to `messages` — that count equals the message
+// count whether the index holds everything or nothing. Using it as the guard
+// meant the rebuild never ran, and the failure was silent and inverted: a
+// `text:` search matched nothing, so `-text:` matched everything, and a
+// negation confidently returned messages containing the very word it excluded.
+//
+// `%_docsize` is a real shadow table with one row per indexed document, so it
+// reports what is there rather than what could be read through to.
+func indexedDocuments(db *sql.DB) (int64, error) {
+	var n int64
+	err := db.QueryRow("SELECT COUNT(*) FROM messages_fts_docsize").Scan(&n)
+	if err != nil {
+		// The shadow table is absent only if the index was created with
+		// columnsize=0, which this schema does not do. Rebuilding is the safe
+		// answer to not knowing: it costs time, where guessing costs
+		// correctness.
+		return -1, nil
+	}
+	return n, nil
+}
+
+// FullTextCoverage reports how much of the mailbox the index actually holds.
+//
+// Surfaced by `iql doctor` because a partial index fails silently and
+// inverted: text searches match too little, so their negations match too much.
+// A count nobody checks is how that stays invisible.
+func FullTextCoverage() (indexed, total int64, err error) {
+	if err := db.QueryRow("SELECT COUNT(*) FROM messages").Scan(&total); err != nil {
+		return 0, 0, err
+	}
+	if !ftsEnabled.Load() {
+		return 0, total, nil
+	}
+	indexed, err = indexedDocuments(db)
+	return indexed, total, err
 }
 
 // RebuildFullTextIndex reindexes on demand, for `iql maintenance`.

@@ -577,7 +577,7 @@ const MailClient = () => {
 // --- Unified Settings View ---
 const SettingsView = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('accounts');
+  const [activeCategory, setActiveCategory] = useState('profile');
   const { theme, setTheme } = useThemeStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
@@ -776,10 +776,10 @@ const SettingsView = () => {
   };
 
   const categories = [
-    { id: 'accounts', label: 'Mail Accounts', icon: Mail },
-    { id: 'import', label: 'Import Mail', icon: Download },
     { id: 'profile', label: 'User Profile', icon: User },
     { id: 'appearance', label: 'Appearance', icon: Eye },
+    { id: 'accounts', label: 'Mail Accounts', icon: Mail },
+    { id: 'import', label: 'Import Mail', icon: Download },
     { id: 'ai', label: 'AI Configuration', icon: Cpu },
     { id: 'security', label: 'Security', icon: Shield },
     { id: 'data', label: 'Data Management', icon: Database },
@@ -1082,61 +1082,65 @@ const SettingsView = () => {
             </div>
           )}
 
-          {activeCategory === 'profile' && userProfile && (
-            <div className="animate-in fade-in duration-300">
-              <h2 className="text-2xl font-bold text-foreground mb-2">User Profile</h2>
-              <p className="text-muted-foreground text-sm mb-8">Manage your personal information and profile picture.</p>
-              
-              <form onSubmit={handleUpdateProfile} className="space-y-6">
-                <div className="flex items-center gap-8 mb-8">
-                  <div className="relative group">
-                    <div className="w-24 h-24  bg-muted border-2 border-dashed border-border flex items-center justify-center overflow-hidden">
-                      {userProfile.profileImageUrl ? (
-                        <img src={userProfile.profileImageUrl} alt="Profile" className="w-full h-full object-cover" />
-                      ) : (
-                        <User className="w-10 h-10 text-muted-foreground opacity-50" />
-                      )}
+          {activeCategory === 'profile' && (
+            userProfile ? (
+              <div className="animate-in fade-in duration-300">
+                <h2 className="text-2xl font-bold text-foreground mb-2">User Profile</h2>
+                <p className="text-muted-foreground text-sm mb-8">Manage your personal information and profile picture.</p>
+                
+                <form onSubmit={handleUpdateProfile} className="space-y-6">
+                  <div className="flex items-center gap-8 mb-8">
+                    <div className="relative group">
+                      <div className="w-24 h-24  bg-muted border-2 border-dashed border-border flex items-center justify-center overflow-hidden">
+                        {userProfile.profileImageUrl ? (
+                          <img src={userProfile.profileImageUrl} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-10 h-10 text-muted-foreground opacity-50" />
+                        )}
+                      </div>
+                      <button type="button" className="absolute inset-0 bg-black/40 text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity ">CHANGE</button>
                     </div>
-                    <button type="button" className="absolute inset-0 bg-black/40 text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity ">CHANGE</button>
+                    <div className="flex-1 space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Display Name</label>
+                        <input 
+                          type="text" 
+                          className="w-full bg-background border border-border  px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                          value={userProfile.displayName || ''}
+                          onChange={e => setUserProfile({...userProfile, displayName: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Email Address</label>
+                        <input 
+                          type="email" 
+                          className="w-full bg-background border border-border  px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                          value={userProfile.email || ''}
+                          onChange={e => setUserProfile({...userProfile, email: e.target.value})}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-1 space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Display Name</label>
-                      <input 
-                        type="text" 
-                        className="w-full bg-background border border-border  px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                        value={userProfile.displayName || ''}
-                        onChange={e => setUserProfile({...userProfile, displayName: e.target.value})}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Email Address</label>
-                      <input 
-                        type="email" 
-                        className="w-full bg-background border border-border  px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                        value={userProfile.email || ''}
-                        onChange={e => setUserProfile({...userProfile, email: e.target.value})}
-                      />
-                    </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Profile Image URL</label>
+                    <input 
+                      type="text" 
+                      placeholder="https://example.com/avatar.jpg"
+                      className="w-full bg-background border border-border  px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                      value={userProfile.profileImageUrl || ''}
+                      onChange={e => setUserProfile({...userProfile, profileImageUrl: e.target.value})}
+                    />
                   </div>
-                </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Profile Image URL</label>
-                  <input 
-                    type="text" 
-                    placeholder="https://example.com/avatar.jpg"
-                    className="w-full bg-background border border-border  px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                    value={userProfile.profileImageUrl || ''}
-                    onChange={e => setUserProfile({...userProfile, profileImageUrl: e.target.value})}
-                  />
-                </div>
-
-                <div className="pt-4">
-                  <button type="submit" className="bg-primary text-primary-foreground px-5 py-2  font-semibold shadow-sm hover:opacity-90 active:scale-[0.98] transition-all text-sm">Save Profile</button>
-                </div>
-              </form>
-            </div>
+                  <div className="pt-4">
+                    <button type="submit" className="bg-primary text-primary-foreground px-5 py-2  font-semibold shadow-sm hover:opacity-90 active:scale-[0.98] transition-all text-sm">Save Profile</button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <div className="p-8 text-muted-foreground text-sm">Loading profile...</div>
+            )
           )}
 
           {activeCategory === 'import' && (

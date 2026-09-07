@@ -6,6 +6,7 @@ import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
 import { BrowserStoragePanel } from './views/BrowserStoragePanel';
 import { AISettingsPanel } from './views/AISettingsPanel';
+import { Annotators } from './views/Annotators';
 import { MessageViewer } from './views/MessageViewer';
 import { ErrorLog } from './views/ErrorLog';
 import { Desk } from './views/Desk';
@@ -934,6 +935,7 @@ componentRegistry.register('message', MessageViewer);
 componentRegistry.register('errors', ErrorLog);
 
 componentRegistry.register('board', Board);
+componentRegistry.register('annotators', Annotators);
 
 function App() {
   // Every menu advertises a shortcut — Control+Shift+D and the rest — but the
@@ -1007,6 +1009,16 @@ function App() {
     return () => clearInterval(interval);
   }, [user]);
 
+  // The AI settings page links across to the annotator surface, which is a
+  // tab rather than a pane. An event rather than a prop, because the settings
+  // tree is several components deep and threading a callback through it would
+  // couple every level to something none of them use.
+  useEffect(() => {
+    const open = () => openToolCb('annotators', 'Annotators');
+    window.addEventListener('iql:open-annotators', open);
+    return () => window.removeEventListener('iql:open-annotators', open);
+  }, [openToolCb]);
+
   useEffect(() => {
     commandRegistry.registerCommand({
       id: 'iql.open-dashboard',
@@ -1033,6 +1045,12 @@ function App() {
       // key never reaches the page.
       keybinding: 'Control+Shift+K',
       execute: () => openToolCb('board', 'Board'),
+    });
+    commandRegistry.registerCommand({
+      id: 'iql.open-annotators',
+      label: 'Annotators',
+      keybinding: 'Control+Shift+L',
+      execute: () => openToolCb('annotators', 'Annotators'),
     });
     commandRegistry.registerCommand({
       id: 'iql.open-agents',
@@ -1070,6 +1088,7 @@ function App() {
         { id: 'tools.desk', label: 'Desk', commandId: 'iql.open-desk' },
         { id: 'tools.board', label: 'Ticket Board', commandId: 'iql.open-board' },
         { id: 'tools.search', label: 'Search Email', commandId: 'iql.open-search' },
+        { id: 'tools.annotators', label: 'Annotators', commandId: 'iql.open-annotators' },
         { id: 'tools.agents', label: 'AI Agents', commandId: 'iql.open-agents' },
       ],
       'View': [

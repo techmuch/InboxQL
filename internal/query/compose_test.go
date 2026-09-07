@@ -192,3 +192,73 @@ func TestSpansAddressTheOriginalText(t *testing.T) {
 		}
 	}
 }
+
+// Quoting is syntax, so a pill editor hands over parts and the server assembles
+// them. The rule is narrow: quote only when leaving it bare would reparse.
+func TestFormatTerm(t *testing.T) {
+	cases := []struct {
+		field, value string
+		negated      bool
+		want         string
+	}{
+		{"from", "alice@acme.com", false, "from:alice@acme.com"},
+		{"from", "alice@acme.com", true, "-from:alice@acme.com"},
+		// Whitespace would split it into two terms.
+		{"subject", "quarterly report", false, `subject:"quarterly report"`},
+		{"subject", `say "hi"`, false, `subject:"say ""hi"""`},
+		// Operators are structural and must survive unquoted.
+		{"from", "=alice@acme.com", false, "from:=alice@acme.com"},
+		{"from", "*@acme.com", false, "from:*@acme.com"},
+		{"from", "me()", false, "from:me()"},
+		// A bare word has no field.
+		{"", "invoice", false, "invoice"},
+		{"", "invoice", true, "-invoice"},
+		// Aliases resolve to the canonical name.
+		{"sender", "alice", false, "from:alice"},
+	}
+	for _, c := range cases {
+		got := FormatTerm(c.field, c.value, c.negated)
+		if got != c.want {
+			t.Errorf("FormatTerm(%q, %q, %v) = %q, want %q", c.field, c.value, c.negated, got, c.want)
+		}
+		// Whatever it builds has to parse, and has to survive a round trip.
+		if _, err := Parse(got); err != nil {
+			t.Errorf("FormatTerm(%q, %q) built %q, which does not parse: %v", c.field, c.value, got, err)
+		}
+		if spans := Terms(got); len(spans) != 1 || spans[0].Text != got {
+			t.Errorf("FormatTerm built %q, which is not one term: %v", got, spans)
+		}
+	}
+}
+
+// A pill edits the term at its own offset. Matching by text would pick the
+// wrong one when a query carries two terms that read alike.
+func TestReplaceAt(t *testing.T) {
+	src := `folder:inbox from:alice is:unread`
+	spans := Terms(src)
+	if len(spans) != 3 {
+		t.Fatalf("expected 3 terms, got %d", len(spans))
+	}
+
+	got := ReplaceAt(src, spans[1].Start, "from:bob")
+	if got != "folder:inbox from:bob is:unread" {
+		t.Errorf("replacing the middle term gave %q", got)
+	}
+
+	// An empty replacement removes it, which is what a pill's × does.
+	if got := ReplaceAt(src, spans[1].Start, ""); got != "folder:inbox is:unread" {
+		t.Errorf("removing the middle term gave %q", got)
+	}
+
+	// Stages survive.
+	withStage := "from:alice | count by week"
+	at := Terms(withStage)[0].Start
+	if got := ReplaceAt(withStage, at, "from:bob"); got != "from:bob | count by week" {
+		t.Errorf("replacing alongside a pipeline gave %q", got)
+	}
+
+	// A stale offset leaves the query alone rather than appending a duplicate.
+	if got := ReplaceAt(src, 999, "from:bob"); got != src {
+		t.Errorf("a stale offset changed the query to %q", got)
+	}
+}

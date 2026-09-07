@@ -180,7 +180,24 @@ func handleQueryCompose(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 	q := params.Get("q")
 
+	// `value` is a pill's raw input; the term it becomes is assembled here so
+	// the quoting rules live with the grammar. Anything else is a term already.
+	term := params.Get("term")
+	if params.Has("value") {
+		term = query.FormatTerm(params.Get("field"), params.Get("value"),
+			params.Get("negated") == "true")
+	}
+
 	switch {
+	case params.Has("at"):
+		// A pill edits the term at its own offset. Matching by text would pick
+		// the wrong one when a query carries two terms that read alike.
+		at, err := strconv.Atoi(params.Get("at"))
+		if err != nil {
+			http.Error(w, "at must be an offset", http.StatusBadRequest)
+			return
+		}
+		q = query.ReplaceAt(q, at, term)
 	case params.Get("add") != "":
 		q = query.WithTerm(q, params.Get("add"))
 	case params.Get("remove") != "":
@@ -188,9 +205,9 @@ func handleQueryCompose(w http.ResponseWriter, r *http.Request) {
 	case params.Has("field"):
 		// An empty `term` with a field removes that field's term, which is how
 		// "show me everything" clears a folder.
-		q = query.ReplaceField(q, params.Get("field"), params.Get("term"))
+		q = query.ReplaceField(q, params.Get("field"), term)
 	default:
-		http.Error(w, "give one of add, remove, or field", http.StatusBadRequest)
+		http.Error(w, "give one of at, add, remove, or field", http.StatusBadRequest)
 		return
 	}
 

@@ -50,7 +50,14 @@ export async function queryTerms(q: string): Promise<QueryTerm[]> {
   return (await res.json()).terms ?? [];
 }
 
-type Compose = { add: string } | { remove: string } | { field: string; term: string };
+type Compose =
+  | { add: string }
+  | { remove: string }
+  | { field: string; term: string }
+  /** Replace the term at an offset, assembling it from its parts server-side. */
+  | { at: number; field: string; value: string; negated: boolean }
+  /** Replace the term at an offset with a literal term, or remove it if empty. */
+  | { at: number; term: string };
 
 /**
  * Add, remove or replace a term, server-side.
@@ -60,7 +67,18 @@ type Compose = { add: string } | { remove: string } | { field: string; term: str
  */
 export async function compose(q: string, op: Compose): Promise<string> {
   const params = new URLSearchParams({ q });
-  if ('add' in op) params.set('add', op.add);
+  if ('at' in op) {
+    params.set('at', String(op.at));
+    if ('value' in op) {
+      // The parts go over raw; the server decides the quoting, because that is
+      // grammar and every frontend attempt at it has been wrong.
+      params.set('field', op.field);
+      params.set('value', op.value);
+      params.set('negated', String(op.negated));
+    } else {
+      params.set('term', op.term);
+    }
+  } else if ('add' in op) params.set('add', op.add);
   else if ('remove' in op) params.set('remove', op.remove);
   else {
     params.set('field', op.field);

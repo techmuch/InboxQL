@@ -6,6 +6,7 @@ import {
 import { openMessage, useViewerStore } from '../../lib/tabs';
 import { Editor } from './Editor';
 import { Results } from './Results';
+import { Pills } from './Pills';
 import {
   explainQuery, listSaved, runQuery, saveQuery, QueryFailed,
   type QueryResult, type SavedQuery,
@@ -318,6 +319,11 @@ export const Desk = () => {
             errorPosition={failure?.position}
             errorMessage={failure?.message}
           />
+          {/* The same query, as pills. Not a second copy — every edit is
+              written back through the composer, so the box and the pills can
+              never describe different things. */}
+          <Pills query={query} onChange={setQuery} />
+
           <div className="flex items-center gap-2 text-xs">
             <button
               type="button"

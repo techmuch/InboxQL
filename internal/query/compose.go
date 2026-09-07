@@ -219,3 +219,61 @@ func joinFilterAndPipeline(filter, original string) string {
 	}
 	return filter
 }
+
+// FormatTerm assembles a term from its parts, quoting the value when it needs it.
+//
+// Quoting is syntax, so it belongs here rather than in whatever is editing a
+// pill. The rule is narrow on purpose: a value is quoted only when leaving it
+// bare would change how it parses — whitespace would split it into two terms,
+// and a quote character would unbalance the string.
+//
+// Operators are left alone. `=alice@x.com`, `*@acme.com` and `me()` are values
+// that mean something structural, and wrapping them in quotes would turn each
+// into a literal search for its own punctuation.
+func FormatTerm(field, value string, negated bool) string {
+	value = strings.TrimSpace(value)
+
+	if strings.ContainsAny(value, " \t\n\"") {
+		value = `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+	}
+
+	term := value
+	if field != "" {
+		term = canonicalField(field) + ":" + value
+	}
+	if negated {
+		term = "-" + term
+	}
+	return term
+}
+
+// ReplaceAt swaps the term starting at an offset for another.
+//
+// Addressed by offset rather than by text because a pill knows where its term
+// sits — Terms gave it the span — and matching by string would pick the wrong
+// one when a query carries two terms that read alike.
+//
+// An empty replacement removes the term, which is what a pill's × does.
+func ReplaceAt(src string, start int, term string) string {
+	keep := []string{}
+	replaced := false
+
+	for _, t := range Terms(src) {
+		if t.Start == start {
+			replaced = true
+			if strings.TrimSpace(term) != "" {
+				keep = append(keep, strings.TrimSpace(term))
+			}
+			continue
+		}
+		keep = append(keep, t.Text)
+	}
+
+	// An offset that names no term leaves the query alone rather than
+	// appending: the caller is working from a stale span, and guessing would
+	// silently duplicate a term.
+	if !replaced {
+		return src
+	}
+	return joinFilterAndPipeline(strings.Join(keep, " "), src)
+}

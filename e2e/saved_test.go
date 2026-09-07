@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -234,5 +235,71 @@ func TestAnalyticsRefusesNonMailQueries(t *testing.T) {
 	defer ok.Body.Close()
 	if ok.StatusCode != 200 {
 		t.Errorf("a mail query to analytics returned %d, want 200", ok.StatusCode)
+	}
+}
+
+// A pill edits the term at its own offset, and the server assembles it — so
+// quoting stays with the grammar rather than being decided by a UI component.
+func TestPillEditsGoThroughTheComposer(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+	s := e.startServer()
+
+	get := func(t *testing.T, path string) string {
+		t.Helper()
+		resp := s.browserRequest(t, "GET", path, "", map[string]string{"Sec-Fetch-Site": "same-origin"})
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s returned %d", path, resp.StatusCode)
+		}
+		var out struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		return out.Query
+	}
+
+	// The spans a pill row is built from address the original text exactly.
+	resp := s.browserRequest(t, "GET",
+		"/api/query/terms?q=folder%3Ainbox+from%3Aalice", "",
+		map[string]string{"Sec-Fetch-Site": "same-origin"})
+	var terms struct {
+		Terms []struct {
+			Text    string `json:"text"`
+			Field   string `json:"field"`
+			Negated bool   `json:"negated"`
+			Start   int    `json:"start"`
+		} `json:"terms"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&terms); err != nil {
+		t.Fatalf("decoding terms: %v", err)
+	}
+	resp.Body.Close()
+	if len(terms.Terms) != 2 || terms.Terms[1].Field != "from" {
+		t.Fatalf("terms = %+v", terms.Terms)
+	}
+	at := terms.Terms[1].Start
+
+	cases := []struct{ path, want, why string }{
+		{fmt.Sprintf("/api/query/compose?q=folder%%3Ainbox+from%%3Aalice&at=%d&field=from&value=bob%%40acme.com&negated=false", at),
+			"folder:inbox from:bob@acme.com", "editing a pill's value"},
+		{fmt.Sprintf("/api/query/compose?q=folder%%3Ainbox+from%%3Aalice&at=%d&field=from&value=alice&negated=true", at),
+			"folder:inbox -from:alice", "toggling negation in place"},
+		{fmt.Sprintf("/api/query/compose?q=folder%%3Ainbox+from%%3Aalice&at=%d&field=subject&value=quarterly+report&negated=false", at),
+			`folder:inbox subject:"quarterly report"`, "a value with a space is quoted by the server"},
+		{fmt.Sprintf("/api/query/compose?q=folder%%3Ainbox+from%%3Aalice&at=%d&term=", at),
+			"folder:inbox", "an empty replacement removes the pill"},
+	}
+	for _, c := range cases {
+		if got := get(t, c.path); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.why, got, c.want)
+		}
+	}
+
+	// A stale offset leaves the query alone rather than duplicating a term.
+	if got := get(t, "/api/query/compose?q=from%3Aalice&at=999&field=from&value=bob&negated=false"); got != "from:alice" {
+		t.Errorf("a stale offset produced %q", got)
 	}
 }

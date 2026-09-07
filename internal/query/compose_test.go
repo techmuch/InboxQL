@@ -262,3 +262,120 @@ func TestReplaceAt(t *testing.T) {
 		t.Errorf("a stale offset changed the query to %q", got)
 	}
 }
+
+func stageVerbs(src string) string {
+	spans := Stages(src)
+	out := make([]string, 0, len(spans))
+	for _, s := range spans {
+		out = append(out, s.Text)
+	}
+	return strings.Join(out, "|")
+}
+
+func TestStagesSplitsThePipeline(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"from:alice", ""},
+		{"from:alice | timeline", "timeline"},
+		{"| count by week", "count by week"},
+		{"is:unread | sort date desc | limit 10", "sort date desc|limit 10"},
+		// A pipe inside quotes is not a stage boundary.
+		{`subject:"a | b" | timeline`, "timeline"},
+		// Trailing bar while someone is still typing.
+		{"from:alice |", ""},
+		{"from:alice | ", ""},
+	}
+	for _, c := range cases {
+		if got := stageVerbs(c.in); got != c.want {
+			t.Errorf("Stages(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestStageSpansAddressTheOriginalText(t *testing.T) {
+	src := "is:unread | sort date desc | limit 10"
+	for _, span := range Stages(src) {
+		if got := src[span.Start:span.End]; got != span.Text {
+			t.Errorf("span %d-%d is %q but Text is %q", span.Start, span.End, got, span.Text)
+		}
+	}
+}
+
+// A query can end in only one aggregate, so adding a terminal stage has to
+// replace whichever is already there. Appending would build a query the
+// planner rejects — a toggle that produces an error is a broken toggle.
+func TestWithStageReplacesTheTerminal(t *testing.T) {
+	cases := []struct{ query, stage, want string }{
+		{"from:alice", "timeline", "from:alice | timeline"},
+		{"", "timeline", "| timeline"},
+		// Same verb twice is one stage.
+		{"from:alice | timeline", "timeline", "from:alice | timeline"},
+		// A different terminal supersedes.
+		{"from:alice | count by week", "timeline", "from:alice | timeline"},
+		{"from:alice | timeline", "count by week", "from:alice | count by week"},
+		{"from:alice | top domain 5", "timeline", "from:alice | timeline"},
+		// Non-terminal stages survive alongside a terminal one.
+		{"from:alice | limit 10", "timeline", "from:alice | limit 10 | timeline"},
+		{"is:unread | sort date desc | count", "timeline", "is:unread | sort date desc | timeline"},
+		// A leading bar on the argument is accepted, since that is how a user
+		// would write it.
+		{"from:alice", "| timeline", "from:alice | timeline"},
+	}
+	for _, c := range cases {
+		got := WithStage(c.query, c.stage)
+		if got != c.want {
+			t.Errorf("WithStage(%q, %q) = %q, want %q", c.query, c.stage, got, c.want)
+		}
+		if _, err := Parse(got); err != nil {
+			t.Errorf("WithStage(%q, %q) built %q, which does not parse: %v",
+				c.query, c.stage, got, err)
+		}
+	}
+}
+
+func TestWithoutStage(t *testing.T) {
+	cases := []struct{ query, verb, want string }{
+		{"from:alice | timeline", "timeline", "from:alice"},
+		{"from:alice | limit 10 | timeline", "timeline", "from:alice | limit 10"},
+		{"| timeline", "timeline", ""},
+		{"from:alice", "timeline", "from:alice"},
+		{"from:alice | count", "timeline", "from:alice | count"},
+	}
+	for _, c := range cases {
+		if got := WithoutStage(c.query, c.verb); got != c.want {
+			t.Errorf("WithoutStage(%q, %q) = %q, want %q", c.query, c.verb, got, c.want)
+		}
+	}
+}
+
+// Toggling on and then off has to give back exactly what was there, or the
+// query bar drifts every time someone flips a switch.
+func TestStageToggleRoundTrips(t *testing.T) {
+	for _, src := range []string{
+		"from:alice",
+		"is:unread folder:inbox",
+		"from:alice | limit 10",
+		`subject:"quarterly report"`,
+		"",
+	} {
+		on := WithStage(src, "timeline")
+		if !HasStage(on, "timeline") {
+			t.Errorf("WithStage(%q) did not turn it on: %q", src, on)
+		}
+		if off := WithoutStage(on, "timeline"); off != src {
+			t.Errorf("round trip of %q gave %q", src, off)
+		}
+	}
+}
+
+// Composition runs against text someone is still typing.
+func TestStageComposingNeverPanicsOnPartialInput(t *testing.T) {
+	for _, src := range []string{
+		"", "|", "| ", "||", `subject:"unclosed | timeline`, "from:alice | ", "| count by",
+	} {
+		Stages(src)
+		WithStage(src, "timeline")
+		WithoutStage(src, "timeline")
+		HasStage(src, "timeline")
+	}
+}

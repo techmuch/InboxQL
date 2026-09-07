@@ -22,6 +22,7 @@ pipeline stages that reshape the result.
   iql query "from:stripe after:2026-01-01"
   iql query "is:unread -from:*@acme.com"
   iql query "label:invoice | sum amount by month"
+  iql query "status:todo | timeline"
 
 Filter terms
   from: to: cc: bcc: anyone:   addresses; substring by default
@@ -60,6 +61,8 @@ Pipeline stages
   | sort <field> [asc|desc]   reorder messages
   | limit <n>                 cap the rows
   | thread                    expand to whole conversations
+  | timeline                  conversations, with the tickets and drafts
+                              they produced, interleaved by time
   | participants              who appears, and how often
   | extract <annotator>       read that annotator's structured output
   | series <field> by <bucket>       an extracted value over time
@@ -451,6 +454,26 @@ func printQueryResult(ctx *Context, res *store.QueryResult) error {
 		}
 		return t.Flush()
 
+	case "drafts":
+		if len(res.Drafts) == 0 {
+			ctx.Printf("No drafts matched.\n")
+			return nil
+		}
+		t := p.NewTable("ID", "UPDATED", "STATUS", "TO", "SUBJECT")
+		for _, d := range res.Drafts {
+			t.Row(
+				ui.Truncate(d.ID, 8),
+				d.UpdatedAt.Format("2006-01-02"),
+				d.Status,
+				ui.Truncate(strings.Join(d.To, ", "), 28),
+				ui.Truncate(d.Subject, 44),
+			)
+		}
+		return t.Flush()
+
+	case "threads":
+		return printThreads(ctx, res)
+
 	default:
 		if len(res.Messages) == 0 {
 			ctx.Printf("No messages matched.\n")
@@ -475,6 +498,94 @@ func printQueryResult(ctx *Context, res *store.QueryResult) error {
 		ctx.Printf("\n%s\n", p.Dim(count(len(res.Messages), "message", "messages")))
 		return nil
 	}
+}
+
+// printThreads renders conversations as indented timelines.
+//
+// Not a table: a timeline is nested, and flattening it into rows loses the one
+// thing it exists to show — that these events belong to the same conversation.
+// So the conversation is a heading and its moments are indented under it.
+func printThreads(ctx *Context, res *store.QueryResult) error {
+	p := ctx.Printer()
+
+	if len(res.Threads) == 0 {
+		ctx.Printf("No conversations matched.\n")
+		return nil
+	}
+
+	for i, th := range res.Threads {
+		if i > 0 {
+			ctx.Printf("\n")
+		}
+		subject := th.Subject
+		if subject == "" {
+			subject = "(no subject)"
+		}
+		ctx.Printf("%s\n", ui.Truncate(subject, 72))
+		ctx.Printf("%s\n", p.Dim(threadSummaryLine(th)))
+
+		for _, e := range th.Entries {
+			ctx.Printf("  %s  %-6s  %s\n",
+				e.At.Format("2006-01-02"),
+				entryTag(e.Kind),
+				ui.Truncate(entryLine(e), 62))
+		}
+	}
+
+	ctx.Printf("\n%s\n", p.Dim(count(len(res.Threads), "conversation", "conversations")))
+	return nil
+}
+
+// threadSummaryLine describes a conversation in one dim line.
+func threadSummaryLine(th *store.Thread) string {
+	parts := []string{count(th.MessageCount, "message", "messages")}
+	if th.TicketCount > 0 {
+		parts = append(parts, count(th.TicketCount, "ticket", "tickets"))
+	}
+	if th.DraftCount > 0 {
+		parts = append(parts, count(th.DraftCount, "draft", "drafts"))
+	}
+	if len(th.Participants) > 0 {
+		parts = append(parts, strings.Join(th.Participants, ", "))
+	}
+	return ui.Truncate(strings.Join(parts, " · "), 76)
+}
+
+// entryTag is a short, fixed-width word for an entry's type.
+//
+// Words rather than symbols: this output is piped, grepped and pasted into
+// issues, and a glyph that renders as a box in someone's terminal is worse
+// than four plain letters.
+func entryTag(kind string) string {
+	switch kind {
+	case store.EntryMessage:
+		return "mail"
+	case store.EntryTicket, store.EntryEvent:
+		return "task"
+	case store.EntryDraft:
+		return "draft"
+	case store.EntryAnnotation:
+		return "label"
+	}
+	return kind
+}
+
+// entryLine is what one moment reads as.
+func entryLine(e store.ThreadEntry) string {
+	switch e.Kind {
+	case store.EntryMessage:
+		from, _ := store.NormaliseAddress(e.Actor)
+		if from == "" {
+			from = e.Actor
+		}
+		return from + "  " + e.Summary
+	case store.EntryAnnotation:
+		if e.Annotation != nil && e.Annotation.DataJSON != "" {
+			return e.Summary + "  " + ui.Truncate(e.Annotation.DataJSON, 40)
+		}
+		return e.Summary
+	}
+	return e.Summary
 }
 
 // formatNumber prints a count as an integer and a measurement as a decimal.

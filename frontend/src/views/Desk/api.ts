@@ -62,14 +62,47 @@ export interface Draft {
   updatedAt?: string;
 }
 
+/**
+ * One moment on a conversation's timeline.
+ *
+ * Exactly one payload field is set and `kind` says which. The server also sends
+ * `summary` — a line already rendered — so a client can list a timeline without
+ * knowing the shape of all five payload types.
+ */
+export interface ThreadEntry {
+  kind: 'message' | 'ticket' | 'draft' | 'event' | 'annotation';
+  at: string;
+  actor?: string;
+  summary: string;
+  message?: QueryMessage;
+  ticket?: Ticket;
+  draft?: Draft;
+  event?: { kind: string; from?: string; to?: string; actor: string; at: string };
+  annotation?: { id: string; dataJson: string; confidence?: number; source: string };
+}
+
+/** A conversation and everything anchored to it. */
+export interface Thread {
+  key: string;
+  subject?: string;
+  participants?: string[];
+  entries: ThreadEntry[];
+  messageCount: number;
+  ticketCount: number;
+  draftCount: number;
+  start: string;
+  end: string;
+}
+
 export interface QueryResult {
   query: string;
-  kind: 'messages' | 'groups' | 'count' | 'tickets' | 'drafts';
+  kind: 'messages' | 'groups' | 'count' | 'tickets' | 'drafts' | 'threads';
   count: number;
   messages?: QueryMessage[];
   groups?: QueryGroup[];
   tickets?: Ticket[];
   drafts?: Draft[];
+  threads?: Thread[];
   total?: number;
   /** What an aggregate grouped by, so a chart click can build a drill-down. */
   groupField?: string;

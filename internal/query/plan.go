@@ -19,6 +19,16 @@ const (
 	PlanTickets
 	// PlanDrafts returns draft rows.
 	PlanDrafts
+	// PlanThreads returns conversation keys, one per row.
+	//
+	// Unlike every other kind, the statement is not the answer — it selects
+	// which conversations to assemble, and the store fills each one in. That
+	// is deliberate: a timeline is heterogeneous, and expressing "messages and
+	// tickets and drafts, interleaved by time" as one SQL statement means a
+	// union of three tables padded to a common column list. Selecting the keys
+	// and then loading each entity by its own query is both faster and the
+	// only version a person can read.
+	PlanThreads
 )
 
 // Plan is a compiled query ready to execute.
@@ -109,7 +119,7 @@ func (p *pipeline) read(stages []Stage) error {
 			p.limit = s.N
 			p.sample = true
 
-		case StageCount, StageTop, StageSeries, StageAggregate, StageParticipants:
+		case StageCount, StageTop, StageSeries, StageAggregate, StageParticipants, StageTimeline:
 			if p.terminal != nil {
 				return fmt.Errorf("a query can end in only one aggregate; found %s after %s", s.Kind, p.terminal.Kind)
 			}
@@ -147,6 +157,12 @@ func (p *pipeline) effectiveWhere() string {
 }
 
 func (p *pipeline) build() (*Plan, error) {
+	// Checked before the entity split because a timeline is the one result
+	// shape that is the same question of every entity: mail, tickets and
+	// drafts all resolve to the conversations they belong to.
+	if p.terminal != nil && p.terminal.Kind == StageTimeline {
+		return p.buildTimeline()
+	}
 	if p.entity == EntityTicket {
 		return p.buildTickets()
 	}
@@ -211,7 +227,7 @@ func (p *pipeline) buildMessages() (*Plan, error) {
 }
 
 // draftSelectList is the column list store.scanDraft expects.
-const draftSelectList = `d.id, d.account_id, d.in_reply_to, d.to_addrs, d.cc_addrs, d.bcc_addrs,
+const draftSelectList = `d.id, d.account_id, d.in_reply_to, d.thread_key, d.to_addrs, d.cc_addrs, d.bcc_addrs,
 	d.subject, d.body, d.status, d.origin, d.created_at, d.updated_at, d.queued_at, d.sent_at, d.last_error`
 
 // buildDrafts plans a query over the drafts table.
@@ -642,4 +658,45 @@ func sortColumn(field string) (string, error) {
 	default:
 		return "", fmt.Errorf("cannot sort by %q (try: date, size, subject, from, account)", field)
 	}
+}
+
+// buildTimeline selects the conversations a query touches, newest first.
+//
+// # Why COALESCE on the key
+//
+// thread_key is maintained on write, so rows written before v17 and never
+// re-saved have none, and a ticket someone raised by hand belongs to no
+// conversation at all. Falling back to the row's own id makes each of those
+// its own single-item thread, which is what they are. Dropping them instead
+// would be the failure this project keeps re-learning: a view that silently
+// omits rows looks like it is working.
+//
+// The store's loader knows about the fallback and matches it — it looks up the
+// id branch only for rows whose key is NULL, so a key can never collide with
+// an unrelated row's id.
+func (p *pipeline) buildTimeline() (*Plan, error) {
+	limit := p.clampLimit(50)
+	args := append([]any{}, p.args...)
+	args = append(args, limit)
+
+	var sql string
+	switch p.entity {
+	case EntityTicket:
+		sql = "SELECT COALESCE(t.thread_key, t.id) AS k FROM tickets t WHERE " + p.where +
+			" GROUP BY k ORDER BY MAX(COALESCE(t.due_at, t.updated_at)) DESC LIMIT ?"
+	case EntityDraft:
+		sql = "SELECT COALESCE(d.thread_key, d.id) AS k FROM drafts d WHERE " + p.where +
+			" GROUP BY k ORDER BY MAX(d.updated_at) DESC LIMIT ?"
+	default:
+		sql = "SELECT COALESCE(m.thread_key, m.id) AS k FROM messages m WHERE " + p.effectiveWhere() +
+			" GROUP BY k ORDER BY MAX(m.date) DESC LIMIT ?"
+	}
+
+	if p.opt.Offset > 0 {
+		sql += " OFFSET ?"
+		args = append(args, p.opt.Offset)
+	}
+
+	return &Plan{SQL: sql, Args: args, Kind: PlanThreads, Limit: limit,
+		Entity: p.entity, Ordered: true}, nil
 }

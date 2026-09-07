@@ -549,7 +549,7 @@ var Buckets = []string{"hour", "day", "week", "month", "year"}
 
 // StageNames are the pipeline verbs, in the order help presents them.
 var StageNames = []string{
-	"count", "top", "sort", "limit", "sample", "thread", "participants",
+	"count", "top", "sort", "limit", "sample", "thread", "timeline", "participants",
 	"extract", "series", "sum", "avg", "min", "max",
 }
 

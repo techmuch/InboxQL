@@ -40,9 +40,20 @@ Ticket fields are query terms, so the same language filters both:
 A query naming a message field inside a ticket query asks about the ticket's
 evidence: "tickets whose mail came from Acme".
 
+new flags:
+  --status --priority --due   the ticket's own fields
+  --message <id>              the mail it came from; also files the ticket in
+                              that message's conversation, so it appears on the
+                              thread's timeline
+  --thread <key>              file it in a conversation directly
+
 propose flags:
   --auto-accept <0-1>  confidence at or above which a ticket skips the queue
-  --dry-run            report what would be raised and write nothing`,
+  --dry-run            report what would be raised and write nothing
+
+A conversation and everything it caused, in one time-ordered view:
+
+  iql query "status:todo | timeline"`,
 		Run: runTicket,
 	})
 }
@@ -217,6 +228,7 @@ func ticketNew(ctx *Context, args []string) error {
 	priority := fs.String("priority", "", "priority")
 	due := fs.String("due", "", "due date")
 	message := fs.String("message", "", "message id this came from")
+	thread := fs.String("thread", "", "conversation this belongs to")
 	if err := parseArgs(fs, rest); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -227,6 +239,20 @@ func ticketNew(ctx *Context, args []string) error {
 	defer store.CloseDB()
 
 	tk := &store.Ticket{Title: title, Status: *status, Priority: *priority, Origin: store.OriginHumanTicket}
+	if *message != "" {
+		// A ticket raised from a message belongs to that message's
+		// conversation, not to nothing. Attaching the evidence without setting
+		// the key left the ticket invisible on its own thread's timeline, and
+		// made a later extraction propose a duplicate for the same thread.
+		key, err := store.MessageThreadKey(*message)
+		if err != nil {
+			return Fail(ExitUsage, "--message: %v", err)
+		}
+		tk.ThreadKey = key
+	}
+	if *thread != "" {
+		tk.ThreadKey = *thread
+	}
 	if *due != "" {
 		when, err := store.ParseTicketDue(*due)
 		if err != nil {

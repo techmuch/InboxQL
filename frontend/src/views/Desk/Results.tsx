@@ -1,6 +1,7 @@
 import { Inbox } from 'lucide-react';
 import { openMessage } from '../../lib/tabs';
 import { drillDownTerm, type QueryResult } from './api';
+import { ThreadResult } from './Timeline';
 
 interface ResultsProps {
   result: QueryResult;
@@ -26,6 +27,11 @@ export const Results = ({ result, onDrillDown }: ResultsProps) => {
       return <TicketResult result={result} />;
     case 'drafts':
       return <DraftResult result={result} />;
+    case 'threads': {
+      const threads = result.threads ?? [];
+      if (threads.length === 0) return <Empty label="No conversations matched" />;
+      return <ThreadResult threads={threads} onDrillDown={onDrillDown} />;
+    }
     default:
       return <MessageResult result={result} />;
   }

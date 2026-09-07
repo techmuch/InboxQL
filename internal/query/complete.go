@@ -298,6 +298,8 @@ func stageSummary(name string) string {
 		return "a random draw, for judging an annotator"
 	case "thread":
 		return "expand to whole conversations"
+	case "timeline":
+		return "conversations, with the tickets and drafts they produced"
 	case "participants":
 		return "who appears, and how often"
 	case "extract":

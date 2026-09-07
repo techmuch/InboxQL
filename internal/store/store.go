@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 19
+	SchemaVersion = 21
 )
 
 var (
@@ -853,6 +853,94 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 19
+	}
+
+	if currentVersion < 20 {
+		log.Println("Applying schema migration v20 (ticket events)...")
+		// A ticket's history, because the ticket only records its present.
+		//
+		// status, priority and due are current values; nothing says when they
+		// changed or what they were. That is fine for a board, which only ever
+		// asks what is true now, and useless for a timeline, which is a
+		// narrative: "raised on the 2nd, started on the 6th, done on the 8th".
+		//
+		// This has to exist before anything reads it. Every other derived
+		// thing in this system can be rebuilt from the mail — annotations,
+		// participants, thread keys, the FTS index all have a backfill — but a
+		// transition that was never recorded is gone. So the table lands
+		// first, ahead of the timeline that wants it, and the backfill below
+		// seeds what little can be honestly reconstructed.
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS ticket_events (
+				id         TEXT PRIMARY KEY,
+				ticket_id  TEXT NOT NULL,
+				kind       TEXT NOT NULL,
+				from_value TEXT,
+				to_value   TEXT,
+				actor      TEXT NOT NULL DEFAULT 'human',
+				at         INTEGER NOT NULL,
+				FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket ON ticket_events(ticket_id, at);
+
+			-- Existing tickets get the one event that is a fact rather than a
+			-- guess: they were raised, at created_at, by whatever raised them.
+			-- Their intermediate moves are unrecoverable and are not invented.
+			INSERT INTO ticket_events (id, ticket_id, kind, from_value, to_value, actor, at)
+			SELECT lower(hex(randomblob(16))), id, 'created', NULL, status,
+			       COALESCE(origin, 'human'), created_at
+			FROM tickets
+			WHERE NOT EXISTS (
+				SELECT 1 FROM ticket_events e WHERE e.ticket_id = tickets.id AND e.kind = 'created'
+			);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v20: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 20;"); err != nil {
+			return err
+		}
+		currentVersion = 20
+	}
+
+	if currentVersion < 21 {
+		log.Println("Applying schema migration v21 (draft thread keys)...")
+		// A draft belongs to a conversation, and until now only messages and
+		// tickets could say which one.
+		//
+		// Drafts already carried in_reply_to — the Message-ID of what they
+		// answer — so the conversation was always derivable by a join. Storing
+		// it makes the key uniform across all three entities, which is what
+		// lets a timeline ask one question of one column instead of a
+		// different question per table.
+		//
+		// The join needs normalising on both sides: messages.message_id keeps
+		// the angle brackets the server sent, and it is the same mismatch that
+		// once left every reply in a thread of its own.
+		// ADD COLUMN is the one statement here with no IF NOT EXISTS, so it is
+		// run on its own and a failure is logged rather than fatal — the same
+		// shape v17 uses, and what makes re-running the ladder harmless.
+		if _, err := db.Exec(`ALTER TABLE drafts ADD COLUMN thread_key TEXT;`); err != nil {
+			log.Printf("Warning v21: %v", err)
+		}
+		_, err := db.Exec(`
+			CREATE INDEX IF NOT EXISTS idx_drafts_thread_key ON drafts(thread_key);
+
+			UPDATE drafts SET thread_key = (
+				SELECT m.thread_key FROM messages m
+				WHERE trim(m.message_id, '<>') = trim(drafts.in_reply_to, '<>')
+				LIMIT 1
+			)
+			WHERE in_reply_to IS NOT NULL AND trim(in_reply_to, '<>') != '';
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v21: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 21;"); err != nil {
+			return err
+		}
+		currentVersion = 21
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

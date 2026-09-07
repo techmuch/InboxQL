@@ -50,10 +50,29 @@ export async function queryTerms(q: string): Promise<QueryTerm[]> {
   return (await res.json()).terms ?? [];
 }
 
+export interface QueryStage {
+  verb: string;
+  text: string;
+  start: number;
+  end: number;
+}
+
+/** The stages of a query's pipeline, for showing which view is active. */
+export async function queryStages(q: string): Promise<QueryStage[]> {
+  if (!q.trim()) return [];
+  const res = await fetch(`/api/query/terms?${new URLSearchParams({ q })}`);
+  if (!res.ok) return [];
+  return (await res.json()).stages ?? [];
+}
+
 type Compose =
   | { add: string }
   | { remove: string }
   | { field: string; term: string }
+  /** Add a pipeline stage. A terminal one replaces whichever terminal is on. */
+  | { stage: string }
+  /** Remove every stage with this verb. */
+  | { dropStage: string }
   /** Replace the term at an offset, assembling it from its parts server-side. */
   | { at: number; field: string; value: string; negated: boolean }
   /** Replace the term at an offset with a literal term, or remove it if empty. */
@@ -80,6 +99,8 @@ export async function compose(q: string, op: Compose): Promise<string> {
     }
   } else if ('add' in op) params.set('add', op.add);
   else if ('remove' in op) params.set('remove', op.remove);
+  else if ('stage' in op) params.set('stage', op.stage);
+  else if ('dropStage' in op) params.set('dropStage', op.dropStage);
   else {
     params.set('field', op.field);
     params.set('term', op.term);

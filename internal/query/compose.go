@@ -277,3 +277,152 @@ func ReplaceAt(src string, start int, term string) string {
 	}
 	return joinFilterAndPipeline(strings.Join(keep, " "), src)
 }
+
+// StageSpan is one stage of a query's pipeline, with where it sits.
+type StageSpan struct {
+	// Verb is the stage's name, lowercased: count, top, timeline.
+	Verb  string `json:"verb"`
+	Text  string `json:"text"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
+// Stages splits a query's pipeline into its stages.
+//
+// The mirror of Terms, and here for the same reason: a client that wants to
+// know whether `| timeline` is on should ask rather than pattern-match the
+// string. Tolerant in the same way too — it runs against text someone is still
+// typing.
+func Stages(src string) []StageSpan {
+	out := []StageSpan{}
+
+	at := pipelineAt(src)
+	if at < 0 {
+		return out
+	}
+
+	inQuote := false
+	start := at + 1
+	flush := func(end int) {
+		text := strings.TrimSpace(src[start:end])
+		if text == "" {
+			return
+		}
+		verb := ""
+		if fields := strings.Fields(text); len(fields) > 0 {
+			verb = strings.ToLower(fields[0])
+		}
+		// Spans address the trimmed text, so a caller splicing one out does not
+		// take the surrounding whitespace with it.
+		lead := strings.Index(src[start:end], text)
+		out = append(out, StageSpan{
+			Verb: verb, Text: text,
+			Start: start + lead, End: start + lead + len(text),
+		})
+	}
+
+	for i := at + 1; i < len(src); i++ {
+		switch src[i] {
+		case '"':
+			inQuote = !inQuote
+		case '|':
+			if !inQuote {
+				flush(i)
+				start = i + 1
+			}
+		}
+	}
+	flush(len(src))
+
+	return out
+}
+
+// terminalStages are the verbs that decide a result's shape.
+//
+// A query can end in only one of them — the planner rejects a second — so
+// adding one has to replace whichever is already there. Encoding that here is
+// what lets a UI toggle `| timeline` on without first working out whether the
+// query it is toggling ends in `| count by week`.
+var terminalStages = map[string]bool{
+	"count": true, "top": true, "participants": true, "timeline": true,
+	"series": true, "sum": true, "avg": true, "min": true, "max": true,
+}
+
+// StageVerb reports the verb a stage expression starts with.
+func StageVerb(stage string) string {
+	if fields := strings.Fields(strings.TrimSpace(stage)); len(fields) > 0 {
+		return strings.ToLower(strings.TrimPrefix(fields[0], "|"))
+	}
+	return ""
+}
+
+// WithStage adds a stage to a query's pipeline.
+//
+// A stage replaces any other with the same verb, and a terminal one also
+// replaces any other terminal — asking for a count and a timeline at once is
+// not a narrower question, it is two questions.
+func WithStage(src, stage string) string {
+	stage = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(stage), "|"))
+	stage = strings.TrimSpace(stage)
+	if stage == "" {
+		return src
+	}
+	verb := StageVerb(stage)
+
+	keep := []string{}
+	for _, s := range Stages(src) {
+		if s.Verb == verb {
+			continue
+		}
+		if terminalStages[verb] && terminalStages[s.Verb] {
+			continue
+		}
+		keep = append(keep, s.Text)
+	}
+	keep = append(keep, stage)
+
+	return joinStages(filterOf(src), keep)
+}
+
+// WithoutStage removes every stage with the given verb.
+func WithoutStage(src, verb string) string {
+	verb = StageVerb(verb)
+	keep := []string{}
+	for _, s := range Stages(src) {
+		if s.Verb != verb {
+			keep = append(keep, s.Text)
+		}
+	}
+	return joinStages(filterOf(src), keep)
+}
+
+// HasStage reports whether a query's pipeline contains a verb.
+func HasStage(src, verb string) bool {
+	verb = StageVerb(verb)
+	for _, s := range Stages(src) {
+		if s.Verb == verb {
+			return true
+		}
+	}
+	return false
+}
+
+// filterOf returns the filter half of a query, without its pipeline.
+func filterOf(src string) string {
+	if at := pipelineAt(src); at >= 0 {
+		return strings.TrimSpace(src[:at])
+	}
+	return strings.TrimSpace(src)
+}
+
+func joinStages(filter string, stages []string) string {
+	out := filter
+	for _, s := range stages {
+		if out == "" {
+			out = "| " + s
+			continue
+		}
+		out += " | " + s
+	}
+	return strings.TrimSpace(out)
+}

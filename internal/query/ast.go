@@ -131,6 +131,10 @@ const (
 	StageExtract      StageKind = "extract"
 	StageThread       StageKind = "thread"
 	StageParticipants StageKind = "participants"
+	// StageTimeline groups the result into conversations and returns, for
+	// each, everything anchored to it: the messages, the tickets they raised,
+	// the drafts that answer them.
+	StageTimeline StageKind = "timeline"
 )
 
 // Stage is one step of the pipeline.

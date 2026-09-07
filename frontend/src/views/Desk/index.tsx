@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Layout, Mail, MoreVertical,
-  Plus, RefreshCw, Send, Star, Trash2,
+  MessagesSquare, Plus, RefreshCw, Send, Star, Trash2,
 } from 'lucide-react';
 import { openMessage, useViewerStore } from '../../lib/tabs';
 import { Editor } from './Editor';
@@ -11,7 +11,7 @@ import {
   explainQuery, listSaved, runQuery, saveQuery, QueryFailed,
   type QueryResult, type SavedQuery,
 } from './api';
-import { useQueryStore, compose } from '../../lib/filters';
+import { useQueryStore, compose, queryStages } from '../../lib/filters';
 
 /**
  * Desk — one surface over mail, drafts and tickets.
@@ -53,6 +53,19 @@ export const Desk = () => {
   // `| top domain 5` ran `| top domai` on the way past, and that failure
   // landed after the good result and painted an error over it. A query runs
   // when it is submitted.
+
+  // Which pipeline stages the committed query carries, asked for rather than
+  // pattern-matched out of the string: `| timeline` inside a quoted value is
+  // not a stage, and only the lexer knows that.
+  const [stages, setStages] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    queryStages(query)
+      .then(s => { if (!cancelled) setStages(s.map(x => x.verb)); })
+      .catch(() => { if (!cancelled) setStages([]); });
+    return () => { cancelled = true; };
+  }, [query]);
+  const threaded = stages.includes('timeline');
 
   const [result, setResult] = useState<QueryResult | null>(null);
   const [failure, setFailure] = useState<QueryFailed | null>(null);
@@ -356,11 +369,33 @@ export const Desk = () => {
             >
               <Code2 size={12} /> {explain ? 'Hide SQL' : 'Explain'}
             </button>
+            {/* Grouping by conversation is not a display mode hiding beside
+                the query — it is a stage in it. So the button writes the
+                query, the query bar shows what changed, and there is no second
+                piece of state that can disagree with the results. */}
+            <button
+              type="button"
+              aria-pressed={threaded}
+              title={threaded
+                ? 'Back to a flat list'
+                : 'Group into conversations, with the tickets and drafts they produced'}
+              onClick={async () =>
+                setQuery(await compose(query,
+                  threaded ? { dropStage: 'timeline' } : { stage: 'timeline' }))
+              }
+              className={`flex items-center gap-1 px-2 py-1 border ${
+                threaded
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border hover:bg-accent/40'
+              }`}
+            >
+              <MessagesSquare size={12} /> Threads
+            </button>
             {result && result.kind !== 'messages' && (
               <span className="ml-auto text-muted-foreground font-mono">
                 {result.kind === 'count'
                   ? `${(result.total ?? 0).toLocaleString()} matching`
-                  : `${result.count} ${result.kind}`}
+                  : `${result.count} ${result.kind === 'threads' ? 'conversations' : result.kind}`}
               </span>
             )}
           </div>

@@ -555,6 +555,9 @@ func (p *parser) parseStage() (Stage, error) {
 	case "thread", "threads":
 		return Stage{Kind: StageThread}, nil
 
+	case "timeline":
+		return Stage{Kind: StageTimeline}, nil
+
 	case "participants":
 		return Stage{Kind: StageParticipants}, nil
 

@@ -101,9 +101,19 @@ func SaveTicket(t *Ticket) error {
 		return fmt.Errorf("a ticket needs a title")
 	}
 	now := time.Now()
+
+	// The prior row, read before the write, is what makes the history
+	// possible: SaveTicket is an upsert, so after it runs there is no way to
+	// tell a status move from a no-op save.
+	var before *Ticket
 	if t.ID == "" {
 		t.ID = uuid.New().String()
 		t.CreatedAt = now
+	} else {
+		var err error
+		if before, err = loadTicket(t.ID); err != nil {
+			return err
+		}
 	}
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = now
@@ -143,7 +153,23 @@ func SaveTicket(t *Ticket) error {
 		t.ID, nullIfEmpty(t.ThreadKey), t.Title, nullIfEmpty(t.Body), t.Status,
 		nullIfEmpty(t.Priority), due, t.Origin, nullIfEmpty(t.AnnotatorID), t.Confidence,
 		t.CreatedAt.UnixMilli(), t.UpdatedAt.UnixMilli(), closed)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return recordTicketDiff(before, t, now)
+}
+
+// loadTicket reads a ticket without its evidence.
+//
+// Separate from GetTicket because the callers here want the row to compare
+// against, and loading sources for that would be a query per save.
+func loadTicket(id string) (*Ticket, error) {
+	t, err := scanTicket(db.QueryRow("SELECT "+ticketColumns+" FROM tickets WHERE id = ?", id).Scan)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return t, err
 }
 
 // GetTicket returns one ticket with its evidence.
@@ -186,12 +212,23 @@ func ticketSources(ticketID string) ([]TicketSource, error) {
 }
 
 // AttachSource records a message as evidence for a ticket.
+//
+// The event is written only when a row was actually inserted. Re-running an
+// annotator calls this for every message it already knows about, and logging
+// those would bury the real history under a re-run's worth of noise.
 func AttachSource(ticketID, messageID, annotationID string) error {
-	_, err := db.Exec(`
+	now := time.Now()
+	res, err := db.Exec(`
 		INSERT OR IGNORE INTO ticket_sources (ticket_id, message_id, annotation_id, created_at)
 		VALUES (?, ?, ?, ?)`,
-		ticketID, messageID, nullIfEmpty(annotationID), time.Now().UnixMilli())
-	return err
+		ticketID, messageID, nullIfEmpty(annotationID), now.UnixMilli())
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+	return recordTicketEvent(ticketID, EventEvidence, "", messageID, OriginAnnotator, now)
 }
 
 // SetTicketStatus moves a ticket, which is what dragging a card does.
@@ -426,6 +463,13 @@ func MergeTickets(intoID, fromID string) error {
 		if err := AttachSource(intoID, s.MessageID, s.AnnotationID); err != nil {
 			return err
 		}
+	}
+	// Recorded on the surviving ticket, since the merged one's own history is
+	// about to be deleted along with it. The title is kept rather than the id
+	// for the same reason: the id will name nothing once this returns.
+	if err := recordTicketEvent(intoID, EventMerged, from.Title, into.Title,
+		OriginHumanTicket, time.Now()); err != nil {
+		return err
 	}
 	return DeleteTicket(fromID)
 }

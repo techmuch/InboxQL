@@ -30,9 +30,13 @@ const (
 
 // Draft is an outgoing message in some stage of composition or delivery.
 type Draft struct {
-	ID        string   `json:"id"`
-	AccountID string   `json:"accountId"`
-	InReplyTo string   `json:"inReplyTo,omitempty"`
+	ID        string `json:"id"`
+	AccountID string `json:"accountId"`
+	InReplyTo string `json:"inReplyTo,omitempty"`
+	// ThreadKey is the conversation this draft answers, resolved from
+	// InReplyTo on save. Stored rather than joined so that messages, tickets
+	// and drafts all name a conversation the same way.
+	ThreadKey string   `json:"threadKey,omitempty"`
 	To        []string `json:"to"`
 	Cc        []string `json:"cc,omitempty"`
 	Bcc       []string `json:"bcc,omitempty"`
@@ -66,14 +70,24 @@ func SaveDraft(d *Draft) error {
 		d.Origin = OriginHuman
 	}
 
+	// Resolved on every save rather than only on insert: a draft can be
+	// retargeted while it is being composed, and a stale key would file the
+	// reply under the conversation it used to answer.
+	if key, err := draftThreadKey(d.InReplyTo); err != nil {
+		return err
+	} else {
+		d.ThreadKey = key
+	}
+
 	_, err := db.Exec(`
-		INSERT INTO drafts (id, account_id, in_reply_to, to_addrs, cc_addrs, bcc_addrs,
+		INSERT INTO drafts (id, account_id, in_reply_to, thread_key, to_addrs, cc_addrs, bcc_addrs,
 		                    subject, body, status, origin, created_at, updated_at,
 		                    queued_at, sent_at, last_error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			account_id  = EXCLUDED.account_id,
 			in_reply_to = EXCLUDED.in_reply_to,
+			thread_key  = EXCLUDED.thread_key,
 			to_addrs    = EXCLUDED.to_addrs,
 			cc_addrs    = EXCLUDED.cc_addrs,
 			bcc_addrs   = EXCLUDED.bcc_addrs,
@@ -85,7 +99,7 @@ func SaveDraft(d *Draft) error {
 			queued_at   = EXCLUDED.queued_at,
 			sent_at     = EXCLUDED.sent_at,
 			last_error  = EXCLUDED.last_error;
-	`, d.ID, d.AccountID, d.InReplyTo, string(to), string(cc), string(bcc),
+	`, d.ID, d.AccountID, d.InReplyTo, nullIfEmpty(d.ThreadKey), string(to), string(cc), string(bcc),
 		d.Subject, d.Body, d.Status, d.Origin,
 		d.CreatedAt.UnixMilli(), d.UpdatedAt.UnixMilli(),
 		millisOrNil(d.QueuedAt), millisOrNil(d.SentAt), d.LastError)
@@ -99,17 +113,17 @@ func millisOrNil(t *time.Time) any {
 	return t.UnixMilli()
 }
 
-const draftColumns = `id, account_id, in_reply_to, to_addrs, cc_addrs, bcc_addrs,
+const draftColumns = `id, account_id, in_reply_to, thread_key, to_addrs, cc_addrs, bcc_addrs,
 	subject, body, status, origin, created_at, updated_at, queued_at, sent_at, last_error`
 
 func scanDraft(scan func(dest ...any) error) (*Draft, error) {
 	d := &Draft{}
 	var to, cc, bcc string
-	var inReplyTo, lastError sql.NullString
+	var inReplyTo, threadKey, lastError sql.NullString
 	var created, updated int64
 	var queued, sent sql.NullInt64
 
-	if err := scan(&d.ID, &d.AccountID, &inReplyTo, &to, &cc, &bcc,
+	if err := scan(&d.ID, &d.AccountID, &inReplyTo, &threadKey, &to, &cc, &bcc,
 		&d.Subject, &d.Body, &d.Status, &d.Origin,
 		&created, &updated, &queued, &sent, &lastError); err != nil {
 		return nil, err
@@ -119,6 +133,7 @@ func scanDraft(scan func(dest ...any) error) (*Draft, error) {
 	json.Unmarshal([]byte(cc), &d.Cc)
 	json.Unmarshal([]byte(bcc), &d.Bcc)
 	d.InReplyTo = inReplyTo.String
+	d.ThreadKey = threadKey.String
 	d.LastError = lastError.String
 	d.CreatedAt = time.UnixMilli(created)
 	d.UpdatedAt = time.UnixMilli(updated)
@@ -189,4 +204,31 @@ func DeleteDraft(id string) error {
 		}
 	}
 	return nil
+}
+
+// draftThreadKey resolves the conversation a draft answers.
+//
+// InReplyTo holds a Message-ID header, which arrives with angle brackets on one
+// side of this comparison and without them on the other depending on who wrote
+// it — so both sides are trimmed. That mismatch is the exact bug that once left
+// every reply in a conversation of its own.
+//
+// A draft composed from scratch answers nothing and correctly has no key.
+func draftThreadKey(inReplyTo string) (string, error) {
+	bare := NormaliseMessageID(inReplyTo)
+	if bare == "" {
+		return "", nil
+	}
+	var key sql.NullString
+	err := db.QueryRow(
+		"SELECT thread_key FROM messages WHERE trim(message_id, '<>') = ? LIMIT 1", bare).Scan(&key)
+	if err == sql.ErrNoRows {
+		// Replying to mail this instance never imported. The draft is still a
+		// draft; it simply has no conversation to sit in.
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return key.String, nil
 }

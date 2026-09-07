@@ -27,12 +27,13 @@ type QueryGroup struct {
 // field to read.
 type QueryResult struct {
 	Query string `json:"query"`
-	// Kind is "messages", "groups" or "count".
+	// Kind is "messages", "groups", "count", "tickets", "drafts" or "threads".
 	Kind     string             `json:"kind"`
 	Count    int                `json:"count"`
 	Messages []*message.Message `json:"messages,omitempty"`
 	Tickets  []*Ticket          `json:"tickets,omitempty"`
 	Drafts   []*Draft           `json:"drafts,omitempty"`
+	Threads  []*Thread          `json:"threads,omitempty"`
 	Groups   []QueryGroup       `json:"groups,omitempty"`
 	Total    int64              `json:"total,omitempty"`
 	// GroupField and Bucket describe an aggregate result, so a chart can turn
@@ -134,6 +135,14 @@ func RunQuery(src string, limit, offset int) (*QueryResult, error) {
 		GroupField: plan.GroupField, Bucket: plan.Bucket}
 
 	switch plan.Kind {
+	case query.PlanThreads:
+		threads, err := scanThreads(plan)
+		if err != nil {
+			return nil, err
+		}
+		res.Kind, res.Threads, res.Count = "threads", threads, len(threads)
+		return res, nil
+
 	case query.PlanDrafts:
 		drafts, err := scanDrafts(plan)
 		if err != nil {
@@ -330,6 +339,8 @@ func ExplainQuery(src string) (*QueryResult, error) {
 		kind = "tickets"
 	case query.PlanDrafts:
 		kind = "drafts"
+	case query.PlanThreads:
+		kind = "threads"
 	}
 	return &QueryResult{Query: src, Kind: kind, SQL: plan.SQL, Args: plan.Args}, nil
 }

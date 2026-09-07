@@ -159,7 +159,14 @@ func handleQueryTerms(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query().Get("q")
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"query": q, "terms": query.Terms(q)})
+	json.NewEncoder(w).Encode(composed(q))
+}
+
+// composed is the one response shape every composition endpoint returns: the
+// query, its terms and its stages. A caller that changed one of them almost
+// always wants to re-render both.
+func composed(q string) map[string]any {
+	return map[string]any{"query": q, "terms": query.Terms(q), "stages": query.Stages(q)}
 }
 
 // handleQueryCompose adds, removes or replaces a term in a query.
@@ -202,17 +209,25 @@ func handleQueryCompose(w http.ResponseWriter, r *http.Request) {
 		q = query.WithTerm(q, params.Get("add"))
 	case params.Get("remove") != "":
 		q = query.WithoutTerm(q, params.Get("remove"))
+	case params.Get("stage") != "":
+		// A pipeline stage, not a filter term. Adding a terminal one replaces
+		// whichever terminal is already there, so a toggle can never build the
+		// two-aggregate query the planner rejects.
+		q = query.WithStage(q, params.Get("stage"))
+	case params.Get("dropStage") != "":
+		q = query.WithoutStage(q, params.Get("dropStage"))
 	case params.Has("field"):
 		// An empty `term` with a field removes that field's term, which is how
 		// "show me everything" clears a folder.
 		q = query.ReplaceField(q, params.Get("field"), term)
 	default:
-		http.Error(w, "give one of at, add, remove, or field", http.StatusBadRequest)
+		http.Error(w, "give one of at, add, remove, field, stage or dropStage",
+			http.StatusBadRequest)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"query": q, "terms": query.Terms(q)})
+	json.NewEncoder(w).Encode(composed(q))
 }
 
 // handleQueryValues lists candidate values for one field.

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -15,13 +16,14 @@ import (
 
 	"github.com/user/inboxql/internal/api"
 	"github.com/user/inboxql/internal/auth"
+	"github.com/user/inboxql/internal/llm"
 	"github.com/user/inboxql/internal/store"
 )
 
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.39"
+var Version = "0.0.40"
 
 func init() {
 	register(&Command{
@@ -251,8 +253,17 @@ func runStart(ctx *Context, args []string) error {
 	}
 	defer store.CloseDB()
 
-	// The API needs the data directory for the attachment blob store.
+	// The API needs the data directory for the attachment blob store and LLM logs.
 	api.SetDataDir(ctx.DataDir)
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("LLM auto-start recovered from panic: %v", r)
+			}
+		}()
+		_ = llm.AutoStartIfConfigured(context.Background(), ctx.DataDir)
+	}()
 
 	revision := ""
 	if info, ok := debug.ReadBuildInfo(); ok {

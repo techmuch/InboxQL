@@ -199,7 +199,7 @@ const Dashboard = () => {
             onClick={() => openQuery(filter)}
             className="text-[10px] font-semibold text-primary hover:bg-primary/20 bg-primary/10 px-2.5 py-1 whitespace-nowrap transition-colors"
           >
-            Open in Query
+            Open in Desk
           </button>
         </div>
       )}
@@ -1147,8 +1147,8 @@ function App() {
 
   useEffect(() => {
     if (user && !loading) {
-      // Auto-open mailbox on login
-      setTimeout(() => openToolCb('mail', 'Mailbox'), 500);
+      // Auto-open Desk on login
+      setTimeout(() => openToolCb('desk', 'Desk'), 500);
     }
   }, [user, loading, openTool]);
 

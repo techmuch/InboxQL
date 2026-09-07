@@ -1,5 +1,6 @@
 import { useLayoutStore } from 'nexus-shell';
 import { create } from 'zustand';
+import { useQueryStore } from './filters';
 
 /**
  * Opening workbench tabs from anywhere.
@@ -9,6 +10,13 @@ import { create } from 'zustand';
  * the importer wanting to show its errors — had no way to reach it.
  */
 
+/** Component id of the Desk tab. */
+export const DESK_TAB = 'desk';
+/** Component id of the query tab, aliased to Desk. */
+export const QUERY_TAB = 'desk';
+
+const DESK_ALIASES = new Set(['desk', 'mail', 'query']);
+
 /**
  * Open a tab, or focus it if it is already open.
  *
@@ -16,16 +24,50 @@ import { create } from 'zustand';
  * should reuse one viewer, not leave ten identical tabs behind.
  */
 export const openTool = (id: string, label: string): void => {
+  // Normalize legacy tab IDs so old aliases ('mail', 'query') always route to 'desk'.
+  if (DESK_ALIASES.has(id)) {
+    id = 'desk';
+    label = 'Desk';
+  }
+
   const layout = useLayoutStore.getState();
   const model = layout.model;
   if (!model) return;
 
   let existing: string | null = null;
+  const legacyToRename: string[] = [];
+
   model.visitNodes((node: any) => {
-    if (node.getType() === 'tab' && node.getComponent() === id) {
-      existing = node.getId();
+    if (node.getType() === 'tab') {
+      const comp = node.getComponent();
+      if (comp === id || (id === 'desk' && DESK_ALIASES.has(comp))) {
+        if (!existing) {
+          const tabId = node.getId();
+          existing = tabId;
+          if (id === 'desk' && (comp !== 'desk' || node.getName() !== 'Desk')) {
+            legacyToRename.push(tabId);
+          }
+        }
+      }
     }
   });
+
+  for (const tabId of legacyToRename) {
+    try {
+      model.doAction({ type: 'FlexLayout_RenameTab', data: { node: tabId, text: 'Desk' } } as any);
+    } catch {}
+    try {
+      model.doAction({
+        type: 'FlexLayout_UpdateNodeAttributes',
+        data: { node: tabId, json: { component: 'desk', name: 'Desk' } }
+      } as any);
+    } catch {}
+    const node: any = model.getNodeById(tabId);
+    if (node?._attributes) {
+      node._attributes.name = 'Desk';
+      node._attributes.component = 'desk';
+    }
+  }
 
   if (!existing) {
     layout.addTab(id, label);
@@ -108,28 +150,14 @@ export const openErrorLog = (jobId?: string): void => {
   openTool(ERROR_LOG_TAB, 'Error Log');
 };
 
-/** Component id of the query workbench tab. */
-export const QUERY_TAB = 'query';
-
-interface WorkbenchState {
-  /** A query handed to the workbench by something else, consumed on arrival. */
-  pending: string | null;
-  setPending: (query: string | null) => void;
-}
-
-export const useWorkbenchStore = create<WorkbenchState>((set) => ({
-  pending: null,
-  setPending: (pending) => set({ pending }),
-}));
-
 /**
- * Open the workbench on a query.
+ * Open Desk on a query.
  *
  * This is what makes the dashboard's filters more than a dead end: whatever
  * narrowed a chart is a query, so it can be carried somewhere it can be read,
  * edited and saved rather than only cleared.
  */
 export const openQuery = (query: string): void => {
-  useWorkbenchStore.getState().setPending(query);
-  openTool(QUERY_TAB, 'Query');
+  useQueryStore.getState().set(query);
+  openTool(DESK_TAB, 'Desk');
 };

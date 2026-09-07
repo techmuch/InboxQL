@@ -106,7 +106,7 @@ export const MessageViewer = () => {
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
         <Inbox className="w-8 h-8 opacity-40" />
         <p className="text-sm italic">No message selected.</p>
-        <p className="text-xs">Pick one in the Mailbox to read it here.</p>
+        <p className="text-xs">Pick one in Desk to read it here.</p>
       </div>
     );
   }

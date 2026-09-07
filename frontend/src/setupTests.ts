@@ -1,24 +1,40 @@
 import '@testing-library/jest-dom';
 
-const localStorageMock = (function () {
-  let store: Record<string, string> = {};
-  return {
-    getItem(key: string) {
-      return store[key] || null;
-    },
-    setItem(key: string, value: string) {
-      store[key] = value.toString();
-    },
-    clear() {
-      store = {};
-    },
-    removeItem(key: string) {
-      delete store[key];
-    }
-  };
-})();
+class StorageMock implements Storage {
+  private store: Record<string, string> = {};
+
+  get length(): number {
+    return Object.keys(this.store).length;
+  }
+
+  key(index: number): string | null {
+    const keys = Object.keys(this.store);
+    return keys[index] ?? null;
+  }
+
+  getItem(key: string): string | null {
+    return this.store[key] ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    this.store[key] = String(value);
+  }
+
+  removeItem(key: string): void {
+    delete this.store[key];
+  }
+
+  clear(): void {
+    this.store = {};
+  }
+}
 
 Object.defineProperty(window, 'localStorage', {
-  value: localStorageMock,
-  writable: true
+  value: new StorageMock(),
+  writable: true,
+});
+
+Object.defineProperty(window, 'sessionStorage', {
+  value: new StorageMock(),
+  writable: true,
 });

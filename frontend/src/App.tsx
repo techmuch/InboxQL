@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile } from 'nexus-shell';
-import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, AlertTriangle } from 'lucide-react';
+import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, AlertTriangle, HardDrive } from 'lucide-react';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
+import { BrowserStoragePanel } from './views/BrowserStoragePanel';
 import { MessageViewer } from './views/MessageViewer';
 import { ErrorLog } from './views/ErrorLog';
 import { Desk } from './views/Desk';
@@ -500,6 +501,7 @@ const SettingsView = () => {
     { id: 'ai', label: 'AI Configuration', icon: Cpu },
     { id: 'security', label: 'Security', icon: Shield },
     { id: 'data', label: 'Data Management', icon: Database },
+    { id: 'storage', label: 'Browser Storage', icon: HardDrive },
   ];
 
   const filteredCategories = categories.filter(c => 
@@ -954,6 +956,10 @@ const SettingsView = () => {
                 </div>
               </div>
             </div>
+          )}
+
+          {activeCategory === 'storage' && (
+            <BrowserStoragePanel />
           )}
         </div>
       </div>

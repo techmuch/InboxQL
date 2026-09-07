@@ -65,6 +65,10 @@ func Router() (http.Handler, error) {
 	registerErrorRoutes(errorMux)
 	mux.Handle("/api/errors", auth.Middleware(errorMux))
 
+	llmMux := http.NewServeMux()
+	registerLLMRoutes(llmMux)
+	mux.Handle("/api/llm/", auth.Middleware(llmMux))
+
 	// The query language surface. Read-only; see registerQueryRoutes.
 	queryMux := http.NewServeMux()
 	registerQueryRoutes(queryMux)

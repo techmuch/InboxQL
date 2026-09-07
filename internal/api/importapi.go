@@ -19,9 +19,12 @@ var (
 	importDataDir     string
 )
 
-// SetDataDir tells the API where the data directory is, for the blob store.
+// SetDataDir tells the API where the data directory is, for the blob store and LLM logs.
 // Called by `iql start` before the listener starts.
-func SetDataDir(dir string) { importDataDir = dir }
+func SetDataDir(dir string) {
+	importDataDir = dir
+	llmDataDir = dir
+}
 
 func manager() *importer.Manager {
 	importManagerOnce.Do(func() { importManager = importer.NewManager(importDataDir) })

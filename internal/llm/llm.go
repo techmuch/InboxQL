@@ -40,15 +40,19 @@ const (
 	// Anthropic-compatible gateways, llama.cpp's server, LM Studio, vLLM and
 	// most hosted proxies all implement. One implementation covers all of them.
 	ProviderOpenAI = "openai"
+	// ProviderSwama is the Swift-native Apple Silicon MLX runtime for macOS,
+	// speaking standard /v1/chat/completions over port 28100.
+	ProviderSwama = "swama"
 )
 
 // Supported lists the provider identifiers accepted by New.
-var Supported = []string{ProviderOllama, ProviderOpenAI}
+var Supported = []string{ProviderOllama, ProviderOpenAI, ProviderSwama}
 
 // DefaultEndpoints are used when the operator does not set one explicitly.
 var DefaultEndpoints = map[string]string{
 	ProviderOllama: "http://localhost:11434",
 	ProviderOpenAI: "https://api.openai.com/v1",
+	ProviderSwama:  "http://localhost:28100/v1",
 }
 
 // New builds a Provider from the stored configuration.
@@ -74,11 +78,16 @@ func New(cfg store.LLMConfig) (Provider, error) {
 			return nil, fmt.Errorf("ollama requires a model, e.g. --model llama3")
 		}
 		return &ollama{endpoint: endpoint, model: cfg.Model, client: client}, nil
+	case ProviderSwama:
+		if cfg.Model == "" {
+			return nil, fmt.Errorf("swama requires a model, e.g. --model mlx-community/Llama-3.2-3B-Instruct-4bit")
+		}
+		return &openAI{provider: ProviderSwama, endpoint: endpoint, model: cfg.Model, apiKey: cfg.APIKey, client: client}, nil
 	case ProviderOpenAI:
 		if cfg.Model == "" {
 			return nil, fmt.Errorf("openai requires a model, e.g. --model gpt-4o-mini")
 		}
-		return &openAI{endpoint: endpoint, model: cfg.Model, apiKey: cfg.APIKey, client: client}, nil
+		return &openAI{provider: ProviderOpenAI, endpoint: endpoint, model: cfg.Model, apiKey: cfg.APIKey, client: client}, nil
 	default:
 		return nil, fmt.Errorf("unknown provider %q (supported: %s)",
 			cfg.Provider, strings.Join(Supported, ", "))
@@ -126,13 +135,20 @@ func (o *ollama) Complete(ctx context.Context, system, user string) (string, err
 // --- OpenAI-compatible ------------------------------------------------------
 
 type openAI struct {
+	provider string
 	endpoint string
 	model    string
 	apiKey   string
 	client   *http.Client
 }
 
-func (o *openAI) Name() string { return ProviderOpenAI + " (" + o.model + ")" }
+func (o *openAI) Name() string {
+	prov := o.provider
+	if prov == "" {
+		prov = ProviderOpenAI
+	}
+	return prov + " (" + o.model + ")"
+}
 
 func (o *openAI) Complete(ctx context.Context, system, user string) (string, error) {
 	payload := map[string]any{

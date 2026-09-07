@@ -5,6 +5,7 @@ import { ResponsiveCalendar } from '@nivo/calendar';
 import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
 import { BrowserStoragePanel } from './views/BrowserStoragePanel';
+import { AISettingsPanel } from './views/AISettingsPanel';
 import { MessageViewer } from './views/MessageViewer';
 import { ErrorLog } from './views/ErrorLog';
 import { Desk } from './views/Desk';
@@ -305,7 +306,6 @@ const SettingsView = () => {
   const [stats, setStats] = useState<Record<string, any>>({});
   
   const [userProfile, setUserProfile] = useState<any>(null);
-  const [ignoreWords, setIgnoreWords] = useState('');
 
   const fetchAccounts = async () => {
     try {
@@ -357,20 +357,9 @@ const SettingsView = () => {
     }
   };
 
-  const fetchIgnoreWords = async () => {
-    try {
-      const res = await fetch('/api/settings?key=ignore_words');
-      if (res.ok) {
-        const data = await res.json();
-        setIgnoreWords(data.value);
-      }
-    } catch (e) {}
-  };
-
   useEffect(() => {
     fetchAccounts();
     fetchProfile();
-    fetchIgnoreWords();
     const interval = setInterval(() => {
       accounts.forEach(acc => fetchStats(acc.id));
     }, 5000);
@@ -476,21 +465,6 @@ const SettingsView = () => {
         alert('Profile updated successfully');
       }
     } catch (e) {}
-  };
-
-  const handleUpdateIgnoreWords = async () => {
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'ignore_words', value: ignoreWords })
-      });
-      if (res.ok) {
-        alert('Ignore words updated successfully');
-      }
-    } catch (e) {
-      console.error('Failed to update ignore words', e);
-    }
   };
 
   const categories = [
@@ -894,29 +868,7 @@ const SettingsView = () => {
           )}
 
           {activeCategory === 'ai' && (
-            <div className="animate-in fade-in duration-300">
-              <h2 className="text-2xl font-bold text-foreground mb-2">AI & Analysis Configuration</h2>
-              <p className="text-muted-foreground text-sm mb-8">Optimize how InboxQL processes and categorizes your emails.</p>
-              
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Topic Trend Ignore Words</label>
-                  <p className="text-xs text-muted-foreground mb-2 text-balance leading-relaxed">Common words or prefixes to exclude from the topic analysis. Separate multiple words with commas.</p>
-                  <textarea 
-                    className="w-full bg-background border border-border  px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all h-32 font-mono"
-                    value={ignoreWords}
-                    onChange={e => setIgnoreWords(e.target.value)}
-                    placeholder="re:,fwd:,the,and,etc..."
-                  />
-                </div>
-                <button 
-                  onClick={handleUpdateIgnoreWords}
-                  className="bg-primary text-primary-foreground px-5 py-2  font-semibold shadow-sm hover:opacity-90 active:scale-[0.98] transition-all text-sm"
-                >
-                  Save Configuration
-                </button>
-              </div>
-            </div>
+            <AISettingsPanel />
           )}
 
           {activeCategory === 'security' && (

@@ -127,6 +127,20 @@ func (e *env) run(args ...string) result {
 
 func (e *env) runWithStdin(stdin io.Reader, args ...string) result {
 	e.t.Helper()
+	return e.runFull(stdin, nil, args...)
+}
+
+// runWithEnv adds environment variables for one invocation.
+//
+// Used for the secrets the CLI takes only from the environment, which is
+// itself deliberate: argv is visible in shell history and to ps.
+func (e *env) runWithEnv(extra map[string]string, args ...string) result {
+	e.t.Helper()
+	return e.runFull(nil, extra, args...)
+}
+
+func (e *env) runFull(stdin io.Reader, extra map[string]string, args ...string) result {
+	e.t.Helper()
 
 	full := append(append([]string{}, args...), "--data", e.dataDir)
 	cmd := exec.Command(e.bin, full...)
@@ -140,6 +154,9 @@ func (e *env) runWithStdin(stdin io.Reader, args ...string) result {
 		"INBOXQL_DATA=", // must not leak in from the developer's shell
 		"NO_COLOR=1",    // assert on text, not escape sequences
 	)
+	for k, v := range extra {
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout

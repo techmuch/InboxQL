@@ -43,7 +43,7 @@ func TestLLMStatusAndConfig(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var status struct {
-		Config map[string]any `json:"config"`
+		Config   map[string]any    `json:"config"`
 		Runtimes []llm.RuntimeInfo `json:"runtimes"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&status); err != nil {

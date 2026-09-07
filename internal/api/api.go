@@ -69,14 +69,19 @@ func Router() (http.Handler, error) {
 	registerLLMRoutes(llmMux)
 	mux.Handle("/api/llm/", auth.Middleware(llmMux))
 
-	// The query language surface. Read-only; see registerQueryRoutes.
+	// The query language surface; see registerQueryRoutes.
+	//
+	// Mounted route by route rather than under a "/api/" prefix so that adding
+	// a handler to the inner mux is not enough to expose it — a new path has
+	// to be listed here too. That is deliberate for a surface that now writes
+	// as well as reads.
 	queryMux := http.NewServeMux()
 	registerQueryRoutes(queryMux)
 	for _, route := range []string{
 		"/api/query", "/api/query/explain", "/api/query/fields",
 		"/api/query/complete", "/api/query/values",
 		"/api/query/terms", "/api/query/compose",
-		"/api/queries", "/api/annotators",
+		"/api/queries", "/api/annotators", "/api/annotators/run",
 		"/api/tickets", "/api/tickets/board",
 	} {
 		mux.Handle(route, auth.Middleware(queryMux))

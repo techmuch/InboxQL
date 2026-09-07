@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -257,6 +258,30 @@ func DeleteTicket(id string) error {
 		return fmt.Errorf("no ticket %q", id)
 	}
 	return nil
+}
+
+// SettingTicketAutoAccept is the confidence at or above which a proposed
+// ticket skips the queue and lands in the working set.
+//
+// A setting rather than only a flag because it is a judgement about how much
+// you trust your extractors, which is a standing preference, not a per-run
+// decision. The CLI flag still overrides it for one run.
+const SettingTicketAutoAccept = "ticket_auto_accept"
+
+// DefaultTicketAutoAccept returns the stored threshold.
+//
+// Above 1 means "never auto-accept", which is the safe default: extraction
+// proposes, and a task list you cannot trust is worse than no task list.
+func DefaultTicketAutoAccept() float64 {
+	raw, err := GetSetting(SettingTicketAutoAccept)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return 1.1
+	}
+	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || v < 0 {
+		return 1.1
+	}
+	return v
 }
 
 // TicketProposal is what an extraction run would raise.

@@ -51,21 +51,41 @@ so a failed rotation is recoverable; delete it once the new key is verified.`,
 	register(&Command{
 		Name:    "llm",
 		Summary: "configure the optional completion provider",
-		Usage: `iql llm <status|configure|test|disable>
+		Usage: `iql llm <status|profile|configure|test|disable>
 
-  status      show the current provider
-  configure   set the provider, model, endpoint and API key
+  status      show the profile in use
+  profile     manage the named model profiles
+  configure   shorthand for editing the default profile
   test        send a trivial prompt and report the round trip
-  disable     forget the provider; analyze and draft revert to emitting context
+  disable     forget the default profile; analyze and draft revert to context
 
-configure flags:
-  --provider <ollama|openai>   openai covers any /v1/chat/completions endpoint
-  --model <name>               e.g. llama3, gpt-4o-mini
-  --endpoint <url>             defaults per provider
-  --api-key                    read from INBOXQL_LLM_API_KEY, stdin, or prompted
+profile subcommands:
+  list                       every profile; * marks the default
+  add <name> [flags]         create or edit one
+  default <name>             use this one when nothing names another
+  remove <name>              delete it, if no annotator depends on it
 
-Configuring a remote provider means email content leaves this machine when
-analyze or draft runs. Ollama against localhost keeps everything local.`,
+profile add flags:
+  --provider <ollama|openai|swama>  openai covers any /v1/chat/completions endpoint
+  --model <name>                    e.g. llama3, gpt-4o-mini
+  --endpoint <url>                  defaults per provider
+  --api-key                         read from INBOXQL_LLM_API_KEY, stdin, or prompted
+  --default                         make this the default profile
+
+A profile is the whole address of a model: which provider, at which endpoint,
+reached with which credential. That is why work names a profile rather than a
+model — a bare model name cannot say where the model lives, so pointing an
+annotator at "gpt-4o" on a machine configured for a local runtime used to ask
+the local runtime for a model it had never heard of.
+
+It is also what makes privacy answerable per annotator. A profile is remote
+when its endpoint is not loopback, and an annotator using a remote profile
+refuses to run without --allow-remote. So one annotator can reach a cloud
+model while every other one stays local:
+
+  iql llm profile add local --provider swama --model gemma-3-4b --default
+  iql llm profile add cloud --provider openai --model gpt-4o-mini --api-key
+  iql llm profile list`,
 		Run: runLLM,
 	})
 
@@ -333,14 +353,19 @@ func runLLM(ctx *Context, args []string) error {
 			ctx.Printf("No LLM provider configured.\n\n")
 			ctx.Printf("analyze and draft still work: they emit structured JSON context\n")
 			ctx.Printf("for an external agent instead of generating prose.\n\n")
-			ctx.Printf("To enable generation:  iql llm configure --provider ollama --model llama3\n")
+			ctx.Printf("To enable generation:  iql llm profile add local --provider ollama --model llama3\n")
 			return nil
 		}
+		ctx.Printf("profile    %s\n", cfg.Profile)
 		ctx.Printf("provider   %s\n", cfg.Provider)
 		ctx.Printf("model      %s\n", cfg.Model)
-		ctx.Printf("endpoint   %s\n", orDefault(cfg.Endpoint, llm.DefaultEndpoints[cfg.Provider]))
+		ctx.Printf("endpoint   %s\n", cfg.Endpoint)
+		ctx.Printf("scope      %s\n", cfg.Scope())
 		ctx.Printf("api key    %s\n", yesNo(cfg.HasAPIKey()))
 		return nil
+
+	case "profile", "profiles":
+		return runLLMProfile(ctx, rest)
 
 	case "configure":
 		fs := flag.NewFlagSet("llm configure", flag.ContinueOnError)
@@ -380,12 +405,19 @@ func runLLM(ctx *Context, args []string) error {
 		if ctx.JSON {
 			return ctx.EmitJSON(cfg.Redacted())
 		}
-		ctx.Printf("Configured %s (%s).\n", cfg.Provider, cfg.Model)
+		ctx.Printf("Configured %s (%s) as profile %q.\n", cfg.Provider, cfg.Model, store.DefaultProfileName)
 		ctx.Printf("Check it reaches the model with: iql llm test\n")
+		ctx.Printf("Add more with: iql llm profile add <name> --provider ... --model ...\n")
 		return nil
 
 	case "test":
-		cfg, err := store.GetLLMConfig()
+		fs := flag.NewFlagSet("llm test", flag.ContinueOnError)
+		fs.SetOutput(ctx.Stderr)
+		profile := fs.String("profile", "", "which profile to test (default: the default one)")
+		if err := parseArgs(fs, rest); err != nil {
+			return Fail(ExitUsage, "invalid flags")
+		}
+		cfg, err := store.GetLLMConfigFor(*profile)
 		if err != nil {
 			return Fail(ExitError, "%v", err)
 		}

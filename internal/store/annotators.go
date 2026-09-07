@@ -64,7 +64,14 @@ type Annotator struct {
 	// "timeField", naming the extracted field that holds the record's own
 	// timestamp — see annotatorTimeField.
 	SchemaJSON string `json:"schemaJson"`
-	Model      string `json:"model,omitempty"`
+	// Profile names the LLM profile this annotator runs against. Empty means
+	// the default profile, which is what an annotator created before profiles
+	// existed meant.
+	Profile string `json:"profile,omitempty"`
+	// Model overrides the profile's model on the same gateway — a bigger or
+	// smaller model at the same endpoint. It cannot move work to a different
+	// provider; that is what Profile is for.
+	Model string `json:"model,omitempty"`
 	// AllowRemote records explicit consent to send message bodies to a
 	// non-local provider. Default false, and the runner refuses without it.
 	AllowRemote bool      `json:"allowRemote"`
@@ -131,15 +138,17 @@ func SaveAnnotator(a *Annotator) error {
 	a.UpdatedAt = now
 
 	_, err = db.Exec(`
-		INSERT INTO annotators (id, name, kind, engine, version, instructions, schema_json, model, allow_remote, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO annotators (id, name, kind, engine, version, instructions, schema_json, profile, model, allow_remote, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name, kind = excluded.kind, engine = excluded.engine,
 			version = excluded.version, instructions = excluded.instructions,
-			schema_json = excluded.schema_json, model = excluded.model,
+			schema_json = excluded.schema_json, profile = excluded.profile,
+			model = excluded.model,
 			allow_remote = excluded.allow_remote, updated_at = excluded.updated_at`,
 		a.ID, a.Name, a.Kind, a.Engine, a.Version, a.Instructions, a.SchemaJSON,
-		nullIfEmpty(a.Model), boolToInt(a.AllowRemote), a.CreatedAt.UnixMilli(), a.UpdatedAt.UnixMilli())
+		nullIfEmpty(a.Profile), nullIfEmpty(a.Model), boolToInt(a.AllowRemote),
+		a.CreatedAt.UnixMilli(), a.UpdatedAt.UnixMilli())
 	return err
 }
 
@@ -151,14 +160,14 @@ func boolToInt(b bool) int {
 }
 
 const annotatorColumns = `id, name, kind, engine, version, instructions, schema_json,
-	COALESCE(model, ''), allow_remote, created_at, updated_at`
+	COALESCE(profile, ''), COALESCE(model, ''), allow_remote, created_at, updated_at`
 
 func scanAnnotator(scan func(...any) error) (*Annotator, error) {
 	a := &Annotator{}
 	var remote int
 	var created, updated int64
 	if err := scan(&a.ID, &a.Name, &a.Kind, &a.Engine, &a.Version, &a.Instructions,
-		&a.SchemaJSON, &a.Model, &remote, &created, &updated); err != nil {
+		&a.SchemaJSON, &a.Profile, &a.Model, &remote, &created, &updated); err != nil {
 		return nil, err
 	}
 	a.AllowRemote = remote != 0

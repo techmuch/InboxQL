@@ -40,7 +40,9 @@ create flags:
   --instructions <text>     the rule or the prompt; - reads stdin
   --schema <file>           JSON schema for an extractor's records
   --time-field <name>       which extracted field is the record's own date
-  --model <name>            override the configured LLM model
+  --profile <name>          which model profile to run against; see
+                            "iql llm profile list". Default: the default one
+  --model <name>            override the profile's model on the same gateway
   --allow-remote            consent to sending bodies to a non-local provider
 
 run flags:
@@ -59,8 +61,16 @@ labelling language:
     --instructions "from:*@stripe.com OR subject:invoice"
   iql annotate run billing
 
-An LLM annotator sends message bodies to whatever provider is configured. If
-that provider is remote, a run refuses without --allow-remote.`,
+An LLM annotator sends message bodies to the profile it names, or to the
+default profile. If that profile is remote, a run refuses without
+--allow-remote — so one annotator can reach a cloud model while every other
+one stays local:
+
+  iql llm profile add local --provider swama --model gemma-3-4b --default
+  iql llm profile add cloud --provider openai --model gpt-4o-mini --api-key
+
+  iql annotate create receipts --engine llm --kind extract \
+    --profile cloud --allow-remote --instructions "Pull the amount and vendor."`,
 		Run: runAnnotate,
 	})
 }
@@ -196,7 +206,8 @@ func annotateCreate(ctx *Context, args []string) error {
 	instructions := fs.String("instructions", "", "the rule expression or prompt; - reads stdin")
 	schemaFile := fs.String("schema", "", "JSON schema file for an extractor")
 	timeField := fs.String("time-field", "", "extracted field holding the record's own date")
-	model := fs.String("model", "", "override the configured model")
+	profile := fs.String("profile", "", "model profile to run against; default: the default profile")
+	model := fs.String("model", "", "override the profile's model, on the same gateway")
 	allowRemote := fs.Bool("allow-remote", false, "consent to sending bodies to a remote provider")
 	if err := parseArgs(fs, rest); err != nil {
 		return Fail(ExitUsage, "invalid flags")
@@ -266,10 +277,18 @@ func annotateCreate(ctx *Context, args []string) error {
 		return Fail(ExitError, "%v", err)
 	}
 
+	// Checked before saving, so a typo is a usage error rather than an
+	// annotator that exists and refuses to run.
+	if *profile != "" {
+		if _, err := store.ResolveLLMProfile(*profile); err != nil {
+			return Fail(ExitUsage, "--profile: %v\n\nConfigured profiles: iql llm profile list", err)
+		}
+	}
+
 	a := &store.Annotator{
 		Name: name, Kind: *kind, Engine: *engine,
 		Instructions: text, SchemaJSON: schemaJSON,
-		Model: *model, AllowRemote: *allowRemote,
+		Profile: *profile, Model: *model, AllowRemote: *allowRemote,
 	}
 	if err := store.SaveAnnotator(a); err != nil {
 		return Fail(ExitError, "%v", err)
@@ -290,6 +309,21 @@ func annotateCreate(ctx *Context, args []string) error {
 	default:
 		ctx.Printf("Updated %s.\n\n", p.Bold(a.Name))
 	}
+	if a.Engine == store.EngineLLM {
+		if cfg, err := store.GetLLMConfigFor(a.Profile); err == nil && cfg.IsRemote() {
+			// The one sentence that decides whether message bodies leave this
+			// machine, said at the moment the decision is made.
+			ctx.Printf("%s\n", p.Yellow(fmt.Sprintf(
+				"Profile %q is remote: running this sends message bodies to %s.",
+				cfg.Profile, cfg.Endpoint)))
+			if !a.AllowRemote {
+				ctx.Printf("%s\n\n", p.Dim("Runs will refuse until it is re-created with --allow-remote."))
+			} else {
+				ctx.Printf("%s\n\n", p.Dim("Consent recorded with --allow-remote."))
+			}
+		}
+	}
+
 	ctx.Printf("Next: %s\n", p.Dim(fmt.Sprintf("iql annotate run %s --dry-run", a.Name)))
 	return nil
 }

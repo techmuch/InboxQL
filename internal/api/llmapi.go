@@ -6,6 +6,7 @@ import (
 
 	"github.com/user/inboxql/internal/llm"
 	"github.com/user/inboxql/internal/store"
+	"strings"
 )
 
 var llmDataDir string
@@ -24,6 +25,11 @@ func registerLLMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/llm/test", handleLLMTest)
 	mux.HandleFunc("POST /api/llm/config", handleLLMConfigSave)
 	mux.HandleFunc("POST /api/llm/disable", handleLLMDisable)
+	mux.HandleFunc("GET /api/llm/profiles", handleLLMProfilesList)
+	mux.HandleFunc("POST /api/llm/profiles", handleLLMProfileSave)
+	mux.HandleFunc("DELETE /api/llm/profiles", handleLLMProfileDelete)
+	mux.HandleFunc("POST /api/llm/profiles/default", handleLLMProfileDefault)
+	mux.HandleFunc("POST /api/llm/refresh", handleLLMRefresh)
 }
 
 func handleLLMStatus(w http.ResponseWriter, r *http.Request) {
@@ -54,8 +60,19 @@ func handleLLMStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	profiles, err := store.ListLLMProfiles()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list profiles: %v", err)
+		return
+	}
+	redacted := make([]map[string]any, 0, len(profiles))
+	for _, p := range profiles {
+		redacted = append(redacted, p.Redacted())
+	}
+
 	resp := map[string]any{
 		"config":   cfg.Redacted(),
+		"profiles": redacted,
 		"runtimes": runtimes,
 		"activeStatus": map[string]any{
 			"running":  activeRunning,
@@ -285,4 +302,191 @@ func handleLLMDisable(w http.ResponseWriter, r *http.Request) {
 		"status": "disabled",
 		"config": store.LLMConfig{}.Redacted(),
 	})
+}
+
+// --- model profiles ---------------------------------------------------------
+
+func handleLLMProfilesList(w http.ResponseWriter, r *http.Request) {
+	profiles, err := store.ListLLMProfiles()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list profiles: %v", err)
+		return
+	}
+	out := make([]map[string]any, 0, len(profiles))
+	for _, p := range profiles {
+		out = append(out, p.Redacted())
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"profiles": out})
+}
+
+// handleLLMProfileSave creates or edits one profile.
+//
+// The API key is write-only: it is accepted here and never returned, and an
+// absent key on an edit keeps the stored one rather than clearing it. A form
+// that cannot show the current key must not be able to erase it by saving.
+func handleLLMProfileSave(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name      string  `json:"name"`
+		Provider  string  `json:"provider"`
+		Model     string  `json:"model"`
+		Endpoint  string  `json:"endpoint"`
+		APIKey    *string `json:"apiKey"`
+		IsDefault bool    `json:"isDefault"`
+		AutoStart bool    `json:"autoStart"`
+		Launch    string  `json:"launchMode"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	existing, err := store.GetLLMProfile(req.Name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	p := existing
+	if p == nil {
+		p = &store.LLMProfile{Name: req.Name}
+	}
+	p.Provider, p.Model, p.Endpoint = req.Provider, req.Model, req.Endpoint
+	p.IsDefault, p.AutoStart = req.IsDefault, req.AutoStart
+	if req.Launch != "" {
+		p.LaunchMode = req.Launch
+	}
+	// nil means "leave it alone"; an empty string means "remove it".
+	if req.APIKey != nil {
+		p.APIKey = *req.APIKey
+	}
+
+	if err := store.SaveLLMProfile(p); err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(p.Redacted())
+}
+
+func handleLLMProfileDelete(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	// Refused rather than cascaded: an annotator whose profile vanished would
+	// fail at run time, which is later and less obvious than failing here.
+	users, err := annotatorsUsingProfile(name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	if len(users) > 0 {
+		writeError(w, http.StatusConflict,
+			"%s is used by %d annotator(s): %s", name, len(users), strings.Join(users, ", "))
+		return
+	}
+
+	if err := store.DeleteLLMProfile(name); err != nil {
+		writeError(w, http.StatusNotFound, "%v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"removed": name})
+}
+
+func handleLLMProfileDefault(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		return
+	}
+	if err := store.SetDefaultLLMProfile(req.Name); err != nil {
+		writeError(w, http.StatusNotFound, "%v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"default": req.Name})
+}
+
+// handleLLMRefresh re-scans one runtime, or all of them, and reports what
+// happened rather than only what it found.
+//
+// # Why this is not just /detect
+//
+// /detect answers with runtimes and nothing else, so a scan that failed and a
+// scan that found nothing are the same response. The UI's refresh button ate
+// its errors on top of that, which made "the daemon is up but its model
+// endpoint is broken" render as "no new models" — a fault that reads as a
+// normal empty state, which is the failure shape this project keeps meeting.
+//
+// So: the per-runtime error comes back, and the caller can say so.
+func handleLLMRefresh(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Provider string `json:"provider"`
+	}
+	// A bodyless POST means "everything", so refreshing does not require the
+	// caller to know what is installed.
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	runtimes := llm.DetectRuntimes(r.Context())
+
+	type runtimeReport struct {
+		llm.RuntimeInfo
+		// Problem explains an installed, running runtime that returned no
+		// models — the case that used to be silent.
+		Problem string `json:"problem,omitempty"`
+	}
+
+	out := make([]runtimeReport, 0, len(runtimes))
+	found := 0
+	for _, rt := range runtimes {
+		if req.Provider != "" && rt.Provider != req.Provider {
+			continue
+		}
+		report := runtimeReport{RuntimeInfo: rt}
+		switch {
+		case !rt.Installed:
+			report.Problem = rt.Name + " is not installed on this machine."
+		case !rt.Running:
+			report.Problem = rt.Name + " is installed but not running. Start it to list its models."
+		case len(rt.Models) == 0:
+			report.Problem = rt.Name + " is running but reported no models. Pull one, or check " +
+				rt.Endpoint + " is reachable."
+		}
+		found += len(rt.Models)
+		out = append(out, report)
+	}
+
+	if req.Provider != "" && len(out) == 0 {
+		writeError(w, http.StatusNotFound, "no runtime named %q", req.Provider)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"runtimes": out,
+		"models":   found,
+	})
+}
+
+// annotatorsUsingProfile names the annotators that would break if a profile
+// went away.
+func annotatorsUsingProfile(name string) ([]string, error) {
+	annotators, err := store.ListAnnotators()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, a := range annotators {
+		if a.Profile == name {
+			out = append(out, a.Name)
+		}
+	}
+	return out, nil
 }

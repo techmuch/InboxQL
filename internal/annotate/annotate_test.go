@@ -1,12 +1,26 @@
 package annotate
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/user/inboxql/internal/message"
 	"github.com/user/inboxql/internal/store"
 )
+
+// openAnnotateFixture opens an empty store.
+//
+// Empty on purpose: these tests are about which gateway a run would use and
+// whether it is allowed to, which is decided before a single message is read.
+// With no mail to send, an allowed run completes without touching a network.
+func openAnnotateFixture(t *testing.T) {
+	t.Helper()
+	if _, err := store.InitDB(t.TempDir()); err != nil {
+		t.Fatalf("InitDB: %v", err)
+	}
+	t.Cleanup(store.CloseDB)
+}
 
 // Models wrap JSON in prose and code fences often enough that failing the row
 // would mean re-running a whole job over a formatting habit.
@@ -139,6 +153,10 @@ func TestPromptStatesTheOutputContract(t *testing.T) {
 
 // Whether a run sends mail off the machine is the fact consent hangs on, so it
 // is decided by the endpoint rather than by the provider's name.
+//
+// The rule itself now lives on the profile, since a profile is what an
+// annotator names — but this package is where consent is enforced, so the
+// behaviour is still asserted from here.
 func TestRemoteDetection(t *testing.T) {
 	cases := []struct {
 		cfg    store.LLMConfig
@@ -154,9 +172,132 @@ func TestRemoteDetection(t *testing.T) {
 		{store.LLMConfig{Provider: "openai", Endpoint: "http://localhost:8000/v1"}, false},
 	}
 	for _, c := range cases {
-		if got := isRemote(c.cfg); got != c.remote {
-			t.Errorf("isRemote(%s %s) = %v, want %v",
+		if got := c.cfg.IsRemote(); got != c.remote {
+			t.Errorf("IsRemote(%s %s) = %v, want %v",
 				c.cfg.Provider, c.cfg.Endpoint, got, c.remote)
 		}
+	}
+}
+
+// The point of profiles: consent is a property of the annotator, not of the
+// machine. One annotator may reach a cloud model while every other stays local.
+func TestConsentIsPerAnnotatorNotPerMachine(t *testing.T) {
+	openAnnotateFixture(t)
+
+	if err := store.SaveLLMProfile(&store.LLMProfile{
+		Name: "local", Provider: "ollama", Model: "llama3", IsDefault: true}); err != nil {
+		t.Fatalf("SaveLLMProfile: %v", err)
+	}
+	if err := store.SaveLLMProfile(&store.LLMProfile{
+		Name: "cloud", Provider: "openai", Model: "gpt-4o-mini", APIKey: "sk-test"}); err != nil {
+		t.Fatalf("SaveLLMProfile: %v", err)
+	}
+
+	cases := []struct {
+		name        string
+		profile     string
+		allowRemote bool
+		wantRefusal bool
+		why         string
+	}{
+		{"local-no-consent", "local", false, false,
+			"a local profile needs no consent"},
+		{"cloud-no-consent", "cloud", false, true,
+			"a cloud profile without consent must refuse"},
+		{"cloud-with-consent", "cloud", true, false,
+			"a cloud profile with consent may run"},
+		{"default-no-consent", "", false, false,
+			"an unnamed profile means the default, which here is local"},
+	}
+
+	for _, c := range cases {
+		a := &store.Annotator{
+			Name: c.name, Kind: store.KindLabel, Engine: store.EngineLLM,
+			Instructions: "Is this about billing?",
+			Profile:      c.profile, AllowRemote: c.allowRemote,
+		}
+		if err := store.SaveAnnotator(a); err != nil {
+			t.Fatalf("SaveAnnotator(%s): %v", c.name, err)
+		}
+
+		// A real run, because consent is checked at send time — the mailbox
+		// is empty, so an allowed run completes without a network call.
+		_, err := Run(context.Background(), c.name, Options{})
+		refused := err != nil && strings.Contains(err.Error(), "no consent recorded")
+		if refused != c.wantRefusal {
+			t.Errorf("%s: refused=%v want=%v (%s); err=%v",
+				c.name, refused, c.wantRefusal, c.why, err)
+		}
+		if !refused && err != nil {
+			t.Errorf("%s: unexpected error: %v", c.name, err)
+		}
+
+		// And the plan says so in advance, so --dry-run does not report that
+		// a run which will refuse looks fine.
+		plan, err := Describe(c.name, "")
+		if err != nil {
+			t.Fatalf("%s: Describe: %v", c.name, err)
+		}
+		if plan.ConsentMissing != c.wantRefusal {
+			t.Errorf("%s: plan.ConsentMissing=%v, want %v",
+				c.name, plan.ConsentMissing, c.wantRefusal)
+		}
+	}
+}
+
+// A run that names a profile which does not exist must fail rather than fall
+// back to whatever is configured. Work that asked for a specific gateway and
+// quietly used a different one is a wrong answer nobody notices.
+func TestAnUnknownProfileIsAnErrorNotAFallback(t *testing.T) {
+	openAnnotateFixture(t)
+
+	if err := store.SaveLLMProfile(&store.LLMProfile{
+		Name: "local", Provider: "ollama", Model: "llama3", IsDefault: true}); err != nil {
+		t.Fatalf("SaveLLMProfile: %v", err)
+	}
+	a := &store.Annotator{
+		Name: "typo", Kind: store.KindLabel, Engine: store.EngineLLM,
+		Instructions: "anything", Profile: "clod",
+	}
+	if err := store.SaveAnnotator(a); err != nil {
+		t.Fatalf("SaveAnnotator: %v", err)
+	}
+
+	if _, err := Describe("typo", ""); err == nil {
+		t.Fatal("describing an annotator with an unknown profile succeeded")
+	} else if !strings.Contains(err.Error(), "clod") {
+		t.Errorf("the error does not name the missing profile: %v", err)
+	}
+}
+
+// A per-annotator model overrides the profile's model on the same gateway. It
+// must not silently move the work to a different provider.
+func TestModelOverridesTheModelNotTheGateway(t *testing.T) {
+	openAnnotateFixture(t)
+
+	if err := store.SaveLLMProfile(&store.LLMProfile{
+		Name: "local", Provider: "ollama", Model: "llama3", IsDefault: true}); err != nil {
+		t.Fatalf("SaveLLMProfile: %v", err)
+	}
+	a := &store.Annotator{
+		Name: "bigger", Kind: store.KindLabel, Engine: store.EngineLLM,
+		Instructions: "anything", Model: "llama3.3:70b",
+	}
+	if err := store.SaveAnnotator(a); err != nil {
+		t.Fatalf("SaveAnnotator: %v", err)
+	}
+
+	plan, err := Describe("bigger", "")
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if plan.Model != "llama3.3:70b" {
+		t.Errorf("model = %q, want the override", plan.Model)
+	}
+	if plan.Provider != "ollama" {
+		t.Errorf("provider = %q, want the profile's", plan.Provider)
+	}
+	if plan.Remote {
+		t.Error("overriding the model made the run look remote")
 	}
 }

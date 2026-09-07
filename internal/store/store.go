@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 21
+	SchemaVersion = 23
 )
 
 var (
@@ -941,6 +941,77 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 21
+	}
+
+	if currentVersion < 22 {
+		log.Println("Applying schema migration v22 (LLM profiles)...")
+		// One gateway became several.
+		//
+		// The provider settings were seven rows in app_settings, which allows
+		// exactly one model to be configured at a time. That was already at
+		// odds with the rest of the system: `annotate create --model` has
+		// shipped for a while and overrides the model string but not the
+		// provider, endpoint or key — so naming a cloud model on a machine
+		// configured for a local runtime asks the local runtime for a model it
+		// has never heard of.
+		//
+		// A profile is the whole address of a model: where it runs, which
+		// model, and what credential reaches it. Work names a profile, which
+		// is also what makes "is this remote?" answerable per annotator rather
+		// than once globally.
+		//
+		// Exactly one profile is the default, enforced by a partial unique
+		// index rather than by application code, because "somehow two
+		// defaults" is the kind of state that is unfixable from the UI.
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS llm_profiles (
+				id             TEXT PRIMARY KEY,
+				name           TEXT NOT NULL UNIQUE,
+				provider       TEXT NOT NULL,
+				model          TEXT NOT NULL,
+				endpoint       TEXT NOT NULL,
+				api_key        TEXT,
+				is_default     INTEGER NOT NULL DEFAULT 0,
+				auto_start     INTEGER NOT NULL DEFAULT 0,
+				launch_mode    TEXT NOT NULL DEFAULT 'headless',
+				lifecycle_mode TEXT NOT NULL DEFAULT 'managed',
+				created_at     INTEGER NOT NULL,
+				updated_at     INTEGER NOT NULL
+			);
+
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_profiles_default
+				ON llm_profiles(is_default) WHERE is_default = 1;
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v22: %w", err)
+		}
+		if err := migrateLLMSettingsToProfile(db); err != nil {
+			return fmt.Errorf("failed to migrate the LLM settings into a profile: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 22;"); err != nil {
+			return err
+		}
+		currentVersion = 22
+	}
+
+	if currentVersion < 23 {
+		log.Println("Applying schema migration v23 (annotators name a model profile)...")
+		// An annotator's `model` column was a bare model name, which could
+		// only ever mean "that model, on whatever gateway is configured
+		// globally". Naming a profile instead means naming the gateway too,
+		// and it is what lets the consent check ask "is *this* annotator
+		// remote" rather than "is the machine remote".
+		//
+		// model is deliberately kept. It still overrides the profile's model
+		// for the case that motivated it — same gateway, different size of
+		// model — and dropping a column on upgrade destroys information.
+		if _, err := db.Exec(`ALTER TABLE annotators ADD COLUMN profile TEXT;`); err != nil {
+			log.Printf("Warning v23: %v", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 23;"); err != nil {
+			return err
+		}
+		currentVersion = 23
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

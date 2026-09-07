@@ -55,10 +55,22 @@ type Plan struct {
 	Total   int64 `json:"total"`
 	// Provider is the LLM that would be used, empty for rules.
 	Provider string `json:"provider,omitempty"`
+	// Profile names the gateway configuration, so a report can say which of
+	// several was chosen rather than only which provider kind it is.
+	Profile string `json:"profile,omitempty"`
+	// Model is what would actually be asked, after any per-annotator override.
+	Model string `json:"model,omitempty"`
 	// Remote is true when message content would leave this machine.
 	Remote bool `json:"remote"`
 	// Endpoint is where it would go, for a remote provider.
 	Endpoint string `json:"endpoint,omitempty"`
+	// ConsentMissing is true when this run would be refused: the profile is
+	// remote and the annotator has no recorded consent.
+	//
+	// Reported by the plan, not only raised by the run, because a --dry-run
+	// that answers "0 pending, looks fine" about a run that will refuse has
+	// told you nothing useful.
+	ConsentMissing bool `json:"consentMissing,omitempty"`
 	// EstimatedChars is a rough size of what would be sent.
 	EstimatedChars int64 `json:"estimatedChars,omitempty"`
 }
@@ -77,21 +89,21 @@ type Outcome struct {
 }
 
 // localEndpoints are providers that do not leave the machine.
-func isRemote(cfg store.LLMConfig) bool {
-	if cfg.Provider == "" {
-		return false
+// configFor resolves the gateway an annotator runs against.
+//
+// An annotator with no profile named uses the default, which is what every
+// annotator created before profiles existed meant. Model, if set, overrides the
+// profile's model on the same gateway — it cannot move work to a different
+// provider, because a bare model name is not an address.
+func configFor(a *store.Annotator) (store.LLMConfig, error) {
+	cfg, err := store.GetLLMConfigFor(a.Profile)
+	if err != nil {
+		return cfg, err
 	}
-	endpoint := cfg.Endpoint
-	if endpoint == "" {
-		endpoint = llm.DefaultEndpoints[cfg.Provider]
+	if a.Model != "" {
+		cfg.Model = a.Model
 	}
-	host := strings.ToLower(endpoint)
-	for _, local := range []string{"://localhost", "://127.0.0.1", "://[::1]", "://0.0.0.0"} {
-		if strings.Contains(host, local) {
-			return false
-		}
-	}
-	return true
+	return cfg, nil
 }
 
 // Describe reports what running an annotator would involve, without running it.
@@ -127,17 +139,17 @@ func Describe(name, scope string) (*Plan, error) {
 	}
 
 	if a.Engine == store.EngineLLM {
-		cfg, err := store.GetLLMConfig()
+		cfg, err := configFor(a)
 		if err != nil {
 			return nil, err
 		}
 		p.Provider = cfg.Provider
-		p.Remote = isRemote(cfg)
+		p.Profile = cfg.Profile
+		p.Model = cfg.Model
+		p.Remote = cfg.IsRemote()
 		if p.Remote {
 			p.Endpoint = cfg.Endpoint
-			if p.Endpoint == "" {
-				p.Endpoint = llm.DefaultEndpoints[cfg.Provider]
-			}
+			p.ConsentMissing = !a.AllowRemote
 		}
 		// Rough, and deliberately so: an exact token count needs the
 		// tokeniser, and the number exists to convey scale before a decision.
@@ -207,7 +219,7 @@ func Run(ctx context.Context, name string, opt Options) (*Outcome, error) {
 }
 
 func runLLM(ctx context.Context, a *store.Annotator, opt Options, out *Outcome) error {
-	cfg, err := store.GetLLMConfig()
+	cfg, err := configFor(a)
 	if err != nil {
 		return err
 	}
@@ -217,17 +229,18 @@ func runLLM(ctx context.Context, a *store.Annotator, opt Options, out *Outcome) 
 	}
 
 	// Consent is checked here rather than at configuration time because it is
-	// this run, over this many messages, that does the sending.
-	if isRemote(cfg) && !a.AllowRemote {
-		endpoint := cfg.Endpoint
-		if endpoint == "" {
-			endpoint = llm.DefaultEndpoints[cfg.Provider]
-		}
+	// this run, over this many messages, that does the sending — and it is
+	// asked of the annotator's own profile, not of the machine. That is the
+	// difference profiles make: one annotator can be allowed to reach a cloud
+	// model while every other one stays local.
+	if cfg.IsRemote() && !a.AllowRemote {
 		return fmt.Errorf(
-			"annotator %q would send message bodies to %s, and has no consent recorded.\n"+
-				"Re-create it with --allow-remote if that is what you want, or point the\n"+
-				"provider at a local model with `iql llm configure --provider ollama`",
-			a.Name, endpoint)
+			"annotator %q runs on profile %q, which sends message bodies to %s, "+
+				"and has no consent recorded.\n"+
+				"Re-create it with --allow-remote if that is what you want, or point it\n"+
+				"at a local profile with `iql annotate create %s --profile <name>`.\n"+
+				"`iql llm profile list` shows which profiles are local.",
+			a.Name, cfg.Profile, cfg.Endpoint, a.Name)
 	}
 
 	batch := opt.BatchSize

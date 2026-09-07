@@ -373,7 +373,10 @@ func ticketPropose(ctx *Context, args []string) error {
 	}
 	fs := flag.NewFlagSet("ticket propose", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
-	autoAccept := fs.Float64("auto-accept", 1.1, "confidence at or above which a ticket skips the queue")
+	// The sentinel means "whatever the stored preference is", resolved after
+	// the store is open. A literal default here would silently ignore the
+	// setting the UI writes.
+	autoAccept := fs.Float64("auto-accept", -1, "confidence at or above which a ticket skips the queue")
 	dryRun := fs.Bool("dry-run", false, "report what would be raised and write nothing")
 	if err := parseArgs(fs, rest); err != nil {
 		return Fail(ExitUsage, "invalid flags")
@@ -384,7 +387,12 @@ func ticketPropose(ctx *Context, args []string) error {
 	}
 	defer store.CloseDB()
 
-	out, err := store.ProposeTickets(name, *autoAccept, *dryRun)
+	threshold := *autoAccept
+	if threshold < 0 {
+		threshold = store.DefaultTicketAutoAccept()
+	}
+
+	out, err := store.ProposeTickets(name, threshold, *dryRun)
 	if err != nil {
 		return Fail(ExitError, "%v", err)
 	}

@@ -1,12 +1,20 @@
 import { Inbox } from 'lucide-react';
-import { openMessage } from '../../lib/tabs';
+import { openMessage, previewMessage } from '../../lib/tabs';
+import { navRow } from '../../lib/rovingFocus';
 import { drillDownTerm, type QueryResult } from './api';
 import { ThreadResult } from './Timeline';
 
 interface ResultsProps {
   result: QueryResult;
-  /** Narrow the query to one group, by appending the term it stands for. */
-  onDrillDown: (term: string) => void;
+  /**
+   * Narrow the query to one row.
+   *
+   * The stage is separate from the term on purpose. Passing
+   * `"thread:X | timeline"` as a term happens to work on a query with no
+   * pipeline and produces two terminal stages on one that has one, which the
+   * planner rejects — a term and a stage are different halves of a query.
+   */
+  onDrillDown: (term: string, stage?: string) => void;
 }
 
 /**
@@ -24,7 +32,7 @@ export const Results = ({ result, onDrillDown }: ResultsProps) => {
     case 'groups':
       return <GroupResult result={result} onDrillDown={onDrillDown} />;
     case 'tickets':
-      return <TicketResult result={result} />;
+      return <TicketResult result={result} onDrillDown={onDrillDown} />;
     case 'drafts':
       return <DraftResult result={result} />;
     case 'threads': {
@@ -76,9 +84,10 @@ const GroupResult = ({ result, onDrillDown }: ResultsProps) => {
             return (
               <tr
                 key={g.label}
+                {...(term ? navRow : {})}
                 onClick={() => term && onDrillDown(term)}
                 title={term ? `Narrow to ${term}` : undefined}
-                className={`border-b border-border/50 ${
+                className={`border-b border-border/50 focus:outline-none focus:bg-primary/10 ${
                   term ? 'cursor-pointer hover:bg-accent/40' : ''
                 }`}
               >
@@ -122,8 +131,11 @@ const MessageResult = ({ result }: { result: QueryResult }) => {
             return (
               <tr
                 key={m.id}
+                {...navRow}
+                data-message-id={m.id}
+                onFocus={() => previewMessage(m)}
                 onClick={() => openMessage(m)}
-                className="border-b border-border/50 cursor-pointer hover:bg-accent/40"
+                className="border-b border-border/50 cursor-pointer hover:bg-accent/40 focus:outline-none focus:bg-primary/10"
               >
                 <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
                   {new Date(m.date).toLocaleDateString()}
@@ -147,7 +159,7 @@ const MessageResult = ({ result }: { result: QueryResult }) => {
  * The evidence column is not decoration: a ticket that cannot be traced back to
  * the message that made it is a task in a worse task manager.
  */
-const TicketResult = ({ result }: { result: QueryResult }) => {
+const TicketResult = ({ result, onDrillDown }: ResultsProps) => {
   const tickets = result.tickets ?? [];
   if (tickets.length === 0) return <Empty label="No tickets matched" />;
 
@@ -167,7 +179,17 @@ const TicketResult = ({ result }: { result: QueryResult }) => {
             const overdue = t.dueAt ? new Date(t.dueAt) < new Date() : false;
             const source = t.sources?.[0];
             return (
-              <tr key={t.id} className="border-b border-border/50 hover:bg-accent/40">
+              <tr
+                key={t.id}
+                {...navRow}
+                // Activating a ticket opens the conversation it came from,
+                // which is the whole reason provenance is recorded.
+                onClick={() => t.threadKey && onDrillDown(`thread:${t.threadKey}`, 'timeline')}
+                title={t.threadKey ? 'Show the conversation this came from' : undefined}
+                className={`border-b border-border/50 hover:bg-accent/40 focus:outline-none focus:bg-primary/10 ${
+                  t.threadKey ? 'cursor-pointer' : ''
+                }`}
+              >
                 <td className="px-4 py-1.5 font-mono text-xs">{t.status}</td>
                 <td className={`px-4 py-1.5 font-mono text-xs whitespace-nowrap ${
                   overdue ? 'text-destructive' : 'text-muted-foreground'
@@ -205,7 +227,11 @@ const DraftResult = ({ result }: { result: QueryResult }) => {
         </thead>
         <tbody>
           {drafts.map(d => (
-            <tr key={d.id} className="border-b border-border/50 hover:bg-accent/40">
+            <tr
+              key={d.id}
+              {...navRow}
+              className="border-b border-border/50 hover:bg-accent/40 focus:outline-none focus:bg-primary/10"
+            >
               <td className="px-4 py-1.5 font-mono text-xs">{d.status}</td>
               <td className={`px-4 py-1.5 font-mono text-xs ${
                 d.origin === 'agent' ? 'text-primary' : 'text-muted-foreground'

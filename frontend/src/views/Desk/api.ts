@@ -47,6 +47,8 @@ export interface Ticket {
   id: string;
   title: string;
   status: string;
+  /** The conversation this came from, when it came from one. */
+  threadKey?: string;
   priority?: string;
   dueAt?: string;
   origin: string;

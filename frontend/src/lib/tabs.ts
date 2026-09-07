@@ -125,12 +125,44 @@ export const MESSAGE_VIEWER_TAB = 'message';
 /** Component id of the error log tab. */
 export const ERROR_LOG_TAB = 'errors';
 
+/** Whether a tool's tab is currently open. */
+export const isToolOpen = (id: string): boolean => {
+  const model = useLayoutStore.getState().model;
+  if (!model) return false;
+  let open = false;
+  model.visitNodes((node: any) => {
+    if (node.getType() === 'tab' && node.getComponent() === id) open = true;
+  });
+  return open;
+};
+
 /**
  * Show a message in the viewer, opening the tab when it is not already there.
+ *
+ * This is explicit activation — a click, or Enter on a focused row — so
+ * bringing the viewer forward is what the user asked for.
  */
 export const openMessage = (message: any): void => {
   useViewerStore.getState().setMessage(message);
   openTool(MESSAGE_VIEWER_TAB, 'Message');
+};
+
+/**
+ * Point the viewer at a message without bringing it forward.
+ *
+ * # Why this exists
+ *
+ * Arrowing through the list used to call openMessage, which selects the
+ * viewer's tab — so the first Down key switched away from Desk and the second
+ * one went nowhere, because focus had left the list. Keyboard navigation was
+ * one keystroke long.
+ *
+ * Preview updates an already-open viewer in place and does nothing when there
+ * is none. Opening it is then Enter's job, which keeps "move" and "open" as
+ * two different gestures rather than one that sometimes teleports you.
+ */
+export const previewMessage = (message: any): void => {
+  useViewerStore.getState().setMessage(message);
 };
 
 interface ErrorLogState {

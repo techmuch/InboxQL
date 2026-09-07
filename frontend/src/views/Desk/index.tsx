@@ -3,7 +3,8 @@ import {
   AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Layout, Mail, MoreVertical,
   MessagesSquare, Plus, RefreshCw, Send, Star, Trash2,
 } from 'lucide-react';
-import { openMessage, useViewerStore } from '../../lib/tabs';
+import { openMessage, previewMessage, useViewerStore } from '../../lib/tabs';
+import { navRow, useRovingFocus } from '../../lib/rovingFocus';
 import { Editor } from './Editor';
 import { Results } from './Results';
 import { Pills } from './Pills';
@@ -80,7 +81,12 @@ export const Desk = () => {
   }, []);
 
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
-  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+
+  // Arrow keys walk whatever is on screen, in the order it is painted. There
+  // is deliberately no focused-row state here: the DOM already knows which
+  // element has focus, and a second copy of that would be the thing that
+  // disagreed with it.
+  const { ref: navRef, onKeyDown: navKeyDown } = useRovingFocus<HTMLDivElement>();
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -127,7 +133,6 @@ export const Desk = () => {
         setMessages(prev => [...prev, ...newMessages]);
       } else {
         setMessages(newMessages);
-        setFocusedIndex(-1);
         setSelectedMessageIds(new Set());
       }
       setOffset(currentOffset + newMessages.length);
@@ -217,29 +222,31 @@ export const Desk = () => {
   // back button to escape. It is a tab of its own now, so the list stays put
   // and reading the next message does not mean navigating backwards first.
 
+  // Movement is the hook's job and knows nothing about messages, so it works
+  // in every mode. Selection is layered on afterwards, and only for rows that
+  // are messages — a Set of message ids does not describe a conversation or an
+  // aggregate bucket, and pretending it does would be a worse lie than not
+  // supporting multi-select there.
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (messages.length === 0) return;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      let newIndex = focusedIndex;
-      if (e.key === 'ArrowDown') {
-        newIndex = Math.min(focusedIndex + 1, messages.length - 1);
-      } else {
-        newIndex = Math.max(focusedIndex - 1, 0);
-      }
-      
-      setFocusedIndex(newIndex);
-      const msg = messages[newIndex];
-      
-      if (e.shiftKey) {
-        const newSelected = new Set(selectedMessageIds);
-        newSelected.add(msg.id);
-        setSelectedMessageIds(newSelected);
-      } else {
-        setSelectedMessageIds(new Set([msg.id]));
-      }
-      openMessage(msg);
-    }
+    const moving = ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key);
+    // Read before the hook moves focus: extending a selection has to include
+    // the row you extended *from*, and after the move there is no way to know
+    // what that was.
+    const from = (document.activeElement as HTMLElement | null)?.dataset?.messageId;
+
+    navKeyDown(e);
+    if (!moving) return;
+
+    const id = (document.activeElement as HTMLElement | null)?.dataset?.messageId;
+    if (!id) return;
+
+    setSelectedMessageIds(prev => {
+      if (!e.shiftKey) return new Set([id]);
+      const next = new Set(prev);
+      if (from) next.add(from);
+      next.add(id);
+      return next;
+    });
   };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -322,7 +329,17 @@ export const Desk = () => {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col min-w-0" tabIndex={0} onKeyDown={handleKeyDown}>
+      {/* The ref sits on the whole pane rather than on the list, so pressing
+          Down anywhere in Desk that is not a text field moves into the
+          results. Focus previously had to land on this div by tabbing, and
+          clicking a row did not put it there — which is why the keyboard
+          worked only by accident. */}
+      <div
+        ref={navRef}
+        className="flex-1 flex flex-col min-w-0"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+      >
         <div className="border-b border-border p-2.5 flex flex-col gap-2">
           <Editor
             value={queryText}
@@ -409,7 +426,18 @@ export const Desk = () => {
             keeps its own rendering, and every affordance that came with it. */}
         {result && result.kind !== 'messages' ? (
           <div className="flex-1 min-h-0">
-            <Results result={result} onDrillDown={async term => setQuery(await compose(query, { add: term }))} />
+            <Results
+              result={result}
+              onDrillDown={async (term, stage) => {
+                // Two composer calls rather than one string: the server owns
+                // where a term goes and where a stage goes, and it already
+                // knows that adding a terminal stage replaces the terminal
+                // that is there.
+                let next = await compose(query, { add: term });
+                if (stage) next = await compose(next, { stage });
+                setQuery(next);
+              }}
+            />
           </div>
         ) : (
         <>
@@ -463,7 +491,16 @@ export const Desk = () => {
             rendering of the same terms directly beneath it is noise — and a
             second rendering is precisely how the two came to disagree. */}
 
-        <div className="flex-1 overflow-auto" onScroll={handleScroll}>
+        {/* Its rows are options now, so the list says what it is. Before this
+            the message list was a stack of plain divs: unreachable by Tab and
+            silent to a screen reader. */}
+        <div
+          className="flex-1 overflow-auto"
+          role="listbox"
+          aria-label="Messages"
+          aria-multiselectable="true"
+          onScroll={handleScroll}
+        >
           {messages.length === 0 && !loading && (() => {
             const meta = folderMeta[folder];
             const EmptyIcon = meta?.icon ?? Mail;
@@ -479,7 +516,7 @@ export const Desk = () => {
               </div>
             );
           })()}
-          {messages.map((msg, index) => {
+          {messages.map(msg => {
             const isUnread = !msg.flags?.includes('\\Seen');
             // A draft has no sender — it has not been sent by anyone yet — so
             // the column that would show From shows who it is addressed to.
@@ -490,10 +527,20 @@ export const Desk = () => {
             const isOpen = msg.id === openMessageId;
             const isSelected = selectedMessageIds.has(msg.id);
             return (
-              <div 
+              <div
                 key={msg.id}
+                {...navRow}
+                // Read by the keyboard handler to extend selection, and the
+                // only thing that tells it this row is a message at all.
+                data-message-id={msg.id}
+                role="option"
+                aria-selected={isSelected}
+                // Preview follows focus, so arrowing updates an already-open
+                // viewer. It deliberately does not bring the viewer forward:
+                // doing that on every keypress is what made the first Down key
+                // switch tabs and the second one do nothing.
+                onFocus={() => previewMessage(msg)}
                 onClick={(e) => {
-                  setFocusedIndex(index);
                   if (e.shiftKey) {
                     const newSelected = new Set(selectedMessageIds);
                     newSelected.add(msg.id);

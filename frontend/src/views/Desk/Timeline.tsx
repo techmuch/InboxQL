@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { CheckSquare, ChevronDown, ChevronRight, Mail, PenLine, Tag } from 'lucide-react';
-import { openMessage } from '../../lib/tabs';
+import { openMessage, previewMessage } from '../../lib/tabs';
+import { navRow } from '../../lib/rovingFocus';
 import type { Thread, ThreadEntry } from './api';
 
 interface ThreadResultProps {
   threads: Thread[];
   /** Narrow the query to one conversation. */
-  onDrillDown: (term: string) => void;
+  onDrillDown: (term: string, stage?: string) => void;
 }
 
 /**
@@ -53,7 +54,7 @@ const ThreadRow = ({
 }: {
   thread: Thread;
   defaultOpen: boolean;
-  onDrillDown: (term: string) => void;
+  onDrillDown: (term: string, stage?: string) => void;
 }) => {
   const [open, setOpen] = useState(defaultOpen);
   const Chevron = open ? ChevronDown : ChevronRight;
@@ -62,9 +63,11 @@ const ThreadRow = ({
     <div>
       <button
         type="button"
+        {...navRow}
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
-        className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
+        className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-accent/40
+                   focus:outline-none focus:bg-primary/10"
       >
         <Chevron size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
 
@@ -108,8 +111,10 @@ const ThreadRow = ({
 
           <button
             type="button"
+            {...navRow}
             onClick={() => onDrillDown(`thread:${thread.key}`)}
-            className="pt-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            className="pt-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground
+                       hover:underline focus:outline-none focus:text-foreground focus:underline"
           >
             Open this conversation
           </button>
@@ -141,9 +146,16 @@ const Entry = ({ entry }: { entry: ThreadEntry }) => {
         {markerFor(entry.kind)}
       </span>
 
+      {/* The row is this div rather than the <li>, because the row has to be
+          the element carrying the click: the hook synthesises Enter by
+          clicking the focused element, and an event dispatched on the <li>
+          would never reach a handler on its child. */}
       <div
+        {...navRow}
+        data-message-id={clickable ? entry.message!.id : undefined}
+        onFocus={clickable ? () => previewMessage(entry.message!) : undefined}
         onClick={clickable ? () => openMessage(entry.message!) : undefined}
-        className={`flex items-baseline gap-2 text-sm ${
+        className={`flex items-baseline gap-2 text-sm focus:outline-none focus:bg-primary/10 ${
           clickable ? 'cursor-pointer hover:text-primary' : ''
         }`}
       >

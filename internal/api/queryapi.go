@@ -21,6 +21,8 @@ func registerQueryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/query/explain", handleQueryExplain)
 	mux.HandleFunc("/api/query/fields", handleQueryFields)
 	mux.HandleFunc("/api/query/complete", handleQueryComplete)
+	mux.HandleFunc("/api/query/terms", handleQueryTerms)
+	mux.HandleFunc("/api/query/compose", handleQueryCompose)
 	mux.HandleFunc("/api/query/values", handleQueryValues)
 	mux.HandleFunc("/api/queries", handleSavedQueries)
 	mux.HandleFunc("/api/annotators", handleAnnotators)
@@ -142,6 +144,58 @@ func handleQueryComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(c)
+}
+
+// handleQueryTerms splits a query into its top-level terms.
+//
+// Backs the filter pills. They render from the query itself rather than from a
+// parallel list, so what is shown and what runs cannot disagree — which is
+// exactly how a top-sender click came to change the results without appearing
+// in the query bar.
+func handleQueryTerms(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query().Get("q")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"query": q, "terms": query.Terms(q)})
+}
+
+// handleQueryCompose adds, removes or replaces a term in a query.
+//
+// Composition lives here rather than in the frontend because three separate
+// TypeScript implementations of it have existed in this project and all three
+// were wrong in the same way — they split on whitespace, so a quoted value
+// containing a space stopped being one term. The lexer already knows where a
+// term ends.
+//
+// A click is about to re-run the query anyway, so the round trip is free.
+func handleQueryCompose(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	params := r.URL.Query()
+	q := params.Get("q")
+
+	switch {
+	case params.Get("add") != "":
+		q = query.WithTerm(q, params.Get("add"))
+	case params.Get("remove") != "":
+		q = query.WithoutTerm(q, params.Get("remove"))
+	case params.Has("field"):
+		// An empty `term` with a field removes that field's term, which is how
+		// "show me everything" clears a folder.
+		q = query.ReplaceField(q, params.Get("field"), params.Get("term"))
+	default:
+		http.Error(w, "give one of add, remove, or field", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"query": q, "terms": query.Terms(q)})
 }
 
 // handleQueryValues lists candidate values for one field.

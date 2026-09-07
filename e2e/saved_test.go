@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -162,5 +163,76 @@ func TestUnknownFieldSuggestsTheObviousFix(t *testing.T) {
 	r = e.run("query", "zzzzzz:x")
 	if !strings.Contains(r.Stderr, "fields:") {
 		t.Errorf("the error was %q, which neither suggests nor enumerates", r.Stderr)
+	}
+}
+
+// Composition is served rather than reimplemented in the frontend, because
+// three TypeScript versions of it existed and all three split on whitespace —
+// so a quoted value containing a space stopped being one term.
+func TestQueryCompositionIsServerSide(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+	s := e.startServer()
+
+	compose := func(t *testing.T, params string) string {
+		t.Helper()
+		resp := s.browserRequest(t, "GET", "/api/query/compose?"+params, "",
+			map[string]string{"Sec-Fetch-Site": "same-origin"})
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("compose?%s returned %d", params, resp.StatusCode)
+		}
+		var out struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		return out.Query
+	}
+
+	cases := []struct{ params, want, why string }{
+		{"q=&add=from%3Aalice", "from:alice", "adding to an empty query"},
+		{"q=folder%3Ainbox+from%3Aalice&add=from%3Abob", "folder:inbox from:bob",
+			"a second sender replaces the first rather than asking for both"},
+		{`q=subject%3A%22a+b%22&add=subject%3A%22a+b%22`, `subject:"a b"`,
+			"a quoted term clicked twice must not duplicate"},
+		{"q=folder%3Ainbox+from%3Aalice&field=folder&term=folder%3Asent", "from:alice folder:sent",
+			"selecting a folder keeps the filter"},
+		{"q=is%3Aunread+%7C+count+by+week&add=from%3Aalice", "is:unread from:alice | count by week",
+			"the pipeline stays last"},
+	}
+	for _, c := range cases {
+		if got := compose(t, c.params); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.why, got, c.want)
+		}
+	}
+
+	// Whatever it produces has to run.
+	final := compose(t, "q=folder%3Ainbox&add=from%3Aalice")
+	if r := e.run("query", final, "--count"); r.ExitCode != 0 {
+		t.Errorf("composed query %q does not run: %s", final, r.Stderr)
+	}
+}
+
+// Analytics charts mail. One shared query means a ticket query can arrive
+// there, and silently charting something else is worse than saying so.
+func TestAnalyticsRefusesNonMailQueries(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+	s := e.startServer()
+
+	resp := s.browserRequest(t, "GET", "/api/analytics?type=senders&q=in%3Atickets", "",
+		map[string]string{"Sec-Fetch-Site": "same-origin"})
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Errorf("a ticket query to analytics returned %d, want 400", resp.StatusCode)
+	}
+
+	ok := s.browserRequest(t, "GET", "/api/analytics?type=senders&q=is%3Aunread", "",
+		map[string]string{"Sec-Fetch-Site": "same-origin"})
+	defer ok.Body.Close()
+	if ok.StatusCode != 200 {
+		t.Errorf("a mail query to analytics returned %d, want 200", ok.StatusCode)
 	}
 }

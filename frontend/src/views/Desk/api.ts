@@ -191,15 +191,3 @@ export function drillDownTerm(result: QueryResult, label: string): string | null
       return null;
   }
 }
-
-/** Append a term to a query, avoiding a duplicate. */
-export function withTerm(query: string, term: string): string {
-  const trimmed = query.trim();
-  if (!trimmed) return term;
-  if (trimmed.split(/\s+/).includes(term)) return trimmed;
-
-  // A term belongs in the filter, which ends where the pipeline begins.
-  const pipe = trimmed.indexOf('|');
-  if (pipe < 0) return `${trimmed} ${term}`;
-  return `${trimmed.slice(0, pipe).trim()} ${term} ${trimmed.slice(pipe)}`;
-}

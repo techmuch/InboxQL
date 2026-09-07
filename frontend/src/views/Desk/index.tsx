@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Layout, Mail, MoreVertical,
-  Plus, RefreshCw, Send, Star, Trash2, X,
+  Plus, RefreshCw, Send, Star, Trash2,
 } from 'lucide-react';
 import { openMessage, useViewerStore } from '../../lib/tabs';
 import { Editor } from './Editor';
 import { Results } from './Results';
 import {
-  explainQuery, listSaved, runQuery, saveQuery, withTerm, QueryFailed,
+  explainQuery, listSaved, runQuery, saveQuery, QueryFailed,
   type QueryResult, type SavedQuery,
 } from './api';
-import { useFilterStore } from '../../lib/filters';
+import { useQueryStore, compose } from '../../lib/filters';
 
 /**
  * Desk — one surface over mail, drafts and tickets.
@@ -36,20 +36,23 @@ export const Desk = () => {
   const openMessageId = useViewerStore(s => s.messageId);
   const [loading, setLoading] = useState(true);
   const [folder, setFolder] = useState('inbox');
-  const { terms, clearAll } = useFilterStore();
-  const filter = terms.join(' ');
+  const query = useQueryStore(s => s.text);
+  const setQuery = useQueryStore(s => s.set);
+  const clearAll = () => setQuery('');
 
-  // The query the results came from. A rail click writes it, the editor edits
-  // it, and it is what actually runs — so what narrows the view is always
-  // visible and always editable.
-  const [queryText, setQueryText] = useState('folder:inbox');
+  // What is being typed. It is seeded from the shared query and commits back
+  // to it, so the bar and the results can never describe different things —
+  // which they did while a separate list of cross-filter terms was silently
+  // concatenated onto whatever the bar showed.
+  const [queryText, setQueryText] = useState(query);
+  useEffect(() => { setQueryText(query); }, [query]);
   // What actually ran, as distinct from what is being typed.
   //
   // Deriving the fetch from the live text meant a query per keystroke: typing
   // `| top domain 5` ran `| top domai` on the way past, and that failure
   // landed after the good result and painted an error over it. A query runs
   // when it is submitted.
-  const [committed, setCommitted] = useState('folder:inbox');
+
   const [result, setResult] = useState<QueryResult | null>(null);
   const [failure, setFailure] = useState<QueryFailed | null>(null);
   const [saved, setSaved] = useState<SavedQuery[]>([]);
@@ -79,7 +82,7 @@ export const Desk = () => {
   // Terms concatenate because they are terms in one expression rather than
   // fields in a struct — which is what let the three separate filter
   // implementations behind this collapse into one.
-  const effectiveQuery = [committed, filter].filter(Boolean).join(' ');
+  const effectiveQuery = query;
 
   // The request in flight. A slower earlier response must not overwrite a
   // faster later one — the same guard the editor's completions need.
@@ -251,7 +254,13 @@ export const Desk = () => {
             return (
               <button
                 key={item.id}
-                onClick={() => { setFolder(item.id); setQueryText(entryQuery); setCommitted(entryQuery); }}
+                onClick={async () => {
+                  // Replace the folder facet, keep whatever else narrows the
+                  // view. Replacing the whole query would silently discard a
+                  // cross-filter someone had just applied.
+                  setFolder(item.id);
+                  setQuery(await compose(query, { field: 'folder', term: entryQuery }));
+                }}
                 title={entryQuery}
                 className={`w-full flex items-center gap-4 px-4 py-2.5  text-sm transition-colors ${active ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground/70'}`}
               >
@@ -268,7 +277,9 @@ export const Desk = () => {
               {saved.map(q => (
                 <button
                   key={q.name}
-                  onClick={() => { setQueryText(q.query); setCommitted(q.query); }}
+                  // A saved query is a complete expression, not a facet, so it
+                  // replaces rather than merges.
+                  onClick={() => setQuery(q.query)}
                   title={q.query}
                   className={`w-full flex items-center gap-4 px-4 py-2  text-sm transition-colors ${queryText.trim() === q.query.trim() ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground/70'}`}
                 >
@@ -286,7 +297,7 @@ export const Desk = () => {
           ].map(entry => (
             <button
               key={entry.label}
-              onClick={() => { setQueryText(entry.q); setCommitted(entry.q); }}
+              onClick={() => setQuery(entry.q)}
               title={entry.q}
               className={`w-full flex items-center gap-4 px-4 py-2  text-sm transition-colors ${queryText.trim() === entry.q ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground/70'}`}
             >
@@ -302,7 +313,7 @@ export const Desk = () => {
           <Editor
             value={queryText}
             onChange={setQueryText}
-            onRun={() => setCommitted(queryText)}
+            onRun={() => setQuery(queryText)}
             running={loading}
             errorPosition={failure?.position}
             errorMessage={failure?.message}
@@ -357,11 +368,7 @@ export const Desk = () => {
             keeps its own rendering, and every affordance that came with it. */}
         {result && result.kind !== 'messages' ? (
           <div className="flex-1 min-h-0">
-            <Results result={result} onDrillDown={term => {
-              const next = withTerm(queryText, term);
-              setQueryText(next);
-              setCommitted(next);
-            }} />
+            <Results result={result} onDrillDown={async term => setQuery(await compose(query, { add: term }))} />
           </div>
         ) : (
         <>
@@ -411,19 +418,9 @@ export const Desk = () => {
           </div>
         </div>
 
-        {terms.length > 0 && (
-          <div className="bg-primary/5 border-b border-primary/10 px-4 py-1.5 flex items-center gap-3">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-primary/60">Query:</span>
-            <div className="flex flex-1 gap-1.5 overflow-auto no-scrollbar">
-              {terms.map(t => (
-                <span key={t} className="px-2 py-0.5 bg-primary text-primary-foreground text-[9px] font-mono flex items-center gap-1 shadow-sm whitespace-nowrap">
-                  {t} <X onClick={() => useFilterStore.getState().remove(t)} className="w-2 h-2 cursor-pointer" />
-                </span>
-              ))}
-            </div>
-            <button onClick={clearAll} className="text-[9px] font-bold text-primary hover:bg-primary/10 px-2 py-0.5 transition-colors uppercase tracking-tighter">Clear All</button>
-          </div>
-        )}
+        {/* No pill row. The bar above shows the query itself, so a second
+            rendering of the same terms directly beneath it is noise — and a
+            second rendering is precisely how the two came to disagree. */}
 
         <div className="flex-1 overflow-auto" onScroll={handleScroll}>
           {messages.length === 0 && !loading && (() => {
@@ -433,9 +430,9 @@ export const Desk = () => {
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground space-y-4 px-8 text-center">
                 <EmptyIcon className="w-12 h-12 opacity-10" />
                 <span className="italic">{meta?.empty ?? 'Nothing here.'}</span>
-                {terms.length > 0 && (
+                {query.trim() !== '' && (
                   <button onClick={clearAll} className="text-xs font-semibold text-primary hover:underline not-italic">
-                    Filters are active — clear them
+                    <code className="font-mono">{query}</code> matched nothing — clear it
                   </button>
                 )}
               </div>

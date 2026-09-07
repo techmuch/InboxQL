@@ -16,6 +16,7 @@ import (
 	"github.com/user/inboxql/internal/auth"
 	"github.com/user/inboxql/internal/embed"
 	"github.com/user/inboxql/internal/message"
+	"github.com/user/inboxql/internal/query"
 	"github.com/user/inboxql/internal/store"
 	"github.com/user/inboxql/internal/sync"
 )
@@ -70,6 +71,7 @@ func Router() (http.Handler, error) {
 	for _, route := range []string{
 		"/api/query", "/api/query/explain", "/api/query/fields",
 		"/api/query/complete", "/api/query/values",
+		"/api/query/terms", "/api/query/compose",
 		"/api/queries", "/api/annotators",
 		"/api/tickets", "/api/tickets/board",
 	} {
@@ -516,6 +518,16 @@ func handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filter := legacyFilterQuery(r, "", "")
+
+	// Analytics charts mail. One shared query means a ticket or draft query can
+	// arrive here, and silently charting something else would be worse than
+	// saying so.
+	if parsed, err := query.Parse(filter); err == nil && parsed.Entity() != query.EntityMessage {
+		writeQueryError(w, fmt.Errorf(
+			"this query is about %ss; analytics charts mail", parsed.Entity()))
+		return
+	}
+
 	expr := strings.TrimSpace(filter + " " + stage)
 
 	res, err := store.RunQuery(expr, 0, 0)

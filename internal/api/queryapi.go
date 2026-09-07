@@ -196,6 +196,13 @@ func handleQueryCompose(w http.ResponseWriter, r *http.Request) {
 		term = query.FormatTerm(params.Get("field"), params.Get("value"),
 			params.Get("negated") == "true")
 	}
+	// Repeated `values` is a selection: several identities, one term. Assembled
+	// here for the same reason a single value is — the parens, the OR and the
+	// fact that one value needs neither are grammar.
+	if vs := params["values"]; len(vs) > 0 {
+		term = query.FormatGroupTerm(params.Get("field"), vs,
+			params.Get("negated") == "true")
+	}
 
 	switch {
 	case params.Has("at"):

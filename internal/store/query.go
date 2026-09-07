@@ -76,18 +76,32 @@ func queryOptions(limit, offset int) query.Options {
 	}
 }
 
-// ThreadMessageIDs returns every message sharing a conversation with the given
-// message.
+// ThreadMessageIDs returns every message in the conversation named by an id.
+//
+// # Why it takes either kind of id
+//
+// `thread:` used to accept only a message id, and resolve the conversation
+// through it. But a conversation's own name is its thread_key, and that is
+// what everything holding a conversation has to hand: the timeline's rows, a
+// ticket's ThreadKey, a draft's. Passing one produced an empty result rather
+// than an error — so the timeline's own "Open this conversation" button
+// silently matched nothing, which reads exactly like a conversation with no
+// mail in it.
+//
+// Accepting both is what `thread:` already means to a reader: the conversation
+// identified by this, whichever way it is identified.
 //
 // Keyed on thread_key, which is maintained on write from the References
 // header. Falls back to the message itself when it has no key, which is the
-// case for rows written before v18 and never re-saved.
-func ThreadMessageIDs(messageID string) ([]string, error) {
+// case for rows written before v17 and never re-saved.
+func ThreadMessageIDs(id string) ([]string, error) {
 	rows, err := db.Query(`
 		SELECT id FROM messages
 		WHERE thread_key IS NOT NULL
-		  AND thread_key = (SELECT thread_key FROM messages WHERE id = ?)
-		ORDER BY date ASC`, messageID)
+		  AND thread_key = COALESCE(
+		        (SELECT thread_key FROM messages WHERE id = ?),
+		        ?)
+		ORDER BY date ASC`, id, id)
 	if err != nil {
 		return nil, err
 	}
@@ -95,11 +109,11 @@ func ThreadMessageIDs(messageID string) ([]string, error) {
 
 	var ids []string
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var rowID string
+		if err := rows.Scan(&rowID); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		ids = append(ids, rowID)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -109,11 +123,11 @@ func ThreadMessageIDs(messageID string) ([]string, error) {
 		// the message alone is right for the second case and harmless for the
 		// first, where the caller gets an empty result anyway.
 		var exists int
-		if err := db.QueryRow("SELECT COUNT(*) FROM messages WHERE id = ?", messageID).Scan(&exists); err != nil {
+		if err := db.QueryRow("SELECT COUNT(*) FROM messages WHERE id = ?", id).Scan(&exists); err != nil {
 			return nil, err
 		}
 		if exists > 0 {
-			return []string{messageID}, nil
+			return []string{id}, nil
 		}
 	}
 	return ids, nil

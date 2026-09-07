@@ -39,3 +39,52 @@ body {
 button, input, textarea, select {
   border-radius: 0 !important;
 }
+
+/*
+ * Keyboard focus in Desk's result lists.
+ *
+ * # Why one rule and not a Tailwind class per row
+ *
+ * Five renderers draw rows — messages, conversations and their entries,
+ * aggregate buckets, tickets, drafts. Focus has to look identical in all of
+ * them or "where am I" becomes a per-mode question. One rule keyed off the
+ * attribute the navigation already uses means they cannot drift.
+ *
+ * # Why :focus-visible and not :focus
+ *
+ * :focus also fires on a mouse click, which leaves a highlight sitting on
+ * whatever was last clicked. :focus-visible is the browser's own answer to
+ * "did this come from the keyboard", which is exactly the question here.
+ *
+ * # Why an inset outline and not a box-shadow ring
+ *
+ * Several of these rows are <tr> elements, and a box-shadow on a table row is
+ * not painted under `border-collapse: collapse` — the ring would simply be
+ * missing in aggregate, ticket and draft results. An outline paints on table
+ * rows, and a negative offset draws it inside the box so the first and last
+ * rows are not clipped by the scroll container.
+ *
+ * This is deliberately distinct from the two states a row already has:
+ * selected (a tinted background) and open-in-the-viewer (a solid left bar).
+ * Focus is a ring, so a row can be focused and selected and open at once and
+ * still be read correctly.
+ */
+[data-nav-row] {
+  /* So scrollIntoView({ block: 'nearest' }) does not tuck the focused row
+     under the sticky toolbar above the list. */
+  scroll-margin-top: 3.5rem;
+  scroll-margin-bottom: 1rem;
+}
+
+[data-nav-row]:focus {
+  /* Replaced by the ring below. Scoped to rows we style ourselves, so buttons
+     elsewhere in the app keep the browser default. */
+  outline: none;
+}
+
+[data-nav-row]:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: -2px;
+  position: relative;
+  z-index: 2;
+}

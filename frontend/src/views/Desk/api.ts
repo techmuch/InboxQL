@@ -226,3 +226,25 @@ export function drillDownTerm(result: QueryResult, label: string): string | null
       return null;
   }
 }
+
+/**
+ * Mark a set of messages read, unread or starred.
+ *
+ * Local only: InboxQL's sync is one-way, so this changes what InboxQL knows and
+ * not what the IMAP server does. The count comes back so the UI can report what
+ * actually changed rather than implying the server was told.
+ */
+export async function setMessageFlag(
+  ids: string[],
+  flag: '\\Seen' | '\\Flagged',
+  on: boolean,
+): Promise<number> {
+  const res = await fetch('/api/messages/flags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, flag, on }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error ?? 'could not update those messages');
+  return body?.changed ?? 0;
+}

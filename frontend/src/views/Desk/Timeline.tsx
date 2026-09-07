@@ -64,10 +64,15 @@ const ThreadRow = ({
       <button
         type="button"
         {...navRow}
+        // A conversation is named by its thread key, which `thread:` accepts.
+        data-sel-kind="thread"
+        data-sel-id={thread.key}
+        data-sel-field="thread"
+        data-sel-label={thread.subject}
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-accent/40
-                   focus:outline-none focus:bg-primary/10"
+                  "
       >
         <Chevron size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
 
@@ -114,7 +119,7 @@ const ThreadRow = ({
             {...navRow}
             onClick={() => onDrillDown(`thread:${thread.key}`)}
             className="pt-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground
-                       hover:underline focus:outline-none focus:text-foreground focus:underline"
+                       hover:underline"
           >
             Open this conversation
           </button>
@@ -152,10 +157,18 @@ const Entry = ({ entry }: { entry: ThreadEntry }) => {
           would never reach a handler on its child. */}
       <div
         {...navRow}
-        data-message-id={clickable ? entry.message!.id : undefined}
+        data-sel-kind={clickable ? 'message' : undefined}
+        data-sel-id={clickable ? entry.message!.id : undefined}
+        data-sel-field={clickable ? 'id' : undefined}
+        data-sel-label={clickable ? entry.summary : undefined}
         onFocus={clickable ? () => previewMessage(entry.message!) : undefined}
-        onClick={clickable ? () => openMessage(entry.message!) : undefined}
-        className={`flex items-baseline gap-2 text-sm focus:outline-none focus:bg-primary/10 ${
+        onClick={clickable ? (e) => {
+          // Same rule as the message list: a modified click selects, it does
+          // not open the viewer over the list you are selecting in.
+          if (e.shiftKey || e.metaKey || e.ctrlKey) return;
+          openMessage(entry.message!);
+        } : undefined}
+        className={`flex items-baseline gap-2 text-sm ${
           clickable ? 'cursor-pointer hover:text-primary' : ''
         }`}
       >

@@ -379,3 +379,50 @@ func TestStageComposingNeverPanicsOnPartialInput(t *testing.T) {
 		HasStage(src, "timeline")
 	}
 }
+
+// A hand-picked selection is not a filter, it is a list of identities, and the
+// query for it is one term naming all of them.
+func TestFormatGroupTerm(t *testing.T) {
+	cases := []struct {
+		field   string
+		values  []string
+		negated bool
+		want    string
+	}{
+		{"id", []string{"a", "b", "c"}, false, "id:(a OR b OR c)"},
+		{"id", []string{"a", "b"}, true, "-id:(a OR b)"},
+		// One value needs no parens: `id:(a)` parses but reads like a
+		// truncated list and round-trips into something nobody wrote.
+		{"id", []string{"a"}, false, "id:a"},
+		{"id", []string{"a"}, true, "-id:a"},
+		{"id", nil, false, ""},
+		{"id", []string{"", "  "}, false, ""},
+		// Duplicates collapse: clicking the same row twice is one selection.
+		{"id", []string{"a", "a", "b"}, false, "id:(a OR b)"},
+		// The same quoting rule as a single term, because it is the same rule.
+		{"subject", []string{"quarterly report", "lunch"}, false,
+			`subject:("quarterly report" OR lunch)`},
+		{"thread", []string{"root@acme.com", "x@y.com"}, false,
+			"thread:(root@acme.com OR x@y.com)"},
+		// Aliases resolve, as everywhere else.
+		{"sender", []string{"a@x.com", "b@x.com"}, false, "from:(a@x.com OR b@x.com)"},
+	}
+	for _, c := range cases {
+		got := FormatGroupTerm(c.field, c.values, c.negated)
+		if got != c.want {
+			t.Errorf("FormatGroupTerm(%q, %v, %v) = %q, want %q",
+				c.field, c.values, c.negated, got, c.want)
+			continue
+		}
+		if got == "" {
+			continue
+		}
+		// Whatever it builds has to parse, and has to be exactly one term.
+		if _, err := Parse(got); err != nil {
+			t.Errorf("FormatGroupTerm built %q, which does not parse: %v", got, err)
+		}
+		if spans := Terms(got); len(spans) != 1 || spans[0].Text != got {
+			t.Errorf("FormatGroupTerm built %q, which is not one term: %v", got, spans)
+		}
+	}
+}

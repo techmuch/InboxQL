@@ -211,7 +211,14 @@ var Registry = []Field{
 	},
 	{
 		Name: "thread", Entity: EntityMessage, Type: TypeIdent,
-		Summary: "every message in this one's conversation", Example: "thread:<message-id>",
+		Summary: "every message in that conversation", Example: "thread:<message-id or thread key>",
+	},
+	{
+		// The field a hand-picked set is written as. Selecting six messages and
+		// asking to see just those is not a filter anyone can phrase — it is
+		// six identities — so the language needs a way to name one.
+		Name: "id", Entity: EntityMessage, Type: TypeIdent,
+		Summary: "this exact message", Example: "id:(a OR b)",
 	},
 	// --- tickets -----------------------------------------------------------
 	//
@@ -245,6 +252,10 @@ var Registry = []Field{
 		Enum:    []string{"human", "annotator"},
 		Summary: "who raised the ticket", Example: "raised:annotator",
 	},
+	{
+		Name: "id", Entity: EntityTicket, Type: TypeIdent,
+		Summary: "this exact ticket", Example: "in:tickets id:(a OR b)",
+	},
 
 	// --- drafts ------------------------------------------------------------
 	//
@@ -262,6 +273,10 @@ var Registry = []Field{
 		Ops:     []Op{OpMatch, OpGlob},
 		Enum:    []string{"human", "agent"},
 		Summary: "who composed the draft", Example: "origin:agent",
+	},
+	{
+		Name: "id", Entity: EntityDraft, Type: TypeIdent,
+		Summary: "this exact draft", Example: "in:drafts id:(a OR b)",
 	},
 
 	{

@@ -4,6 +4,8 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -259,4 +261,98 @@ func mustJSON(t *testing.T, v any) string {
 		t.Fatalf("marshal: %v", err)
 	}
 	return string(b)
+}
+
+// Selection existed before any action did — a count and a Clear button with
+// nothing behind them. This is the first thing a selection can actually do.
+func TestBulkFlagsOverTheAPI(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+	c := &apiClient{t: t, srv: e.startServer()}
+
+	var listed struct {
+		Messages []struct {
+			ID    string   `json:"id"`
+			Flags []string `json:"flags"`
+		} `json:"messages"`
+	}
+	if code := c.do("GET", "/api/query?q=is%3Aunread", "", &listed); code != 200 {
+		t.Fatalf("listing unread returned %d", code)
+	}
+	if len(listed.Messages) < 2 {
+		t.Fatalf("fixture has %d unread messages, want at least 2", len(listed.Messages))
+	}
+	ids := []string{listed.Messages[0].ID, listed.Messages[1].ID}
+	before := len(listed.Messages)
+
+	var out struct {
+		Changed int `json:"changed"`
+	}
+	body := fmt.Sprintf(`{"ids":["%s","%s"],"flag":"\\Seen","on":true}`, ids[0], ids[1])
+	if code := c.do("POST", "/api/messages/flags", body, &out); code != 200 {
+		t.Fatalf("marking read returned %d", code)
+	}
+	if out.Changed != 2 {
+		t.Errorf("changed = %d, want 2", out.Changed)
+	}
+
+	// The query language agrees, which is the point of writing the canonical
+	// spelling: is:unread compares exactly.
+	c.do("GET", "/api/query?q=is%3Aunread", "", &listed)
+	if len(listed.Messages) != before-2 {
+		t.Errorf("%d unread after marking two read, want %d", len(listed.Messages), before-2)
+	}
+
+	// A repeat reports nothing changed rather than claiming work it did not do.
+	c.do("POST", "/api/messages/flags", body, &out)
+	if out.Changed != 0 {
+		t.Errorf("a repeat reported %d changed, want 0", out.Changed)
+	}
+
+	// Flags that describe what a message *is* are refused.
+	deleted := fmt.Sprintf(`{"ids":["%s"],"flag":"\\Deleted","on":true}`, ids[0])
+	if code := c.do("POST", "/api/messages/flags", deleted, nil); code != 400 {
+		t.Errorf("setting \\Deleted returned %d, want 400", code)
+	}
+	if code := c.do("POST", "/api/messages/flags", `{"ids":[],"flag":"\\Seen","on":true}`, nil); code != 400 {
+		t.Errorf("an empty id list returned %d, want 400", code)
+	}
+}
+
+// A hand-picked set is not a filter; it is a list of identities, and `id:` is
+// how the language names one.
+func TestIdentityQueriesNameAHandPickedSet(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+	c := &apiClient{t: t, srv: e.startServer()}
+
+	var listed struct {
+		Messages []struct {
+			ID string `json:"id"`
+		} `json:"messages"`
+	}
+	c.do("GET", "/api/query?q=in%3Amessages", "", &listed)
+	if len(listed.Messages) < 3 {
+		t.Fatalf("fixture has %d messages", len(listed.Messages))
+	}
+	a, b := listed.Messages[0].ID, listed.Messages[1].ID
+
+	// The composer builds the term, so the client never writes the parens.
+	var composed struct {
+		Query string `json:"query"`
+	}
+	path := fmt.Sprintf("/api/query/compose?q=&field=id&values=%s&values=%s", a, b)
+	if code := c.do("GET", path, "", &composed); code != 200 {
+		t.Fatalf("composing returned %d", code)
+	}
+	want := fmt.Sprintf("id:(%s OR %s)", a, b)
+	if composed.Query != want {
+		t.Fatalf("composed %q, want %q", composed.Query, want)
+	}
+
+	// And it runs, matching exactly those two.
+	c.do("GET", "/api/query?q="+url.QueryEscape(composed.Query), "", &listed)
+	if len(listed.Messages) != 2 {
+		t.Errorf("id:(a OR b) matched %d messages, want 2", len(listed.Messages))
+	}
 }

@@ -108,6 +108,21 @@ type compiler struct {
 	resolving string
 }
 
+// idColumn names the primary key of the table this query reads.
+//
+// Aliased, because the same word means a different column depending on what
+// the query is about — which is the whole reason `id` is registered once per
+// entity rather than once globally.
+func (c *compiler) idColumn() string {
+	switch c.entity {
+	case EntityTicket:
+		return "t.id"
+	case EntityDraft:
+		return "d.id"
+	}
+	return "m.id"
+}
+
 func (c *compiler) arg(v any) string {
 	c.args = append(c.args, v)
 	return "?"
@@ -256,6 +271,9 @@ func (c *compiler) draftTerm(t *Term, negated bool) (string, error) {
 		}
 		return "", fmt.Errorf("folder: a drafts query is not about mail folders")
 
+	case "id":
+		return wrap("d.id = "+c.arg(t.Value), negated), nil
+
 	case "status", "origin":
 		if t.Op == OpGlob {
 			return wrap(c.stringPredicate("d."+t.Field, t), negated), nil
@@ -376,6 +394,12 @@ func (c *compiler) dispatch(t *Term, negated bool) (string, error) {
 
 	case "thread":
 		return c.threadTerm(t, negated)
+
+	case "id":
+		// Exact, always. An identity has no partial match, and treating it as
+		// a substring would make id:abc quietly select everything whose id
+		// contains abc.
+		return wrap(c.idColumn()+" = "+c.arg(t.Value), negated), nil
 
 	case "saved":
 		return c.savedTerm(t, negated)

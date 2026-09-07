@@ -47,6 +47,7 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/accounts/", auth.Middleware(apiMux))
 	mux.Handle("/api/messages", auth.Middleware(http.HandlerFunc(handleMessages)))
 	mux.Handle("/api/messages/counts", auth.Middleware(http.HandlerFunc(handleFolderCounts)))
+	mux.Handle("/api/messages/flags", auth.Middleware(http.HandlerFunc(handleMessageFlags)))
 	mux.Handle("/api/message", auth.Middleware(http.HandlerFunc(handleMessage)))
 	mux.Handle("/api/message/attachments", auth.Middleware(http.HandlerFunc(handleMessageAttachments)))
 	mux.Handle("/api/profile", auth.Middleware(http.HandlerFunc(handleProfile)))
@@ -526,7 +527,15 @@ func handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filter := legacyFilterQuery(r, "", "")
+	// Only the filter half. Desk and the dashboard share one query, and that
+	// query may carry a pipeline — `| timeline`, `| count by week`, `| top
+	// domain 5`. Concatenating this widget's own aggregate onto one of those
+	// produced two terminal stages, which the planner rejects, so every widget
+	// returned a 400 the moment anything in Desk was aggregated.
+	//
+	// The filter is the part that means "which mail"; the stage is this
+	// widget's own question about it.
+	filter := query.FilterOf(legacyFilterQuery(r, "", ""))
 
 	// Analytics charts mail. One shared query means a ticket or draft query can
 	// arrive here, and silently charting something else would be worse than
@@ -722,4 +731,49 @@ func handleData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleMessageFlags marks a set of messages read, unread or starred.
+//
+// The first bulk action in InboxQL. Selection existed before it did — a count
+// and a Clear button with nothing behind them — which made the checkbox column
+// decoration.
+//
+// Local only. There is no IMAP write-back, so the response says how many rows
+// changed and the caller is expected to say so rather than implying the server
+// was told.
+func handleMessageFlags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		IDs  []string `json:"ids"`
+		Flag string   `json:"flag"`
+		On   bool     `json:"on"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		return
+	}
+	if len(req.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "no messages given")
+		return
+	}
+	// Bounded so one request cannot be asked to rewrite the whole mailbox in a
+	// single transaction.
+	if len(req.IDs) > 1000 {
+		writeError(w, http.StatusBadRequest,
+			"too many messages in one request (%d); 1000 at a time", len(req.IDs))
+		return
+	}
+
+	changed, err := store.SetMessageFlag(req.IDs, req.Flag, req.On)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"changed": changed})
 }

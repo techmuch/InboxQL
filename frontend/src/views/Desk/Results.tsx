@@ -85,9 +85,15 @@ const GroupResult = ({ result, onDrillDown }: ResultsProps) => {
               <tr
                 key={g.label}
                 {...(term ? navRow : {})}
+                // An aggregate bucket is named by the field it grouped on, so
+                // narrowing to several buckets is one term on that field.
+                data-sel-kind="group"
+                data-sel-id={g.label}
+                data-sel-field={result.groupField}
+                data-sel-label={g.label}
                 onClick={() => term && onDrillDown(term)}
                 title={term ? `Narrow to ${term}` : undefined}
-                className={`border-b border-border/50 focus:outline-none focus:bg-primary/10 ${
+                className={`border-b border-border/50 ${
                   term ? 'cursor-pointer hover:bg-accent/40' : ''
                 }`}
               >
@@ -132,10 +138,16 @@ const MessageResult = ({ result }: { result: QueryResult }) => {
               <tr
                 key={m.id}
                 {...navRow}
-                data-message-id={m.id}
+                data-sel-kind="message"
+                data-sel-id={m.id}
+                data-sel-field="id"
+                data-sel-label={m.subject}
                 onFocus={() => previewMessage(m)}
-                onClick={() => openMessage(m)}
-                className="border-b border-border/50 cursor-pointer hover:bg-accent/40 focus:outline-none focus:bg-primary/10"
+                onClick={(e) => {
+                  if (e.shiftKey || e.metaKey || e.ctrlKey) return;
+                  openMessage(m);
+                }}
+                className="border-b border-border/50 cursor-pointer hover:bg-accent/40"
               >
                 <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
                   {new Date(m.date).toLocaleDateString()}
@@ -182,11 +194,15 @@ const TicketResult = ({ result, onDrillDown }: ResultsProps) => {
               <tr
                 key={t.id}
                 {...navRow}
+                data-sel-kind="ticket"
+                data-sel-id={t.id}
+                data-sel-field="id"
+                data-sel-label={t.title}
                 // Activating a ticket opens the conversation it came from,
                 // which is the whole reason provenance is recorded.
                 onClick={() => t.threadKey && onDrillDown(`thread:${t.threadKey}`, 'timeline')}
                 title={t.threadKey ? 'Show the conversation this came from' : undefined}
-                className={`border-b border-border/50 hover:bg-accent/40 focus:outline-none focus:bg-primary/10 ${
+                className={`border-b border-border/50 hover:bg-accent/40 ${
                   t.threadKey ? 'cursor-pointer' : ''
                 }`}
               >
@@ -230,7 +246,11 @@ const DraftResult = ({ result }: { result: QueryResult }) => {
             <tr
               key={d.id}
               {...navRow}
-              className="border-b border-border/50 hover:bg-accent/40 focus:outline-none focus:bg-primary/10"
+              data-sel-kind="draft"
+              data-sel-id={d.id}
+              data-sel-field="id"
+              data-sel-label={d.subject}
+              className="border-b border-border/50 hover:bg-accent/40"
             >
               <td className="px-4 py-1.5 font-mono text-xs">{d.status}</td>
               <td className={`px-4 py-1.5 font-mono text-xs ${

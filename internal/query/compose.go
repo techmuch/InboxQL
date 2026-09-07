@@ -231,11 +231,7 @@ func joinFilterAndPipeline(filter, original string) string {
 // that mean something structural, and wrapping them in quotes would turn each
 // into a literal search for its own punctuation.
 func FormatTerm(field, value string, negated bool) string {
-	value = strings.TrimSpace(value)
-
-	if strings.ContainsAny(value, " \t\n\"") {
-		value = `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
-	}
+	value = quoteValue(strings.TrimSpace(value))
 
 	term := value
 	if field != "" {
@@ -407,6 +403,15 @@ func HasStage(src, verb string) bool {
 	return false
 }
 
+// FilterOf returns the filter half of a query, without its pipeline.
+//
+// What a query *selects*, separated from what it then *does* with it. A caller
+// that has its own aggregate to apply — the dashboard's widgets each are one —
+// must take this rather than the whole string, because appending a second
+// terminal stage to a query that already has one produces something the
+// planner rejects outright.
+func FilterOf(src string) string { return filterOf(src) }
+
 // filterOf returns the filter half of a query, without its pipeline.
 func filterOf(src string) string {
 	if at := pipelineAt(src); at >= 0 {
@@ -425,4 +430,50 @@ func joinStages(filter string, stages []string) string {
 		out += " | " + s
 	}
 	return strings.TrimSpace(out)
+}
+
+// FormatGroupTerm assembles one term matching any of several values.
+//
+// A hand-picked selection is the case this exists for: six chosen messages are
+// not a filter anyone can phrase, they are six identities, and the query for
+// them is `id:(a OR b OR c OR …)`.
+//
+// Here rather than in a client for the same reason FormatTerm is: the quoting,
+// the grouping parens and the fact that one value needs neither are all
+// grammar. A client that built this string would get the single-value case
+// wrong first and the quoted-value case wrong second.
+func FormatGroupTerm(field string, values []string, negated bool) string {
+	clean := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		clean = append(clean, quoteValue(v))
+	}
+
+	switch len(clean) {
+	case 0:
+		return ""
+	case 1:
+		// No parens for one value: `id:(a)` parses, but it reads like a
+		// truncated list and round-trips into something a user did not write.
+		return FormatTerm(field, values[0], negated)
+	}
+
+	term := canonicalField(field) + ":(" + strings.Join(clean, " OR ") + ")"
+	if negated {
+		term = "-" + term
+	}
+	return term
+}
+
+// quoteValue applies FormatTerm's quoting rule to a bare value.
+func quoteValue(v string) string {
+	if strings.ContainsAny(v, " \t\n\"") {
+		return `"` + strings.ReplaceAll(v, `"`, `""`) + `"`
+	}
+	return v
 }

@@ -69,6 +69,8 @@ type Compose =
   | { add: string }
   | { remove: string }
   | { field: string; term: string }
+  /** Narrow to a hand-picked set: one term naming several identities. */
+  | { field: string; values: string[]; negated?: boolean }
   /** Add a pipeline stage. A terminal one replaces whichever terminal is on. */
   | { stage: string }
   /** Remove every stage with this verb. */
@@ -97,6 +99,12 @@ export async function compose(q: string, op: Compose): Promise<string> {
     } else {
       params.set('term', op.term);
     }
+  } else if ('values' in op) {
+    // Repeated params, and the server assembles the term. The parens, the OR
+    // and the fact that one value needs neither are grammar.
+    params.set('field', op.field);
+    for (const v of op.values) params.append('values', v);
+    if (op.negated) params.set('negated', 'true');
   } else if ('add' in op) params.set('add', op.add);
   else if ('remove' in op) params.set('remove', op.remove);
   else if ('stage' in op) params.set('stage', op.stage);

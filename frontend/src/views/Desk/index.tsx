@@ -5,11 +5,13 @@ import {
 } from 'lucide-react';
 import { openMessage, previewMessage, useViewerStore } from '../../lib/tabs';
 import { navRow, useRovingFocus } from '../../lib/rovingFocus';
+import { refKey, refOf, useSelectionStore } from '../../lib/selection';
+import { SelectionBar } from './SelectionBar';
 import { Editor } from './Editor';
 import { Results } from './Results';
 import { Pills } from './Pills';
 import {
-  explainQuery, listSaved, runQuery, saveQuery, QueryFailed,
+  explainQuery, listSaved, runQuery, saveQuery, setMessageFlag, QueryFailed,
   type QueryResult, type SavedQuery,
 } from './api';
 import { useQueryStore, compose, queryStages } from '../../lib/filters';
@@ -80,7 +82,25 @@ export const Desk = () => {
     });
   }, []);
 
-  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+  // Selection lives outside Desk and is typed, so it survives a mode change
+  // and can describe a conversation without pretending to be a message.
+  const selection = useSelectionStore(s => s.refs);
+  const selectOnly = useSelectionStore(s => s.only);
+  const selectToggle = useSelectionStore(s => s.toggle);
+  const selectAdd = useSelectionStore(s => s.add);
+  const selectReplaceAll = useSelectionStore(s => s.replaceAll);
+  const clearSelection = useSelectionStore(s => s.clear);
+  const selectedCount = Object.keys(selection).length;
+
+  /** A message, as something selectable. `id:` is how a chosen set is written. */
+  const messageRef = (m: any) => ({
+    kind: 'message' as const, id: m.id, label: m.subject, field: 'id',
+  });
+  const isSelected = (m: any) => Boolean(selection[refKey(messageRef(m))]);
+  // The message ids in the selection, for actions that only apply to messages.
+  const selectedMessageIds = Object.values(selection)
+    .filter(r => r.kind === 'message')
+    .map(r => r.id);
 
   // Arrow keys walk whatever is on screen, in the order it is painted. There
   // is deliberately no focused-row state here: the DOM already knows which
@@ -94,8 +114,8 @@ export const Desk = () => {
   const [counts, setCounts] = useState<Record<string, { total: number; unread: number }>>({});
 
   useEffect(() => {
-    useViewerStore.getState().setSelectedCount(selectedMessageIds.size);
-  }, [selectedMessageIds.size]);
+    useViewerStore.getState().setSelectedCount(selectedCount);
+  }, [selectedCount]);
 
   // The query the rail and the cross-filters compose to.
   //
@@ -133,7 +153,6 @@ export const Desk = () => {
         setMessages(prev => [...prev, ...newMessages]);
       } else {
         setMessages(newMessages);
-        setSelectedMessageIds(new Set());
       }
       setOffset(currentOffset + newMessages.length);
       setHasMore(newMessages.length === 50);
@@ -232,21 +251,36 @@ export const Desk = () => {
     // Read before the hook moves focus: extending a selection has to include
     // the row you extended *from*, and after the move there is no way to know
     // what that was.
-    const from = (document.activeElement as HTMLElement | null)?.dataset?.messageId;
+    const from = refOf(document.activeElement);
 
     navKeyDown(e);
     if (!moving) return;
 
-    const id = (document.activeElement as HTMLElement | null)?.dataset?.messageId;
-    if (!id) return;
+    // Whatever kind of row it is. The handler asks the row rather than knowing
+    // — which is what makes selection work in every mode without a branch per
+    // mode.
+    const ref = refOf(document.activeElement);
+    if (!ref) return;
 
-    setSelectedMessageIds(prev => {
-      if (!e.shiftKey) return new Set([id]);
-      const next = new Set(prev);
-      if (from) next.add(from);
-      next.add(id);
-      return next;
-    });
+    if (!e.shiftKey) {
+      selectOnly(ref);
+      return;
+    }
+    // Extending includes the row extended *from*, which a plain add would drop.
+    if (from) selectAdd(from);
+    selectAdd(ref);
+  };
+
+  // Clicking selects, in every mode, for the same reason arrowing does: the
+  // handler asks the row what it is instead of knowing. Wiring this per row
+  // meant only the message list had it — every other mode could be navigated
+  // to but not selected.
+  const handleClick = (e: React.MouseEvent) => {
+    const ref = refOf(e.target as HTMLElement);
+    if (!ref) return;
+    if (e.shiftKey) selectAdd(ref);
+    else if (e.metaKey || e.ctrlKey) selectToggle(ref);
+    else selectOnly(ref);
   };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -339,6 +373,7 @@ export const Desk = () => {
         className="flex-1 flex flex-col min-w-0"
         tabIndex={0}
         onKeyDown={handleKeyDown}
+        onClick={handleClick}
       >
         <div className="border-b border-border p-2.5 flex flex-col gap-2">
           <Editor
@@ -421,6 +456,22 @@ export const Desk = () => {
           )}
         </div>
 
+        {/* Above the results rather than inside the message list, because
+            selection is a property of Desk and not of messages — it used to
+            exist in exactly one of the five modes this pane can be in. */}
+        <SelectionBar
+          onNarrow={async (field, values) => setQuery(await compose(query, { field, values }))}
+          // Offered only when everything selected is a message, because that
+          // is the only kind this action means anything for. A conversation
+          // and a ticket do not have a read flag.
+          messageIds={selectedMessageIds}
+          onSetFlag={async (flag, on) => {
+            await setMessageFlag(selectedMessageIds, flag, on);
+            fetchMessages(0);
+            fetchCounts();
+          }}
+        />
+
         {/* Anything that is not a list of messages renders through the shared
             result view: groups, counts, tickets, drafts. The message list below
             keeps its own rendering, and every affordance that came with it. */}
@@ -446,35 +497,19 @@ export const Desk = () => {
             <input 
               type="checkbox" 
               className="border-border cursor-pointer"
-              checked={messages.length > 0 && selectedMessageIds.size === messages.length}
+              checked={messages.length > 0 && messages.every(isSelected)}
               ref={(el) => {
                 if (el) {
-                  el.indeterminate = selectedMessageIds.size > 0 && selectedMessageIds.size < messages.length;
+                  el.indeterminate = selectedCount > 0 && !messages.every(isSelected);
                 }
               }}
               onChange={(e) => {
-                if (e.target.checked) {
-                  setSelectedMessageIds(new Set(messages.map(m => m.id)));
-                } else {
-                  setSelectedMessageIds(new Set());
-                }
+                if (e.target.checked) selectReplaceAll(messages.map(messageRef));
+                else clearSelection();
               }}
-              title={selectedMessageIds.size === messages.length ? "Deselect all" : "Select all"}
+              title={messages.length > 0 && messages.every(isSelected) ? 'Deselect all' : 'Select all'}
             />
           </div>
-          {selectedMessageIds.size > 0 && (
-            <div className="flex items-center gap-2 pl-1 pr-2 animate-in fade-in">
-              <span className="text-xs font-semibold text-primary px-2 py-0.5 bg-primary/10 rounded">
-                {selectedMessageIds.size} selected
-              </span>
-              <button 
-                onClick={() => setSelectedMessageIds(new Set())}
-                className="text-xs text-muted-foreground hover:text-foreground underline transition-colors"
-              >
-                Clear
-              </button>
-            </div>
-          )}
           <button onClick={() => { fetchMessages(0); fetchCounts(); }} className={`p-2 hover:bg-accent  transition-colors ${loading ? 'animate-spin' : ''}`}>
             <RefreshCw className="w-4 h-4 text-muted-foreground" />
           </button>
@@ -525,40 +560,41 @@ export const Desk = () => {
               ? (msg.to?.length ? `To: ${msg.to.join(', ')}` : 'No recipient')
               : (msg.from || '(No Sender)');
             const isOpen = msg.id === openMessageId;
-            const isSelected = selectedMessageIds.has(msg.id);
+            const selected = isSelected(msg);
             return (
               <div
                 key={msg.id}
                 {...navRow}
                 // Read by the keyboard handler to extend selection, and the
                 // only thing that tells it this row is a message at all.
-                data-message-id={msg.id}
+                // What this row is, read by the click handlers, the keyboard
+                // handler and the toolbar alike. None of them branch on mode.
+                data-sel-kind="message"
+                data-sel-id={msg.id}
+                data-sel-field="id"
+                data-sel-label={msg.subject}
                 role="option"
-                aria-selected={isSelected}
+                aria-selected={selected}
                 // Preview follows focus, so arrowing updates an already-open
                 // viewer. It deliberately does not bring the viewer forward:
                 // doing that on every keypress is what made the first Down key
                 // switch tabs and the second one do nothing.
                 onFocus={() => previewMessage(msg)}
+                // Selection is handled by the pane, which does it the same way
+                // for every kind of row. This only has to say what a plain
+                // click on a message means, which is "read it".
+                //
+                // A modified click is a selection gesture, not a reading one,
+                // and must not bring the viewer forward — the viewer is a tab,
+                // so opening it hides the list you are selecting in.
                 onClick={(e) => {
-                  if (e.shiftKey) {
-                    const newSelected = new Set(selectedMessageIds);
-                    newSelected.add(msg.id);
-                    setSelectedMessageIds(newSelected);
-                  } else if (e.metaKey || e.ctrlKey) {
-                    const newSelected = new Set(selectedMessageIds);
-                    if (newSelected.has(msg.id)) newSelected.delete(msg.id);
-                    else newSelected.add(msg.id);
-                    setSelectedMessageIds(newSelected);
-                  } else {
-                    setSelectedMessageIds(new Set([msg.id]));
-                  }
+                  if (e.shiftKey || e.metaKey || e.ctrlKey) return;
                   openMessage(msg);
                 }}
                 className={`flex items-center px-4 py-2 border-b border-border/50 cursor-pointer transition-all group relative ${
                   isOpen
                     ? 'bg-primary/15 ring-1 ring-inset ring-primary/40 border-l-4 border-l-primary z-[1]'
-                    : isSelected
+                    : selected
                     ? 'bg-primary/5 hover:bg-primary/10 ring-1 ring-inset ring-primary/20 border-l-4 border-l-transparent'
                     : isUnread
                     ? 'bg-accent/20 hover:bg-accent/40 border-l-4 border-l-transparent'
@@ -566,17 +602,12 @@ export const Desk = () => {
                 }`}
               >
                 <div className="flex items-center gap-2.5 mr-3 shrink-0">
-                  <input 
-                    type="checkbox" 
-                    checked={isSelected} 
-                    onChange={(e) => {
-                      const newSelected = new Set(selectedMessageIds);
-                      if (e.target.checked) newSelected.add(msg.id);
-                      else newSelected.delete(msg.id);
-                      setSelectedMessageIds(newSelected);
-                    }}
-                    onClick={(e) => e.stopPropagation()} 
-                    className="border-border cursor-pointer" 
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => selectToggle(messageRef(msg))}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${msg.subject || 'message'}`}
                   />
                   <Star className="w-4 h-4 text-muted-foreground/40 hover:text-yellow-500 transition-colors" />
                   <div className="w-4 flex items-center justify-center" title={isOpen ? "Currently viewing this message" : undefined}>

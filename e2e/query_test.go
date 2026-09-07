@@ -4,8 +4,11 @@ package e2e
 
 import (
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -317,5 +320,52 @@ func TestExplainCompilesWithoutRunning(t *testing.T) {
 	}
 	if out.Kind != "groups" {
 		t.Errorf("kind = %q, want groups", out.Kind)
+	}
+}
+
+// Desk and the dashboard share one query, and that query may carry a pipeline.
+// Every analytics widget appends its own aggregate, so a shared `| timeline`
+// used to produce two terminal stages and a 400 from all three widgets at once.
+func TestAnalyticsChartsTheFilterNotThePipeline(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+	s := e.startServer()
+
+	get := func(t *testing.T, path string) (int, string) {
+		t.Helper()
+		resp := s.browserRequest(t, "GET", path, "",
+			map[string]string{"Sec-Fetch-Site": "same-origin"})
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+
+	// The same filter, with and without a pipeline, has to chart the same
+	// thing — the stage says what Desk is showing, not which mail is in scope.
+	code, plain := get(t, "/api/analytics?type=volume&q=folder%3Ainbox")
+	if code != 200 {
+		t.Fatalf("plain filter returned %d: %s", code, plain)
+	}
+
+	for _, pipeline := range []string{"| timeline", "| count by week", "| top domain 5"} {
+		path := "/api/analytics?type=volume&q=" + url.QueryEscape("folder:inbox "+pipeline)
+		code, body := get(t, path)
+		if code != 200 {
+			t.Errorf("%q returned %d: %s", pipeline, code, body)
+			continue
+		}
+		if body != plain {
+			t.Errorf("%q charted something different:\n got %s\nwant %s", pipeline, body, plain)
+		}
+	}
+
+	// A query about another entity is still refused, with a sentence saying
+	// why — charting tickets as if they were mail would be worse than an error.
+	code, body := get(t, "/api/analytics?type=volume&q="+url.QueryEscape("status:todo"))
+	if code != 400 {
+		t.Errorf("a ticket query returned %d, want 400", code)
+	}
+	if !strings.Contains(body, "analytics charts mail") {
+		t.Errorf("the refusal does not explain itself: %s", body)
 	}
 }

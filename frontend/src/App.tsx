@@ -145,23 +145,46 @@ const Dashboard = () => {
     return value.replace(/^"|"$/g, '').replace(/""/g, '"');
   };
 
+  // Why the failure is rendered rather than logged: every widget appending its
+  // own aggregate to a shared query used to 400 whenever Desk was aggregating,
+  // and because this only reached the console the dashboard simply showed
+  // yesterday's numbers. A chart that is quietly stale is worse than one that
+  // says it could not load.
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
+      const qs = filter ? `&${new URLSearchParams({ q: filter })}` : '';
       try {
-        const qs = filter ? `&${new URLSearchParams({ q: filter })}` : '';
         const [vRes, sRes, tRes] = await Promise.all([
           fetch(`/api/analytics?type=volume${qs}`),
           fetch(`/api/analytics?type=senders${qs}`),
           fetch(`/api/analytics?type=topics${qs}`)
         ]);
-        if (vRes.ok) setVolume(await vRes.json());
-        if (sRes.ok) setSenders(await sRes.json());
-        if (tRes.ok) setTopics(await tRes.json());
+        if (cancelled) return;
+
+        const failed = [vRes, sRes, tRes].find(r => !r.ok);
+        if (failed) {
+          const body = await failed.json().catch(() => null);
+          setAnalyticsError(body?.error ?? `Analytics failed (${failed.status}).`);
+          // The old numbers are cleared with the error. Leaving them on screen
+          // beside a warning invites reading them as current.
+          setVolume([]); setSenders([]); setTopics([]);
+          return;
+        }
+
+        setAnalyticsError(null);
+        setVolume(await vRes.json());
+        setSenders(await sRes.json());
+        setTopics(await tRes.json());
       } catch (e) {
-        console.error('Failed to fetch analytics', e);
+        if (cancelled) return;
+        setAnalyticsError(e instanceof Error ? e.message : String(e));
       }
     };
     fetchData();
+    return () => { cancelled = true; };
   }, [filter]);
 
   const calendarData = useMemo(() => {
@@ -207,6 +230,13 @@ const Dashboard = () => {
         </div>
       )}
       
+      {analyticsError && (
+        <div className="mb-6 flex items-start gap-2 border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
+          <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
+          <span>{analyticsError}</span>
+        </div>
+      )}
+
       <div className="space-y-6">
         {/* Temporal Volume - Calendar Heatmap */}
         <div className={`p-6 bg-card border  shadow-sm min-h-80 flex flex-col group transition-colors ${applied('on') ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>

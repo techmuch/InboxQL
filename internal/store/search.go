@@ -32,9 +32,32 @@ func scanMessage(scan func(dest ...any) error) (*message.Message, error) {
 	json.Unmarshal([]byte(cc), &m.Cc)
 	json.Unmarshal([]byte(bcc), &m.Bcc)
 	json.Unmarshal([]byte(flags), &m.Flags)
-	m.Date = time.UnixMilli(date)
-	m.InternalDate = time.UnixMilli(internalDate)
+	m.Date = millisToTime(date)
+	m.InternalDate = millisToTime(internalDate)
 	return m, nil
+}
+
+// millisToTime converts a stored timestamp, refusing one it cannot represent.
+//
+// # Why this is not just time.UnixMilli
+//
+// A row whose timestamp was written in the wrong unit — microseconds where the
+// reader expects milliseconds, which is how a zero time.Time reached this
+// database as -62135596800000000 — decodes to a year outside [0,9999]. That
+// value round-trips through Go fine and then fails at the very last step, in
+// encoding/json, and because Encode marshals the whole value before writing a
+// byte, ONE such row makes an entire query return 200 with an empty body.
+//
+// The user-visible result is an inbox that looks empty. That is this project's
+// recurring failure shape — a fault that reads as "nothing matched" rather
+// than as an error — so it is stopped at the row, where it costs one bad
+// timestamp instead of every result that shares a page with it.
+func millisToTime(ms int64) time.Time {
+	t := time.UnixMilli(ms)
+	if y := t.Year(); y < 0 || y > 9999 {
+		return time.Time{}
+	}
+	return t
 }
 
 // SearchQuery describes a message search.

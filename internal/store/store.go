@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 23
+	SchemaVersion = 26
 )
 
 var (
@@ -1014,6 +1014,133 @@ func migrateDB(db *sql.DB) error {
 		currentVersion = 23
 	}
 
+	if currentVersion < 24 {
+		log.Println("Applying schema migration v24 (recover participant names)...")
+		// message_participants has always had a `name` column and it has always
+		// been empty, because both parsers threw the display name away: the
+		// .eml path kept only from[0].Address and the IMAP path rebuilt the
+		// address from mailbox@host, discarding PersonalName.
+		//
+		// The names were never lost, only unread — every message keeps its raw
+		// header. So this is a re-read rather than a re-import, and it is the
+		// entire reason a contact can have a name without asking a model to
+		// guess one from the body.
+		if err := backfillParticipantNames(db); err != nil {
+			return fmt.Errorf("failed to recover participant names: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 24;"); err != nil {
+			return err
+		}
+		currentVersion = 24
+	}
+
+	if currentVersion < 25 {
+		log.Println("Applying schema migration v25 (contacts)...")
+		// A contact is an address someone has corresponded with, and every
+		// message already creates the edges that prove it — message_participants
+		// has held them since v15.
+		//
+		// # What is stored here and what is not
+		//
+		// Stored: identity, names, and anything a person or a model asserted —
+		// facts that cannot be recomputed from the mailbox.
+		//
+		// NOT stored: how many messages, when first seen, when last seen, who
+		// they appear alongside. Those are derived from message_participants on
+		// every read. Caching them here would be a second source of truth that
+		// goes stale the first time a message is deleted or re-imported, and
+		// the two would then disagree with nobody noticing — which is this
+		// project's most familiar failure.
+		//
+		// # Why the rows exist at all, then
+		//
+		// So there is somewhere to put a name, a phone number, a kind, and a
+		// human correction. A derived view has no room for an assertion.
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS contacts (
+				address      TEXT PRIMARY KEY,
+				-- The display name headers give this address, most recent wins.
+				header_name  TEXT,
+				-- What a person typed, which outranks every other source.
+				display_name TEXT,
+				first_name   TEXT,
+				last_name    TEXT,
+				phone        TEXT,
+				org          TEXT,
+				title        TEXT,
+				-- person | organization | system | unknown
+				kind         TEXT NOT NULL DEFAULT 'unknown',
+				-- header | rule | llm | human, so a weaker source never
+				-- overwrites a stronger one.
+				kind_source  TEXT,
+				enriched_by  TEXT,
+				enriched_at  INTEGER,
+				confidence   REAL,
+				created_at   INTEGER NOT NULL,
+				updated_at   INTEGER NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_contacts_kind ON contacts(kind);
+			CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(header_name);
+
+			-- Every address already seen becomes a contact, with the name the
+			-- v24 backfill just recovered. The most frequent spelling wins:
+			-- a long thread names the same person several ways.
+			INSERT INTO contacts (address, header_name, created_at, updated_at)
+			SELECT p.address,
+			       (SELECT p2.name FROM message_participants p2
+			         WHERE p2.address = p.address AND p2.name IS NOT NULL AND p2.name != ''
+			         GROUP BY p2.name ORDER BY COUNT(*) DESC, p2.name LIMIT 1),
+			       CAST(strftime('%s','now') AS INTEGER) * 1000,
+			       CAST(strftime('%s','now') AS INTEGER) * 1000
+			FROM message_participants p
+			GROUP BY p.address
+			ON CONFLICT(address) DO NOTHING;
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v25: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 25;"); err != nil {
+			return err
+		}
+		currentVersion = 25
+	}
+
+	if currentVersion < 26 {
+		log.Println("Applying schema migration v26 (message topics)...")
+		// What a message is about, as rows rather than as a guess.
+		//
+		// `| top topic` has always grouped by the first word of the subject
+		// line, which the code that does it has always described as a
+		// placeholder. On a real archive that put 68% of the mail into two
+		// buckets called "fwd:" and "re:". This is where a real answer goes.
+		//
+		// One message has several topics, so this is a table and not a column.
+		// Source records what produced each one, because a topic asserted by a
+		// model and a topic derived from a subject line are not equally
+		// trustworthy and a reader deserves to know which they are looking at.
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS message_topics (
+				message_id TEXT NOT NULL,
+				topic      TEXT NOT NULL,
+				source     TEXT NOT NULL,
+				confidence REAL,
+				created_at INTEGER NOT NULL,
+				PRIMARY KEY (message_id, topic),
+				FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_message_topics_topic ON message_topics(topic);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v26: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 26;"); err != nil {
+			return err
+		}
+		currentVersion = 26
+	}
+
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)
 	return nil
 }
@@ -1283,6 +1410,12 @@ func SaveMessage(m *message.Message) error {
 	}
 	if err := writeRefs(db, m); err != nil {
 		return fmt.Errorf("indexing references for %s: %w", m.ID, err)
+	}
+	// Every message creates a contact for every address it touches. Here
+	// rather than in a nightly pass so a contact exists the moment its first
+	// message does — and so the two can never be out of step.
+	if err := ensureContacts(db, m); err != nil {
+		return fmt.Errorf("recording contacts for %s: %w", m.ID, err)
 	}
 	return nil
 }

@@ -474,6 +474,36 @@ func printQueryResult(ctx *Context, res *store.QueryResult) error {
 	case "threads":
 		return printThreads(ctx, res)
 
+	case "contacts":
+		if len(res.Contacts) == 0 {
+			ctx.Printf("No contacts matched.\n")
+			return nil
+		}
+		t := p.NewTable("NAME", "ADDRESS", "KIND", "MSGS", "SENT", "LAST SEEN")
+		for _, c := range res.Contacts {
+			last := ""
+			if !c.LastSeen.IsZero() {
+				last = c.LastSeen.Format("2006-01-02")
+			}
+			kind := c.Kind
+			if kind == store.KindSystem {
+				kind = p.Yellow(kind)
+			}
+			t.Row(
+				ui.Truncate(c.Name(), 28),
+				ui.Truncate(c.Address, 34),
+				kind,
+				fmt.Sprintf("%d", c.Messages),
+				fmt.Sprintf("%d", c.Sent),
+				last,
+			)
+		}
+		if err := t.Flush(); err != nil {
+			return err
+		}
+		ctx.Printf("\n%s\n", p.Dim(count(len(res.Contacts), "contact", "contacts")))
+		return nil
+
 	default:
 		if len(res.Messages) == 0 {
 			ctx.Printf("No messages matched.\n")

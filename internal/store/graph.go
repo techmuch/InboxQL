@@ -62,6 +62,12 @@ func participantRows(m *message.Message) []struct{ Role, Addr, Name string } {
 		if addr == "" {
 			return
 		}
+		// The parsed header is the better source: NormaliseAddress can only
+		// recover a name that survived into the address string, and From is
+		// deliberately stored bare because it feeds the content hash.
+		if fromHeader := m.Names[addr]; fromHeader != "" {
+			name = fromHeader
+		}
 		out = append(out, struct{ Role, Addr, Name string }{role, addr, name})
 	}
 	add(RoleFrom, m.From)
@@ -324,5 +330,131 @@ func ReindexGraph() error {
 	if err := backfillParticipants(db); err != nil {
 		return err
 	}
-	return backfillRefs(db)
+	if err := backfillRefs(db); err != nil {
+		return err
+	}
+	// Names first, then contacts: a contact created before its name has been
+	// recovered would be listed by address forever, since ensureContacts only
+	// fills a name it has not got.
+	if err := backfillParticipantNames(db); err != nil {
+		return err
+	}
+	return backfillContacts(db)
+}
+
+// backfillContacts creates a contact for every address already on record.
+//
+// Idempotent, and it never overwrites an assertion: only the header name is
+// touched, and only when the contact has none.
+func backfillContacts(db *sql.DB) error {
+	_, err := db.Exec(`
+		INSERT INTO contacts (address, header_name, created_at, updated_at)
+		SELECT p.address,
+		       (SELECT p2.name FROM message_participants p2
+		         WHERE p2.address = p.address AND p2.name IS NOT NULL AND p2.name != ''
+		         GROUP BY p2.name ORDER BY COUNT(*) DESC, p2.name LIMIT 1),
+		       CAST(strftime('%s','now') AS INTEGER) * 1000,
+		       CAST(strftime('%s','now') AS INTEGER) * 1000
+		FROM message_participants p
+		GROUP BY p.address
+		ON CONFLICT(address) DO UPDATE SET
+			header_name = COALESCE(contacts.header_name, excluded.header_name)`)
+	return err
+}
+
+// HeaderNames maps each address in a raw header block to the display name it
+// was given there.
+//
+// The recovery path for mail already imported. Every message keeps its raw
+// header, so the names discarded at parse time are still on disk — this is what
+// lets the backfill reach them without re-importing anything.
+func HeaderNames(header []byte) map[string]string {
+	if len(header) == 0 {
+		return nil
+	}
+	buf := bytes.NewReader(append(bytes.TrimRight(header, "\r\n"), '\r', '\n', '\r', '\n'))
+	h, err := textproto.NewReader(bufio.NewReader(buf)).ReadMIMEHeader()
+	if err != nil && len(h) == 0 {
+		return nil
+	}
+
+	out := map[string]string{}
+	for _, field := range []string{"From", "To", "Cc", "Bcc"} {
+		for _, raw := range h.Values(field) {
+			list, err := mail.ParseAddressList(raw)
+			if err != nil {
+				// One unparseable recipient list must not cost the names in
+				// the others; headers in a real archive are frequently malformed.
+				continue
+			}
+			for _, a := range list {
+				addr := strings.ToLower(strings.TrimSpace(a.Address))
+				name := strings.TrimSpace(a.Name)
+				if addr == "" || name == "" {
+					continue
+				}
+				if _, seen := out[addr]; !seen {
+					out[addr] = name
+				}
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// backfillParticipantNames recovers display names from stored headers.
+//
+// Runs once, inside the v24 migration. Only fills empty names — a name already
+// recorded came from a live parse and is at least as good.
+func backfillParticipantNames(db *sql.DB) error {
+	rows, err := db.Query(`
+		SELECT m.id, m.header FROM messages m
+		WHERE m.header IS NOT NULL AND m.header != ''
+		  AND EXISTS (SELECT 1 FROM message_participants p
+		              WHERE p.message_id = m.id AND (p.name IS NULL OR p.name = ''))`)
+	if err != nil {
+		return err
+	}
+
+	type named struct {
+		id    string
+		names map[string]string
+	}
+	var pending []named
+	for rows.Next() {
+		var id string
+		var header []byte
+		if err := rows.Scan(&id, &header); err != nil {
+			rows.Close()
+			return err
+		}
+		if names := HeaderNames(header); len(names) > 0 {
+			pending = append(pending, named{id: id, names: names})
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, p := range pending {
+		for addr, name := range p.names {
+			if _, err := tx.Exec(`
+				UPDATE message_participants SET name = ?
+				WHERE message_id = ? AND address = ? AND (name IS NULL OR name = '')`,
+				name, p.id, addr); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }

@@ -33,6 +33,7 @@ type QueryResult struct {
 	Messages []*message.Message `json:"messages,omitempty"`
 	Tickets  []*Ticket          `json:"tickets,omitempty"`
 	Drafts   []*Draft           `json:"drafts,omitempty"`
+	Contacts []*Contact         `json:"contacts,omitempty"`
 	Threads  []*Thread          `json:"threads,omitempty"`
 	Groups   []QueryGroup       `json:"groups,omitempty"`
 	Total    int64              `json:"total,omitempty"`
@@ -45,6 +46,10 @@ type QueryResult struct {
 	SQL  string `json:"sql,omitempty"`
 	Args []any  `json:"args,omitempty"`
 }
+
+// The compiler is told the contact column list once, for the same reason it is
+// handed the message one: the schema lives here, not there.
+func init() { query.SetContactSelectList(ContactSelectList) }
 
 // queryOptions supplies the compiler with the parts that need the database.
 func queryOptions(limit, offset int) query.Options {
@@ -65,14 +70,15 @@ func queryOptions(limit, offset int) query.Options {
 			}
 			return folderClause(folder), true
 		},
-		ThreadIDs:      ThreadMessageIDs,
-		SavedQuery:     savedQueryText,
-		SelfAddresses:  selfAddresses,
-		TimeField:      annotatorTimeField,
-		KnownAnnotator: annotatorExists,
-		FullText:       ftsEnabled.Load(),
-		DefaultLimit:   limit,
-		Offset:         offset,
+		IgnoredTopicWords: ignoredTopicWords,
+		ThreadIDs:         ThreadMessageIDs,
+		SavedQuery:        savedQueryText,
+		SelfAddresses:     selfAddresses,
+		TimeField:         annotatorTimeField,
+		KnownAnnotator:    annotatorExists,
+		FullText:          ftsEnabled.Load(),
+		DefaultLimit:      limit,
+		Offset:            offset,
 	}
 }
 
@@ -149,6 +155,14 @@ func RunQuery(src string, limit, offset int) (*QueryResult, error) {
 		GroupField: plan.GroupField, Bucket: plan.Bucket}
 
 	switch plan.Kind {
+	case query.PlanContacts:
+		contacts, err := scanContacts(plan)
+		if err != nil {
+			return nil, err
+		}
+		res.Kind, res.Contacts, res.Count = "contacts", contacts, len(contacts)
+		return res, nil
+
 	case query.PlanThreads:
 		threads, err := scanThreads(plan)
 		if err != nil {
@@ -244,6 +258,24 @@ func scanDrafts(plan *query.Plan) ([]*Draft, error) {
 			return nil, err
 		}
 		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func scanContacts(plan *query.Plan) ([]*Contact, error) {
+	rows, err := db.Query(plan.SQL, plan.Args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*Contact{}
+	for rows.Next() {
+		c, err := scanContact(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
 	}
 	return out, rows.Err()
 }
@@ -355,6 +387,8 @@ func ExplainQuery(src string) (*QueryResult, error) {
 		kind = "drafts"
 	case query.PlanThreads:
 		kind = "threads"
+	case query.PlanContacts:
+		kind = "contacts"
 	}
 	return &QueryResult{Query: src, Kind: kind, SQL: plan.SQL, Args: plan.Args}, nil
 }
@@ -403,4 +437,22 @@ func ValidateQuery(src string) error {
 		return fmt.Errorf("%w", err)
 	}
 	return nil
+}
+
+// ignoredTopicWords reads the words the user asked not to see as topics.
+//
+// Read per query rather than cached: it is one row, and a cached copy would
+// keep answering with the old list after the setting changed.
+func ignoredTopicWords() []string {
+	raw, err := GetSetting("ignore_words")
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var out []string
+	for _, w := range strings.Split(raw, ",") {
+		if w = strings.ToLower(strings.TrimSpace(w)); w != "" {
+			out = append(out, w)
+		}
+	}
+	return out
 }

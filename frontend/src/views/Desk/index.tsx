@@ -479,12 +479,16 @@ export const Desk = () => {
           <div className="flex-1 min-h-0">
             <Results
               result={result}
-              onDrillDown={async (term, stage) => {
-                // Two composer calls rather than one string: the server owns
-                // where a term goes and where a stage goes, and it already
-                // knows that adding a terminal stage replaces the terminal
-                // that is there.
-                let next = await compose(query, { add: term });
+              onDrillDown={async (terms, stage) => {
+                // One composer call per part rather than one assembled string:
+                // the server owns where a term goes and where a stage goes,
+                // and it already knows that a second term for the same field
+                // replaces the first and that a terminal stage replaces the
+                // terminal that is there.
+                let next = query;
+                for (const term of Array.isArray(terms) ? terms : [terms]) {
+                  next = await compose(next, { add: term });
+                }
                 if (stage) next = await compose(next, { stage });
                 setQuery(next);
               }}

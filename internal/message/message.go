@@ -26,4 +26,15 @@ type Message struct {
 	// "Sent Messages". Empty for rows written before folders were tracked.
 	Mailbox      string    `json:"mailbox,omitempty"`
 	InternalDate time.Time `json:"internalDate"`
+	// Names maps a normalised address to the display name the header gave it.
+	//
+	// Kept separate from From/To/Cc rather than folded into them because
+	// ContentHash is computed over From: putting "Name <addr>" there would
+	// change every hash, and the same message re-imported after the change
+	// would no longer deduplicate against the copy already stored.
+	//
+	// This is the cheapest and most accurate source of a person's name in the
+	// entire system — the header states it, on 98% of real mail — and it was
+	// parsed and thrown away on both the import and the IMAP path.
+	Names map[string]string `json:"names,omitempty"`
 }

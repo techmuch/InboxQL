@@ -44,12 +44,17 @@ func ParseRFC822(raw []byte) (*Message, error) {
 	if date, err := header.Date(); err == nil {
 		msg.Date = date
 	}
+	msg.Names = map[string]string{}
 	if from, err := header.AddressList("From"); err == nil && len(from) > 0 {
 		msg.From = from[0].Address
+		noteName(msg.Names, from[0].Address, from[0].Name)
 	}
-	msg.To = addresses(header, "To")
-	msg.Cc = addresses(header, "Cc")
-	msg.Bcc = addresses(header, "Bcc")
+	msg.To = addresses(header, "To", msg.Names)
+	msg.Cc = addresses(header, "Cc", msg.Names)
+	msg.Bcc = addresses(header, "Bcc", msg.Names)
+	if len(msg.Names) == 0 {
+		msg.Names = nil
+	}
 
 	for {
 		part, err := reader.NextPart()
@@ -106,7 +111,7 @@ func (m *Message) Rehash() {
 	m.ContentHash = hasher.MessageHash(m.MessageID, m.From, m.Subject, m.NormalizedBody)
 }
 
-func addresses(h mail.Header, field string) []string {
+func addresses(h mail.Header, field string, names map[string]string) []string {
 	list, err := h.AddressList(field)
 	if err != nil {
 		return nil
@@ -115,7 +120,25 @@ func addresses(h mail.Header, field string) []string {
 	for _, a := range list {
 		if a.Address != "" {
 			out = append(out, a.Address)
+			noteName(names, a.Address, a.Name)
 		}
 	}
 	return out
+}
+
+// noteName records a display name, lowercasing the address so it matches the
+// key message_participants stores.
+//
+// First name wins. A long thread names the same person several ways — "Dave",
+// "David Fullmer", "david" — and taking the last would make the answer depend
+// on header order, which is not a fact about the person.
+func noteName(names map[string]string, addr, name string) {
+	name = strings.TrimSpace(name)
+	addr = strings.ToLower(strings.TrimSpace(addr))
+	if names == nil || addr == "" || name == "" {
+		return
+	}
+	if _, seen := names[addr]; !seen {
+		names[addr] = name
+	}
 }

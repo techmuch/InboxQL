@@ -19,6 +19,8 @@ const (
 	PlanTickets
 	// PlanDrafts returns draft rows.
 	PlanDrafts
+	// PlanContacts returns contact rows.
+	PlanContacts
 	// PlanThreads returns conversation keys, one per row.
 	//
 	// Unlike every other kind, the statement is not the answer — it selects
@@ -119,7 +121,7 @@ func (p *pipeline) read(stages []Stage) error {
 			p.limit = s.N
 			p.sample = true
 
-		case StageCount, StageTop, StageSeries, StageAggregate, StageParticipants, StageTimeline:
+		case StageCount, StageTop, StageSeries, StageAggregate, StageParticipants, StageTimeline, StageNetwork:
 			if p.terminal != nil {
 				return fmt.Errorf("a query can end in only one aggregate; found %s after %s", s.Kind, p.terminal.Kind)
 			}
@@ -163,11 +165,17 @@ func (p *pipeline) build() (*Plan, error) {
 	if p.terminal != nil && p.terminal.Kind == StageTimeline {
 		return p.buildTimeline()
 	}
+	if p.terminal != nil && p.terminal.Kind == StageNetwork {
+		return p.buildNetwork()
+	}
 	if p.entity == EntityTicket {
 		return p.buildTickets()
 	}
 	if p.entity == EntityDraft {
 		return p.buildDrafts()
+	}
+	if p.entity == EntityContact {
+		return p.buildContacts()
 	}
 	if p.terminal == nil {
 		return p.buildMessages()
@@ -430,7 +438,7 @@ func (p *pipeline) buildScalarCount() (*Plan, error) {
 
 // buildGroupCount counts messages per distinct value of a grouping key.
 func (p *pipeline) buildGroupCount(field string, limit int, desc bool) (*Plan, error) {
-	g, err := groupKey(field)
+	g, err := groupKey(field, p.opt)
 	if err != nil {
 		return nil, err
 	}
@@ -572,7 +580,7 @@ type group struct {
 	chronological bool
 }
 
-func groupKey(field string) (group, error) {
+func groupKey(field string, opt Options) (group, error) {
 	f := strings.ToLower(field)
 
 	switch f {
@@ -623,10 +631,33 @@ func groupKey(field string) (group, error) {
 		// the dashboard's Topic Trends widget has always shown, and expressing
 		// it as a grouping key is what let the hand-rolled GetTopicStats go.
 		// Real topics are a job for an annotator.
-		return group{
-			expr:   "LOWER(SUBSTR(m.subject, 1, INSTR(m.subject || ' ', ' ') - 1))",
-			having: "m.subject != ''",
-		}, nil
+		// Extracted topics where they exist, the subject's first word where
+		// they do not.
+		//
+		// Degrading per message rather than per mailbox is what makes running
+		// the annotator worth doing incrementally: every message it reaches
+		// gets a real topic, and the rest keep the placeholder answer instead
+		// of vanishing from the chart.
+		expr := "COALESCE(mt.topic, LOWER(SUBSTR(m.subject, 1, INSTR(m.subject || ' ', ' ') - 1)))"
+		g := group{
+			expr: expr,
+			join: "LEFT JOIN message_topics mt ON mt.message_id = m.id",
+			// Parenthesised: the ignore filter is appended with AND, which
+			// binds tighter than OR — without these the exclusion applied to
+			// only half the condition and `fwd:` came straight back.
+			having: "(m.subject != '' OR mt.topic IS NOT NULL)",
+		}
+
+		// The ignore list belongs to the language, not to one consumer of it.
+		if opt.IgnoredTopicWords != nil {
+			if words := opt.IgnoredTopicWords(); len(words) > 0 {
+				g.having += " AND " + expr + " NOT IN (" + placeholders(len(words)) + ")"
+				for _, w := range words {
+					g.preArgs = append(g.preArgs, strings.ToLower(strings.TrimSpace(w)))
+				}
+			}
+		}
+		return g, nil
 
 	case "thread":
 		return group{expr: threadKeyExpr}, nil
@@ -699,4 +730,142 @@ func (p *pipeline) buildTimeline() (*Plan, error) {
 
 	return &Plan{SQL: sql, Args: args, Kind: PlanThreads, Limit: limit,
 		Entity: p.entity, Ordered: true}, nil
+}
+
+// contactSelectList is the column list store.scanContact expects.
+//
+// Passed in by the store for the same reason the message list is: this package
+// stays out of the schema's business.
+var contactSelectList = ""
+
+// SetContactSelectList lets the store declare its contact column list once.
+func SetContactSelectList(cols string) { contactSelectList = cols }
+
+// buildContacts plans a query over the contacts table.
+//
+// Ordered by how much mail there is, because "who do I deal with" is almost
+// always the question — an alphabetical contact list is a phone book, and a
+// phone book is not what a mailbox is for.
+func (p *pipeline) buildContacts() (*Plan, error) {
+	args := append([]any{}, p.args...)
+
+	if p.terminal != nil {
+		switch p.terminal.Kind {
+		case StageCount:
+			if p.terminal.Field == "" {
+				return &Plan{
+					SQL:    "SELECT COUNT(*) FROM contacts c WHERE " + p.where,
+					Args:   args,
+					Kind:   PlanScalar,
+					Entity: EntityContact,
+				}, nil
+			}
+			return p.buildContactGroups(p.terminal.Field, p.clampLimit(200))
+		case StageTop:
+			return p.buildContactGroups(p.terminal.Field, p.clampLimit(p.terminal.N))
+		default:
+			return nil, fmt.Errorf("%s does not apply to contacts", p.terminal.Kind)
+		}
+	}
+
+	order := "messages DESC, c.address ASC"
+	if p.sort != nil {
+		switch strings.ToLower(p.sort.Field) {
+		case "messages", "":
+			order = "messages"
+		case "name":
+			order = "COALESCE(NULLIF(c.display_name, ''), NULLIF(c.header_name, ''), c.address)"
+		case "email", "address":
+			order = "c.address"
+		case "seen", "last":
+			order = "last_seen"
+		default:
+			return nil, fmt.Errorf("cannot sort contacts by %q (try messages, name, email or seen)", p.sort.Field)
+		}
+		if p.sort.Desc {
+			order += " DESC"
+		} else {
+			order += " ASC"
+		}
+	}
+
+	limit := p.clampLimit(p.opt.defaultLimit())
+	args = append(args, limit)
+	sql := "SELECT " + contactSelectList + " FROM contacts c WHERE " + p.where +
+		" ORDER BY " + order + " LIMIT ?"
+	if p.opt.Offset > 0 {
+		sql += " OFFSET ?"
+		args = append(args, p.opt.Offset)
+	}
+	return &Plan{SQL: sql, Args: args, Kind: PlanContacts, Limit: limit, Entity: EntityContact}, nil
+}
+
+func (p *pipeline) buildContactGroups(field string, limit int) (*Plan, error) {
+	var expr string
+	switch strings.ToLower(field) {
+	case "kind":
+		expr = "c.kind"
+	case "org":
+		expr = "COALESCE(NULLIF(c.org, ''), '(unknown)')"
+	case "domain":
+		expr = "SUBSTR(c.address, INSTR(c.address, '@') + 1)"
+	default:
+		return nil, fmt.Errorf("cannot group contacts by %q (try kind, org or domain)", field)
+	}
+
+	args := append([]any{}, p.args...)
+	args = append(args, limit)
+	sql := "SELECT " + expr + " AS label, COUNT(*) AS value FROM contacts c WHERE " + p.where +
+		" GROUP BY label ORDER BY value DESC LIMIT ?"
+	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true,
+		Entity: EntityContact, GroupField: field}, nil
+}
+
+// placeholders builds "?, ?, ?" for an IN clause.
+//
+// n is always a slice length this package computed, never anything a user
+// supplied, so the values still arrive as bound arguments.
+func placeholders(n int) string {
+	if n <= 0 {
+		return "NULL"
+	}
+	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
+}
+
+// buildNetwork returns who appears alongside whom.
+//
+// # Why it is computed and not stored
+//
+// An edge is "these two were on the same message", which message_participants
+// already records — a self-join is the whole implementation. An edges table
+// would be a cache of a join, and it would go stale the first time a message
+// was deleted or re-imported, with nothing to notice.
+//
+// # Two kinds of edge, deliberately distinguished
+//
+// `corresponded` is one of them sending to the other; `co-present` is both
+// being recipients of someone else's message. The second is much weaker
+// evidence of a relationship — everyone cc'd on a company-wide announcement is
+// co-present with everyone else — so it is counted separately rather than
+// summed into one misleading number.
+func (p *pipeline) buildNetwork() (*Plan, error) {
+	limit := p.clampLimit(p.terminal.N)
+	args := append([]any{}, p.args...)
+	args = append(args, p.args...)
+	args = append(args, limit)
+
+	scope := "SELECT m.id FROM messages m WHERE " + p.effectiveWhere()
+
+	sql := `SELECT a.address || ' — ' || b.address AS label, COUNT(DISTINCT a.message_id) AS value
+		FROM message_participants a
+		JOIN message_participants b
+		  ON a.message_id = b.message_id AND a.address < b.address
+		WHERE a.message_id IN (` + scope + `)
+		  AND b.message_id IN (` + scope + `)
+		GROUP BY label
+		ORDER BY value DESC
+		LIMIT ?`
+
+	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true,
+		GroupField: "pair"}, nil
 }

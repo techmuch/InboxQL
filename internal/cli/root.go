@@ -134,7 +134,7 @@ const (
 var commandOrder = []string{
 	"init", "start", "version", "doctor",
 	"account", "user", "vault", "llm", "maintenance", "backup", "restore",
-	"import", "export", "errors", "annotate", "ticket",
+	"import", "export", "errors", "annotate", "ticket", "contact",
 	"query", "saved", "sql", "search", "read", "analyze", "draft", "send", "outbox",
 }
 
@@ -152,7 +152,7 @@ var commandGroup = map[string]string{
 	"account": groupAdmin, "user": groupAdmin, "vault": groupAdmin, "llm": groupAdmin,
 	"maintenance": groupAdmin, "backup": groupAdmin, "restore": groupAdmin,
 	"import": groupAdmin, "export": groupAdmin, "errors": groupAdmin,
-	"annotate": groupAdmin, "ticket": groupAdmin,
+	"annotate": groupAdmin, "ticket": groupAdmin, "contact": groupAdmin,
 	// query and sql lead the agent group: they are the general tools, and
 	// search is the narrow one kept for compatibility with existing callers.
 	"query": groupAgent, "saved": groupAgent, "sql": groupAgent,

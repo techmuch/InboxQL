@@ -227,22 +227,44 @@ func parseIMAPMessage(accountID string, imapMsg *imap.Message) (*message.Message
 		if !env.Date.IsZero() {
 			msg.Date = env.Date
 		}
+		// Names are recorded beside the addresses, never inside them: From
+		// feeds the content hash, so folding a display name into it would make
+		// the same message fail to deduplicate against the copy already stored.
+		msg.Names = map[string]string{}
+		noteAddr := func(a *imap.Address) string {
+			if a == nil || a.MailboxName == "" || a.HostName == "" {
+				return ""
+			}
+			addr := strings.ToLower(a.MailboxName + "@" + a.HostName)
+			if name := strings.TrimSpace(a.PersonalName); name != "" {
+				if _, seen := msg.Names[addr]; !seen {
+					msg.Names[addr] = name
+				}
+			}
+			return a.MailboxName + "@" + a.HostName
+		}
+
 		if len(env.From) > 0 {
-			f := env.From[0]
-			if f.MailboxName != "" && f.HostName != "" {
-				msg.From = fmt.Sprintf("%s@%s", f.MailboxName, f.HostName)
+			if addr := noteAddr(env.From[0]); addr != "" {
+				msg.From = addr
 			}
 		}
 		if len(env.To) > 0 {
 			var to []string
 			for _, a := range env.To {
-				if a.MailboxName != "" && a.HostName != "" {
-					to = append(to, fmt.Sprintf("%s@%s", a.MailboxName, a.HostName))
+				if addr := noteAddr(a); addr != "" {
+					to = append(to, addr)
 				}
 			}
 			if len(to) > 0 {
 				msg.To = to
 			}
+		}
+		for _, a := range env.Cc {
+			noteAddr(a)
+		}
+		if len(msg.Names) == 0 {
+			msg.Names = nil
 		}
 	}
 

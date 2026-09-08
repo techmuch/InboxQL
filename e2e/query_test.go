@@ -369,3 +369,116 @@ func TestAnalyticsChartsTheFilterNotThePipeline(t *testing.T) {
 		t.Errorf("the refusal does not explain itself: %s", body)
 	}
 }
+
+// Every message creates a contact, and what is counted about them is derived
+// from the participant edges rather than cached.
+func TestContactsAreCreatedFromMail(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+
+	var contacts []struct {
+		Address  string `json:"address"`
+		Kind     string `json:"kind"`
+		Messages int64  `json:"messages"`
+	}
+	r := e.run("--json", "contact", "list")
+	if r.ExitCode != 0 {
+		t.Fatalf("contact list: %s%s", r.Stdout, r.Stderr)
+	}
+	r.JSON(t, &contacts)
+
+	byAddress := map[string]int64{}
+	for _, c := range contacts {
+		byAddress[c.Address] = c.Messages
+	}
+	for _, want := range []string{"alice@acme.com", "bob@acme.com", "me@example.com"} {
+		if byAddress[want] == 0 {
+			t.Errorf("no contact for %s, or no messages counted: %v", want, byAddress)
+		}
+	}
+
+	// The display name from the header. Both parsers used to discard it, so a
+	// contact could only ever be known by its address.
+	r = e.run("--json", "contact", "show", "alice@acme.com")
+	if r.ExitCode != 0 {
+		t.Fatalf("contact show: %s%s", r.Stdout, r.Stderr)
+	}
+	var alice struct {
+		HeaderName string `json:"headerName"`
+		Messages   int64  `json:"messages"`
+		Sent       int64  `json:"sent"`
+	}
+	r.JSON(t, &alice)
+	if alice.HeaderName == "" {
+		t.Error("alice has no name; the display name in her From header was dropped")
+	}
+	if alice.Sent == 0 {
+		t.Error("alice sent nothing, but the fixture has her sending")
+	}
+
+	// Contact fields are query terms, like every other entity's.
+	if r := e.run("query", "in:contacts messages>1"); r.ExitCode != 0 {
+		t.Errorf("in:contacts messages>1: %s%s", r.Stdout, r.Stderr)
+	}
+}
+
+// The one classification that matters most is the one that must not fire: a
+// person who forwards an automated message is still a person.
+func TestClassificationIsConservative(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+
+	if r := e.run("contact", "classify"); r.ExitCode != 0 {
+		t.Fatalf("contact classify: %s%s", r.Stdout, r.Stderr)
+	}
+
+	var contacts []struct {
+		Address string `json:"address"`
+		Kind    string `json:"kind"`
+	}
+	r := e.run("--json", "contact", "list")
+	r.JSON(t, &contacts)
+
+	for _, c := range contacts {
+		// Everyone in the fixture is a person or unknown; nobody is a system.
+		// Getting this wrong on the mailbox owner is the failure this whole
+		// rule set is shaped around avoiding.
+		if c.Kind == "system" {
+			t.Errorf("%s was classified as a system", c.Address)
+		}
+	}
+}
+
+// The relationship graph is a self-join over edges that already exist, so it
+// needs no storage and cannot go stale.
+func TestNetworkStageReportsCoOccurrence(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+
+	r := e.run("--json", "query", "| network 10")
+	if r.ExitCode != 0 {
+		t.Fatalf("network: %s%s", r.Stdout, r.Stderr)
+	}
+	var out struct {
+		Kind   string `json:"kind"`
+		Groups []struct {
+			Label string  `json:"label"`
+			Value float64 `json:"value"`
+		} `json:"groups"`
+	}
+	r.JSON(t, &out)
+	if out.Kind != "groups" {
+		t.Fatalf("kind = %q, want groups", out.Kind)
+	}
+	if len(out.Groups) == 0 {
+		t.Fatal("no pairs found; the fixture has messages with several recipients")
+	}
+	for _, g := range out.Groups {
+		if !strings.Contains(g.Label, " — ") {
+			t.Errorf("pair label %q does not name two addresses", g.Label)
+		}
+		if g.Value < 1 {
+			t.Errorf("pair %q has a count of %v", g.Label, g.Value)
+		}
+	}
+}

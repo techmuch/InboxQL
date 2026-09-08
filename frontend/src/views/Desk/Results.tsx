@@ -1,7 +1,7 @@
 import { Inbox } from 'lucide-react';
 import { openMessage, previewMessage } from '../../lib/tabs';
 import { navRow } from '../../lib/rovingFocus';
-import { drillDownTerm, type QueryResult } from './api';
+import { contactName, drillDownTerm, type Contact, type QueryResult } from './api';
 import { ThreadResult } from './Timeline';
 
 interface ResultsProps {
@@ -14,7 +14,7 @@ interface ResultsProps {
    * pipeline and produces two terminal stages on one that has one, which the
    * planner rejects — a term and a stage are different halves of a query.
    */
-  onDrillDown: (term: string, stage?: string) => void;
+  onDrillDown: (terms: string | string[], stage?: string) => void;
 }
 
 /**
@@ -35,6 +35,11 @@ export const Results = ({ result, onDrillDown }: ResultsProps) => {
       return <TicketResult result={result} onDrillDown={onDrillDown} />;
     case 'drafts':
       return <DraftResult result={result} />;
+    case 'contacts': {
+      const contacts = result.contacts ?? [];
+      if (contacts.length === 0) return <Empty label="No contacts matched" />;
+      return <ContactResult contacts={contacts} onDrillDown={onDrillDown} />;
+    }
     case 'threads': {
       const threads = result.threads ?? [];
       if (threads.length === 0) return <Empty label="No conversations matched" />;
@@ -274,5 +279,80 @@ const Empty = ({ label }: { label: string }) => (
   <div className="flex flex-col items-center justify-center h-full gap-2 py-16 text-muted-foreground">
     <Inbox size={28} className="opacity-40" />
     <p className="text-sm">{label}</p>
+  </div>
+);
+
+/**
+ * Contacts.
+ *
+ * Every message already created these — message_participants has recorded one
+ * row per address since v15. What was missing was somewhere to put a name and
+ * a way to look at them.
+ *
+ * Activating a contact narrows the query to their mail, which is what a
+ * contact is *for*: the address is the least interesting thing about them.
+ */
+const ContactResult = ({
+  contacts,
+  onDrillDown,
+}: {
+  contacts: Contact[];
+  onDrillDown: (terms: string | string[], stage?: string) => void;
+}) => (
+  <div className="overflow-auto h-full">
+    <table className="w-full text-sm">
+      <thead className="sticky top-0 bg-background border-b border-border">
+        <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <th className="px-4 py-2 font-medium">Name</th>
+          <th className="px-4 py-2 font-medium w-64">Address</th>
+          <th className="px-4 py-2 font-medium w-28">Kind</th>
+          <th className="px-4 py-2 font-medium w-20 text-right">Messages</th>
+          <th className="px-4 py-2 font-medium w-28">Last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {contacts.map(c => (
+          <tr
+            key={c.address}
+            {...navRow}
+            data-sel-kind="contact"
+            data-sel-id={c.address}
+            data-sel-field="email"
+            data-sel-label={contactName(c)}
+            // Two terms, not one string: the entity has to move as well.
+            // `anyone:x` alone leaves `in:contacts` in place, which filters
+            // the contact list to their correspondents — a real answer to a
+            // question nobody asked by clicking a person's name.
+            onClick={() => onDrillDown([`anyone:${c.address}`, 'in:messages'])}
+            title="Show their mail"
+            className="border-b border-border/50 cursor-pointer hover:bg-accent/40"
+          >
+            <td className="px-4 py-1.5 truncate max-w-0">{contactName(c)}</td>
+            <td className="px-4 py-1.5 truncate max-w-0 font-mono text-xs text-muted-foreground">
+              {c.address}
+            </td>
+            <td className="px-4 py-1.5">
+              {/* System is the one worth seeing at a glance: it is the reason
+                  a "contact" list is not just an address book. */}
+              <span className={`px-1.5 py-0.5 text-[11px] font-mono ${
+                c.kind === 'system'
+                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                  : c.kind === 'unknown'
+                    ? 'text-muted-foreground'
+                    : 'bg-green-500/10 text-green-600 dark:text-green-400'
+              }`}>
+                {c.kind}
+              </span>
+            </td>
+            <td className="px-4 py-1.5 text-right font-mono tabular-nums">
+              {c.messages.toLocaleString()}
+            </td>
+            <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
+              {c.lastSeen ? new Date(c.lastSeen).toLocaleDateString() : ''}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   </div>
 );

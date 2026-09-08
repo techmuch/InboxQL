@@ -7,7 +7,7 @@ import type { Thread, ThreadEntry } from './api';
 interface ThreadResultProps {
   threads: Thread[];
   /** Narrow the query to one conversation. */
-  onDrillDown: (term: string, stage?: string) => void;
+  onDrillDown: (terms: string | string[], stage?: string) => void;
 }
 
 /**
@@ -54,7 +54,7 @@ const ThreadRow = ({
 }: {
   thread: Thread;
   defaultOpen: boolean;
-  onDrillDown: (term: string, stage?: string) => void;
+  onDrillDown: (terms: string | string[], stage?: string) => void;
 }) => {
   const [open, setOpen] = useState(defaultOpen);
   const Chevron = open ? ChevronDown : ChevronRight;

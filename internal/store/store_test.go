@@ -47,10 +47,21 @@ func TestDashboardWidgetsAreQueries(t *testing.T) {
 		labels[g.Label] = true
 	}
 	// The first word of the subject line, which is what this widget has always
-	// shown. "Re: Quarterly invoice attached" normalises to "re:".
-	for _, want := range []string{"quarterly", "lunch", "your", "weekly"} {
+	// shown.
+	for _, want := range []string{"quarterly", "lunch", "weekly"} {
 		if !labels[want] {
 			t.Errorf("topics did not include %q: %v", want, labels)
+		}
+	}
+
+	// The ignore list is part of the language now, not something the dashboard
+	// applied on its own. It used to strip these while `| top topic` in Desk
+	// showed them, so the same question had two answers depending on where it
+	// was asked — "re:" and "fwd:" led the list in one place and were absent
+	// in the other. "your" is in the seeded default list.
+	for _, ignored := range []string{"your", "re:", "fwd:", "the"} {
+		if labels[ignored] {
+			t.Errorf("topics included the ignored word %q: %v", ignored, labels)
 		}
 	}
 }

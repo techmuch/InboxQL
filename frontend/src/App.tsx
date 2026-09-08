@@ -961,6 +961,8 @@ componentRegistry.register('query', Desk);
 componentRegistry.register('search', () => <div className="p-8 text-muted-foreground italic text-center mt-20 font-medium">Search functionality coming soon...</div>);
 componentRegistry.register('settings', SettingsView);
 componentRegistry.register('agents', AgentManager);
+componentRegistry.register('viewer', MessageViewer);
+// The old id, so a layout persisted before the rename still resolves.
 componentRegistry.register('message', MessageViewer);
 componentRegistry.register('errors', ErrorLog);
 

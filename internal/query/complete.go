@@ -300,6 +300,8 @@ func stageSummary(name string) string {
 		return "expand to whole conversations"
 	case "timeline":
 		return "conversations, with the tickets and drafts they produced"
+	case "network":
+		return "who appears alongside whom, and how often"
 	case "participants":
 		return "who appears, and how often"
 	case "extract":

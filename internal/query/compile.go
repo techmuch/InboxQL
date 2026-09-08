@@ -16,6 +16,14 @@ import (
 type Options struct {
 	// FolderSQL returns the predicate for a named folder view over alias `m`.
 	FolderSQL func(folder string) (string, bool)
+	// IgnoredTopicWords are the subject words that are not topics.
+	//
+	// Supplied here rather than filtered by whoever renders a chart: the
+	// dashboard stripped them and the query language did not, so `| top topic`
+	// in Desk led with `fwd:` and `re:` while Topic Trends hid them — one
+	// question with two answers depending on where it was asked.
+	IgnoredTopicWords func() []string
+
 	// ThreadIDs resolves a message id to every message in its thread.
 	//
 	// Resolved in Go rather than compiled to a recursive CTE because the CTE
@@ -119,6 +127,10 @@ func (c *compiler) idColumn() string {
 		return "t.id"
 	case EntityDraft:
 		return "d.id"
+	case EntityContact:
+		// A contact's identity is its address; there is no separate key,
+		// because two rows for one address would be two contacts.
+		return "c.address"
 	}
 	return "m.id"
 }
@@ -247,6 +259,11 @@ func (c *compiler) term(t *Term, negated bool) (string, error) {
 		return sql, at(t, err)
 	}
 
+	if c.entity == EntityContact {
+		sql, err := c.contactTerm(t, negated)
+		return sql, at(t, err)
+	}
+
 	sql, err := c.dispatch(t, negated)
 	if err != nil {
 		return "", at(t, err)
@@ -261,6 +278,82 @@ func (c *compiler) term(t *Term, negated bool) (string, error) {
 // correspondent yet — so the address fields are substring tests over that JSON
 // rather than the anti-join a message query uses. `-to:x` is still "no
 // recipient is x", because the column holds the whole list.
+// contactTerm compiles a term about a contact.
+//
+// The counted fields are correlated subqueries over message_participants
+// rather than stored columns. That is slower per row and it is the whole
+// point: a cached count is a second answer to "how much mail is there from
+// this person", and it goes wrong the first time a message is deleted.
+func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
+	switch t.Field {
+	case "in":
+		// Read by Query.Entity; it selects the source, it does not filter.
+		return "1=1", nil
+
+	case "id", "email":
+		if t.Field == "id" || t.Op == OpExact {
+			return wrap("c.address = "+c.arg(strings.ToLower(t.Value)), negated), nil
+		}
+		return wrap(c.stringPredicate("c.address", t), negated), nil
+
+	case "name":
+		// Every place a name can come from, strongest first — asking for a
+		// name should find the contact whatever taught the system to call
+		// them that.
+		return wrap("("+c.stringPredicate("COALESCE(c.display_name, '')", t)+
+			" OR "+c.stringPredicate("COALESCE(c.header_name, '')", t)+
+			" OR "+c.stringPredicate("COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')", t)+
+			")", negated), nil
+
+	case "kind":
+		if t.Op == OpGlob {
+			return wrap(c.stringPredicate("c.kind", t), negated), nil
+		}
+		return wrap("c.kind = "+c.arg(strings.ToLower(t.Value)), negated), nil
+
+	case "org":
+		return wrap(c.stringPredicate("COALESCE(c.org, '')", t), negated), nil
+
+	case "phone":
+		return wrap(c.stringPredicate("COALESCE(c.phone, '')", t), negated), nil
+
+	case "messages", "sent":
+		col := "(SELECT COUNT(DISTINCT p.message_id) FROM message_participants p WHERE p.address = c.address)"
+		if t.Field == "sent" {
+			col = "(SELECT COUNT(*) FROM message_participants p WHERE p.address = c.address AND p.role = 'from')"
+		}
+		op, err := comparisonOperator(t.Op, "=")
+		if err != nil {
+			return "", err
+		}
+		n, err := strconv.ParseFloat(strings.TrimSpace(t.Value), 64)
+		if err != nil {
+			return "", fmt.Errorf("%s: %q is not a number", t.Field, t.Value)
+		}
+		return wrap(col+" "+op+" "+c.arg(n), negated), nil
+
+	case "has":
+		switch strings.ToLower(t.Value) {
+		case "phone":
+			return wrap("COALESCE(c.phone, '') != ''", negated), nil
+		case "name":
+			return wrap("(COALESCE(c.display_name, '') != '' OR COALESCE(c.header_name, '') != '')", negated), nil
+		case "org":
+			return wrap("COALESCE(c.org, '') != ''", negated), nil
+		}
+		return "", fmt.Errorf("has:%s is not something a contact can have (try phone, name or org)", t.Value)
+	}
+
+	// Anything else is a question about their mail, answered through the edges.
+	inner, args, err := CompileFilterFor(&Term{Field: t.Field, Value: t.Value, Op: t.Op}, c.opt, EntityMessage)
+	if err != nil {
+		return "", fmt.Errorf("%s is not a contact field: %w", t.Field, err)
+	}
+	c.args = append(c.args, args...)
+	return wrap("EXISTS (SELECT 1 FROM message_participants p JOIN messages m ON m.id = p.message_id "+
+		"WHERE p.address = c.address AND ("+inner+"))", negated), nil
+}
+
 func (c *compiler) draftTerm(t *Term, negated bool) (string, error) {
 	switch t.Field {
 	case "folder":
@@ -391,6 +484,12 @@ func (c *compiler) dispatch(t *Term, negated bool) (string, error) {
 
 	case "extract":
 		return c.extractTerm(t, negated)
+
+	case "topic":
+		// An anti-join, like every other multi-valued field: -topic:x has to
+		// mean "no topic is x", not "some topic is not x".
+		return wrap("EXISTS (SELECT 1 FROM message_topics mt WHERE mt.message_id = m.id AND "+
+			c.stringPredicate("mt.topic", t)+")", negated), nil
 
 	case "thread":
 		return c.threadTerm(t, negated)

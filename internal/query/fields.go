@@ -38,6 +38,7 @@ const (
 	EntityMessage = "message"
 	EntityTicket  = "ticket"
 	EntityDraft   = "draft"
+	EntityContact = "contact"
 )
 
 // Entities are the row sources a query can be about, and the values `in:`
@@ -51,10 +52,13 @@ var Entities = map[string]string{
 	"ticket":   EntityTicket,
 	"drafts":   EntityDraft,
 	"draft":    EntityDraft,
+	"contacts": EntityContact,
+	"contact":  EntityContact,
+	"people":   EntityContact,
 }
 
 // EntityNames lists what `in:` accepts, for help and completion.
-var EntityNames = []string{"mail", "drafts", "tickets"}
+var EntityNames = []string{"mail", "drafts", "tickets", "contacts"}
 
 // Field declares one queryable field.
 type Field struct {
@@ -214,6 +218,11 @@ var Registry = []Field{
 		Summary: "every message in that conversation", Example: "thread:<message-id or thread key>",
 	},
 	{
+		Name: "topic", Entity: EntityMessage, Type: TypeText,
+		Ops:     matchOps,
+		Summary: "a topic an annotator extracted", Example: "topic:invoices",
+	},
+	{
 		// The field a hand-picked set is written as. Selecting six messages and
 		// asking to see just those is not a filter anyone can phrase — it is
 		// six identities — so the language needs a way to name one.
@@ -277,6 +286,54 @@ var Registry = []Field{
 	{
 		Name: "id", Entity: EntityDraft, Type: TypeIdent,
 		Summary: "this exact draft", Example: "in:drafts id:(a OR b)",
+	},
+
+	// --- contacts ----------------------------------------------------------
+	//
+	// A contact is an address someone has corresponded with. The counted
+	// fields — messages, sent, received — are derived from the participant
+	// edges on every read rather than cached, so they cannot disagree with the
+	// mailbox they describe.
+	{
+		Name: "email", Entity: EntityContact, Type: TypeAddress, Primary: true,
+		Aliases: []string{"address"},
+		Ops:     matchOps,
+		Summary: "a contact's address", Example: "in:contacts email:*@acme.com",
+	},
+	{
+		Name: "name", Entity: EntityContact, Type: TypeText,
+		Ops:     matchOps,
+		Summary: "a contact's name, however it was learned", Example: "name:fullmer",
+	},
+	{
+		Name: "kind", Entity: EntityContact, Type: TypeEnum,
+		Ops:     []Op{OpMatch, OpGlob},
+		Enum:    []string{"person", "organization", "system", "unknown"},
+		Summary: "person, organisation or automated sender", Example: "kind:system",
+	},
+	{
+		Name: "messages", Entity: EntityContact, Type: TypeNumber,
+		Ops:     compareOps,
+		Summary: "how many messages they appear on", Example: "messages>10",
+	},
+	{
+		Name: "sent", Entity: EntityContact, Type: TypeNumber,
+		Ops:     compareOps,
+		Summary: "how many they sent", Example: "sent>0",
+	},
+	{
+		Name: "org", Entity: EntityContact, Type: TypeText,
+		Ops:     matchOps,
+		Summary: "the organisation they belong to", Example: "org:acme",
+	},
+	{
+		Name: "phone", Entity: EntityContact, Type: TypeText,
+		Ops:     matchOps,
+		Summary: "a captured phone number", Example: "has:phone",
+	},
+	{
+		Name: "id", Entity: EntityContact, Type: TypeIdent,
+		Summary: "this exact contact", Example: "in:contacts id:(a OR b)",
 	},
 
 	{
@@ -564,7 +621,7 @@ var Buckets = []string{"hour", "day", "week", "month", "year"}
 
 // StageNames are the pipeline verbs, in the order help presents them.
 var StageNames = []string{
-	"count", "top", "sort", "limit", "sample", "thread", "timeline", "participants",
+	"count", "top", "sort", "limit", "sample", "thread", "timeline", "network", "participants",
 	"extract", "series", "sum", "avg", "min", "max",
 }
 

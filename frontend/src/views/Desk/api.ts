@@ -96,15 +96,43 @@ export interface Thread {
   end: string;
 }
 
+/** An address someone has corresponded with. Counts are derived, never cached. */
+export interface Contact {
+  address: string;
+  headerName?: string;
+  displayName?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  org?: string;
+  title?: string;
+  kind: 'person' | 'organization' | 'system' | 'unknown';
+  kindSource?: string;
+  enrichedBy?: string;
+  messages: number;
+  sent: number;
+  received: number;
+  firstSeen?: string;
+  lastSeen?: string;
+}
+
+/** What to call a contact, strongest source first — the same order Go uses. */
+export const contactName = (c: Contact): string =>
+  c.displayName?.trim()
+  || [c.firstName, c.lastName].filter(Boolean).join(' ').trim()
+  || c.headerName?.trim()
+  || c.address;
+
 export interface QueryResult {
   query: string;
-  kind: 'messages' | 'groups' | 'count' | 'tickets' | 'drafts' | 'threads';
+  kind: 'messages' | 'groups' | 'count' | 'tickets' | 'drafts' | 'threads' | 'contacts';
   count: number;
   messages?: QueryMessage[];
   groups?: QueryGroup[];
   tickets?: Ticket[];
   drafts?: Draft[];
   threads?: Thread[];
+  contacts?: Contact[];
   total?: number;
   /** What an aggregate grouped by, so a chart click can build a drill-down. */
   groupField?: string;

@@ -135,6 +135,8 @@ const (
 	// each, everything anchored to it: the messages, the tickets they raised,
 	// the drafts that answer them.
 	StageTimeline StageKind = "timeline"
+	// StageNetwork returns who appears alongside whom.
+	StageNetwork StageKind = "network"
 )
 
 // Stage is one step of the pipeline.

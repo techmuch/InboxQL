@@ -9,7 +9,7 @@ import { create } from 'zustand';
  * every action downstream has to guess, and "archive this bucket" is a
  * question with no answer.
  */
-export type SelectionKind = 'message' | 'thread' | 'ticket' | 'draft' | 'group';
+export type SelectionKind = 'message' | 'thread' | 'ticket' | 'draft' | 'group' | 'contact';
 
 export interface SelectionRef {
   kind: SelectionKind;
@@ -94,6 +94,7 @@ export function nounFor(kind: SelectionKind, n: number): string {
     ticket: ['ticket', 'tickets'],
     draft: ['draft', 'drafts'],
     group: ['group', 'groups'],
+    contact: ['contact', 'contacts'],
   };
   const [one, many] = nouns[kind];
   return `${n} ${n === 1 ? one : many}`;

@@ -16,6 +16,7 @@ export const DESK_TAB = 'desk';
 export const QUERY_TAB = 'desk';
 
 const DESK_ALIASES = new Set(['desk', 'mail', 'query']);
+const VIEWER_ALIASES = new Set(['viewer', 'message']);
 
 /**
  * Open a tab, or focus it if it is already open.
@@ -29,6 +30,10 @@ export const openTool = (id: string, label: string): void => {
     id = 'desk';
     label = 'Desk';
   }
+  if (VIEWER_ALIASES.has(id)) {
+    id = 'viewer';
+    label = 'Viewer';
+  }
 
   const layout = useLayoutStore.getState();
   const model = layout.model;
@@ -40,11 +45,16 @@ export const openTool = (id: string, label: string): void => {
   model.visitNodes((node: any) => {
     if (node.getType() === 'tab') {
       const comp = node.getComponent();
-      if (comp === id || (id === 'desk' && DESK_ALIASES.has(comp))) {
+      if (comp === id ||
+          (id === 'desk' && DESK_ALIASES.has(comp)) ||
+          (id === 'viewer' && VIEWER_ALIASES.has(comp))) {
         if (!existing) {
           const tabId = node.getId();
           existing = tabId;
-          if (id === 'desk' && (comp !== 'desk' || node.getName() !== 'Desk')) {
+          // A tab persisted under an old id keeps its old name until it is
+          // renamed, so "Message" would sit in the tab bar indefinitely after
+          // the rename to Viewer.
+          if (comp !== id || node.getName() !== label) {
             legacyToRename.push(tabId);
           }
         }
@@ -54,18 +64,18 @@ export const openTool = (id: string, label: string): void => {
 
   for (const tabId of legacyToRename) {
     try {
-      model.doAction({ type: 'FlexLayout_RenameTab', data: { node: tabId, text: 'Desk' } } as any);
+      model.doAction({ type: 'FlexLayout_RenameTab', data: { node: tabId, text: label } } as any);
     } catch {}
     try {
       model.doAction({
         type: 'FlexLayout_UpdateNodeAttributes',
-        data: { node: tabId, json: { component: 'desk', name: 'Desk' } }
+        data: { node: tabId, json: { component: id, name: label } }
       } as any);
     } catch {}
     const node: any = model.getNodeById(tabId);
     if (node?._attributes) {
-      node._attributes.name = 'Desk';
-      node._attributes.component = 'desk';
+      node._attributes.name = label;
+      node._attributes.component = id;
     }
   }
 
@@ -120,8 +130,15 @@ export const useViewerStore = create<ViewerState>((set) => ({
   clear: () => set({ message: null, messageId: null, selectedCount: 0 }),
 }));
 
-/** Component id of the message viewer tab. */
-export const MESSAGE_VIEWER_TAB = 'message';
+/**
+ * Component id of the viewer tab.
+ *
+ * Renamed from "message" because the tab shows a conversation's mail, a draft
+ * and a ticket's evidence, not only a message. The old id stays registered as
+ * an alias: layouts are persisted, and a saved layout naming a component that
+ * no longer exists renders "Unknown Component" rather than failing usefully.
+ */
+export const MESSAGE_VIEWER_TAB = 'viewer';
 /** Component id of the error log tab. */
 export const ERROR_LOG_TAB = 'errors';
 
@@ -144,7 +161,7 @@ export const isToolOpen = (id: string): boolean => {
  */
 export const openMessage = (message: any): void => {
   useViewerStore.getState().setMessage(message);
-  openTool(MESSAGE_VIEWER_TAB, 'Message');
+  openTool(MESSAGE_VIEWER_TAB, 'Viewer');
 };
 
 /**

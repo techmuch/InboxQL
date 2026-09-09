@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CheckSquare, ChevronDown, ChevronRight, Mail, PenLine, Tag } from 'lucide-react';
 import { openMessage, previewMessage } from '../../lib/tabs';
 import { navRow } from '../../lib/rovingFocus';
+import { refKey, useSelectionStore } from '../../lib/selection';
 import type { Thread, ThreadEntry } from './api';
 
 interface ThreadResultProps {
@@ -56,6 +57,8 @@ const ThreadRow = ({
   defaultOpen: boolean;
   onDrillDown: (terms: string | string[], stage?: string) => void;
 }) => {
+  const selection = useSelectionStore(s => s.refs);
+  const isSelected = Boolean(selection[refKey({ kind: 'thread', id: thread.key })]);
   const [open, setOpen] = useState(defaultOpen);
   const Chevron = open ? ChevronDown : ChevronRight;
 
@@ -69,10 +72,14 @@ const ThreadRow = ({
         data-sel-id={thread.key}
         data-sel-field="thread"
         data-sel-label={thread.subject}
+        aria-selected={isSelected}
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
-        className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-accent/40
-                  "
+        className={`w-full flex items-start gap-2 px-3 py-2 text-left transition-colors ${
+          isSelected
+            ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30'
+            : 'hover:bg-accent/40'
+        }`}
       >
         <Chevron size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
 
@@ -137,7 +144,9 @@ const ThreadRow = ({
  * for, or showing an extraction's fields.
  */
 const Entry = ({ entry }: { entry: ThreadEntry }) => {
+  const selection = useSelectionStore(s => s.refs);
   const clickable = entry.kind === 'message' && entry.message;
+  const isSelected = clickable && Boolean(selection[refKey({ kind: 'message', id: entry.message!.id })]);
 
   return (
     <li className="relative py-1">
@@ -161,6 +170,7 @@ const Entry = ({ entry }: { entry: ThreadEntry }) => {
         data-sel-id={clickable ? entry.message!.id : undefined}
         data-sel-field={clickable ? 'id' : undefined}
         data-sel-label={clickable ? entry.summary : undefined}
+        aria-selected={isSelected || undefined}
         onFocus={clickable ? () => previewMessage(entry.message!) : undefined}
         onClick={clickable ? (e) => {
           // Same rule as the message list: a modified click selects, it does
@@ -168,8 +178,12 @@ const Entry = ({ entry }: { entry: ThreadEntry }) => {
           if (e.shiftKey || e.metaKey || e.ctrlKey) return;
           openMessage(entry.message!);
         } : undefined}
-        className={`flex items-baseline gap-2 text-sm ${
-          clickable ? 'cursor-pointer hover:text-primary' : ''
+        className={`flex items-baseline gap-2 text-sm px-2 py-0.5 rounded transition-colors ${
+          isSelected
+            ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30'
+            : clickable
+            ? 'cursor-pointer hover:text-primary'
+            : ''
         }`}
       >
         <time

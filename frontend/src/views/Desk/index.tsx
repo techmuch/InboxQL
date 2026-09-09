@@ -607,10 +607,12 @@ export const Desk = () => {
                   openMessage(msg);
                 }}
                 className={`flex items-center px-4 py-2 border-b border-border/50 cursor-pointer transition-all group relative ${
-                  isOpen
-                    ? 'bg-primary/15 ring-1 ring-inset ring-primary/40 border-l-4 border-l-primary z-[1]'
+                  selected && isOpen
+                    ? 'bg-primary/20 ring-1 ring-inset ring-primary/50 border-l-4 border-l-primary z-[1]'
                     : selected
-                    ? 'bg-primary/5 hover:bg-primary/10 ring-1 ring-inset ring-primary/20 border-l-4 border-l-transparent'
+                    ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30 border-l-4 border-l-primary/60 z-[1]'
+                    : isOpen
+                    ? 'bg-primary/15 ring-1 ring-inset ring-primary/40 border-l-4 border-l-primary z-[1]'
                     : isUnread
                     ? 'bg-accent/20 hover:bg-accent/40 border-l-4 border-l-transparent'
                     : 'hover:bg-accent/40 border-l-4 border-l-transparent'
@@ -633,7 +635,7 @@ export const Desk = () => {
                     ) : null}
                   </div>
                 </div>
-                <div className={`w-48 truncate mr-4 text-sm flex items-center gap-2 ${isOpen ? 'font-bold text-foreground' : isUnread ? 'font-bold' : 'text-foreground/70'}`}>
+                <div className={`w-48 truncate mr-4 text-sm flex items-center gap-2 ${isOpen ? 'font-bold text-foreground' : isUnread ? 'font-bold' : selected ? 'font-semibold text-foreground' : 'text-foreground/70'}`}>
                   {isDraft && (
                     <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400">
                       Draft

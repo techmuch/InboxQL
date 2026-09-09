@@ -1,6 +1,7 @@
 import { Inbox } from 'lucide-react';
 import { openContact, openMessage, previewMessage } from '../../lib/tabs';
 import { navRow } from '../../lib/rovingFocus';
+import { refKey, useSelectionStore } from '../../lib/selection';
 import { contactName, drillDownTerm, type Contact, type QueryResult } from './api';
 import { ThreadResult } from './Timeline';
 
@@ -67,6 +68,7 @@ const CountResult = ({ total }: { total: number }) => (
  * the number it describes instead of sitting in a separate panel.
  */
 const GroupResult = ({ result, onDrillDown }: ResultsProps) => {
+  const selection = useSelectionStore(s => s.refs);
   const groups = result.groups ?? [];
   if (groups.length === 0) return <Empty label="No groups" />;
 
@@ -86,6 +88,7 @@ const GroupResult = ({ result, onDrillDown }: ResultsProps) => {
           {groups.map(g => {
             const term = drillDownTerm(result, g.label);
             const width = `${Math.max((Math.abs(g.value) / max) * 100, 1)}%`;
+            const selected = Boolean(selection[refKey({ kind: 'group', id: g.label })]);
             return (
               <tr
                 key={g.label}
@@ -96,10 +99,15 @@ const GroupResult = ({ result, onDrillDown }: ResultsProps) => {
                 data-sel-id={g.label}
                 data-sel-field={result.groupField}
                 data-sel-label={g.label}
+                aria-selected={selected}
                 onClick={() => term && onDrillDown(term)}
                 title={term ? `Narrow to ${term}` : undefined}
-                className={`border-b border-border/50 ${
-                  term ? 'cursor-pointer hover:bg-accent/40' : ''
+                className={`border-b border-border/50 transition-colors ${
+                  selected
+                    ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30'
+                    : term
+                    ? 'cursor-pointer hover:bg-accent/40'
+                    : ''
                 }`}
               >
                 <td className="px-4 py-1.5 relative">
@@ -123,6 +131,7 @@ const GroupResult = ({ result, onDrillDown }: ResultsProps) => {
 };
 
 const MessageResult = ({ result }: { result: QueryResult }) => {
+  const selection = useSelectionStore(s => s.refs);
   const messages = result.messages ?? [];
   if (messages.length === 0) return <Empty label="No messages matched" />;
 
@@ -139,6 +148,7 @@ const MessageResult = ({ result }: { result: QueryResult }) => {
         <tbody>
           {messages.map(m => {
             const unread = !(m.flags ?? []).includes('\\Seen');
+            const selected = Boolean(selection[refKey({ kind: 'message', id: m.id })]);
             return (
               <tr
                 key={m.id}
@@ -147,12 +157,17 @@ const MessageResult = ({ result }: { result: QueryResult }) => {
                 data-sel-id={m.id}
                 data-sel-field="id"
                 data-sel-label={m.subject}
+                aria-selected={selected}
                 onFocus={() => previewMessage(m)}
                 onClick={(e) => {
                   if (e.shiftKey || e.metaKey || e.ctrlKey) return;
                   openMessage(m);
                 }}
-                className="border-b border-border/50 cursor-pointer hover:bg-accent/40"
+                className={`border-b border-border/50 cursor-pointer transition-colors ${
+                  selected
+                    ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30'
+                    : 'hover:bg-accent/40'
+                }`}
               >
                 <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
                   {new Date(m.date).toLocaleDateString()}
@@ -177,6 +192,7 @@ const MessageResult = ({ result }: { result: QueryResult }) => {
  * the message that made it is a task in a worse task manager.
  */
 const TicketResult = ({ result, onDrillDown }: ResultsProps) => {
+  const selection = useSelectionStore(s => s.refs);
   const tickets = result.tickets ?? [];
   if (tickets.length === 0) return <Empty label="No tickets matched" />;
 
@@ -195,6 +211,7 @@ const TicketResult = ({ result, onDrillDown }: ResultsProps) => {
           {tickets.map(t => {
             const overdue = t.dueAt ? new Date(t.dueAt) < new Date() : false;
             const source = t.sources?.[0];
+            const selected = Boolean(selection[refKey({ kind: 'ticket', id: t.id })]);
             return (
               <tr
                 key={t.id}
@@ -203,13 +220,16 @@ const TicketResult = ({ result, onDrillDown }: ResultsProps) => {
                 data-sel-id={t.id}
                 data-sel-field="id"
                 data-sel-label={t.title}
+                aria-selected={selected}
                 // Activating a ticket opens the conversation it came from,
                 // which is the whole reason provenance is recorded.
                 onClick={() => t.threadKey && onDrillDown(`thread:${t.threadKey}`, 'timeline')}
                 title={t.threadKey ? 'Show the conversation this came from' : undefined}
-                className={`border-b border-border/50 hover:bg-accent/40 ${
-                  t.threadKey ? 'cursor-pointer' : ''
-                }`}
+                className={`border-b border-border/50 transition-colors ${
+                  selected
+                    ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30'
+                    : 'hover:bg-accent/40'
+                } ${t.threadKey ? 'cursor-pointer' : ''}`}
               >
                 <td className="px-4 py-1.5 font-mono text-xs">{t.status}</td>
                 <td className={`px-4 py-1.5 font-mono text-xs whitespace-nowrap ${
@@ -232,6 +252,7 @@ const TicketResult = ({ result, onDrillDown }: ResultsProps) => {
 
 /** Unsent drafts, which are their own entity rather than mail. */
 const DraftResult = ({ result }: { result: QueryResult }) => {
+  const selection = useSelectionStore(s => s.refs);
   const drafts = result.drafts ?? [];
   if (drafts.length === 0) return <Empty label="No drafts matched" />;
 
@@ -247,28 +268,36 @@ const DraftResult = ({ result }: { result: QueryResult }) => {
           </tr>
         </thead>
         <tbody>
-          {drafts.map(d => (
-            <tr
-              key={d.id}
-              {...navRow}
-              data-sel-kind="draft"
-              data-sel-id={d.id}
-              data-sel-field="id"
-              data-sel-label={d.subject}
-              className="border-b border-border/50 hover:bg-accent/40"
-            >
-              <td className="px-4 py-1.5 font-mono text-xs">{d.status}</td>
-              <td className={`px-4 py-1.5 font-mono text-xs ${
-                d.origin === 'agent' ? 'text-primary' : 'text-muted-foreground'
-              }`}>
-                {d.origin}
-              </td>
-              <td className="px-4 py-1.5 truncate max-w-0">{(d.to ?? []).join(', ')}</td>
-              <td className="px-4 py-1.5 truncate max-w-0">
-                {d.subject || <span className="text-muted-foreground">(no subject)</span>}
-              </td>
-            </tr>
-          ))}
+          {drafts.map(d => {
+            const selected = Boolean(selection[refKey({ kind: 'draft', id: d.id })]);
+            return (
+              <tr
+                key={d.id}
+                {...navRow}
+                data-sel-kind="draft"
+                data-sel-id={d.id}
+                data-sel-field="id"
+                data-sel-label={d.subject}
+                aria-selected={selected}
+                className={`border-b border-border/50 transition-colors ${
+                  selected
+                    ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30'
+                    : 'hover:bg-accent/40'
+                }`}
+              >
+                <td className="px-4 py-1.5 font-mono text-xs">{d.status}</td>
+                <td className={`px-4 py-1.5 font-mono text-xs ${
+                  d.origin === 'agent' ? 'text-primary' : 'text-muted-foreground'
+                }`}>
+                  {d.origin}
+                </td>
+                <td className="px-4 py-1.5 truncate max-w-0">{(d.to ?? []).join(', ')}</td>
+                <td className="px-4 py-1.5 truncate max-w-0">
+                  {d.subject || <span className="text-muted-foreground">(no subject)</span>}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -292,34 +321,43 @@ const Empty = ({ label }: { label: string }) => (
  * Activating a contact narrows the query to their mail, which is what a
  * contact is *for*: the address is the least interesting thing about them.
  */
-const ContactResult = ({ contacts }: { contacts: Contact[] }) => (
-  <div className="overflow-auto h-full">
-    <table className="w-full text-sm">
-      <thead className="sticky top-0 bg-background border-b border-border">
-        <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-          <th className="px-4 py-2 font-medium">Name</th>
-          <th className="px-4 py-2 font-medium w-64">Address</th>
-          <th className="px-4 py-2 font-medium w-28">Kind</th>
-          <th className="px-4 py-2 font-medium w-20 text-right">Messages</th>
-          <th className="px-4 py-2 font-medium w-28">Last seen</th>
-        </tr>
-      </thead>
-      <tbody>
-        {contacts.map(c => (
-          <tr
-            key={c.address}
-            {...navRow}
-            data-sel-kind="contact"
-            data-sel-id={c.address}
-            data-sel-field="email"
-            data-sel-label={contactName(c)}
-            // Opens the card, the way clicking a message opens the message.
-            // Narrowing to their mail is an explicit action on the card —
-            // clicking a person's name should show you the person.
-            onClick={() => openContact(c.address)}
-            title="Open this contact"
-            className="border-b border-border/50 cursor-pointer hover:bg-accent/40"
-          >
+const ContactResult = ({ contacts }: { contacts: Contact[] }) => {
+  const selection = useSelectionStore(s => s.refs);
+  return (
+    <div className="overflow-auto h-full">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-background border-b border-border">
+          <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th className="px-4 py-2 font-medium">Name</th>
+            <th className="px-4 py-2 font-medium w-64">Address</th>
+            <th className="px-4 py-2 font-medium w-28">Kind</th>
+            <th className="px-4 py-2 font-medium w-20 text-right">Messages</th>
+            <th className="px-4 py-2 font-medium w-28">Last seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {contacts.map(c => {
+            const selected = Boolean(selection[refKey({ kind: 'contact', id: c.address })]);
+            return (
+              <tr
+                key={c.address}
+                {...navRow}
+                data-sel-kind="contact"
+                data-sel-id={c.address}
+                data-sel-field="email"
+                data-sel-label={contactName(c)}
+                aria-selected={selected}
+                // Opens the card, the way clicking a message opens the message.
+                // Narrowing to their mail is an explicit action on the card —
+                // clicking a person's name should show you the person.
+                onClick={() => openContact(c.address)}
+                title="Open this contact"
+                className={`border-b border-border/50 cursor-pointer transition-colors ${
+                  selected
+                    ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30'
+                    : 'hover:bg-accent/40'
+                }`}
+              >
             <td className="px-4 py-1.5 truncate max-w-0">{contactName(c)}</td>
             <td className="px-4 py-1.5 truncate max-w-0 font-mono text-xs text-muted-foreground">
               {c.address}
@@ -344,8 +382,10 @@ const ContactResult = ({ contacts }: { contacts: Contact[] }) => (
               {c.lastSeen ? new Date(c.lastSeen).toLocaleDateString() : ''}
             </td>
           </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
+        );
+      })}
+    </tbody>
+  </table>
+</div>
 );
+};

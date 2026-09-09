@@ -103,6 +103,10 @@ describe('Desk keyboard navigation', () => {
     await waitFor(() => {
       const selected = document.querySelectorAll('[data-sel-kind="message"][aria-selected="true"]');
       expect(selected).toHaveLength(2);
+      expect(selected[0].className).toContain('bg-primary/10');
+      expect(selected[0].className).toContain('ring-1 ring-inset ring-primary/30');
+      expect(selected[1].className).toContain('bg-primary/20');
+      expect(selected[1].className).toContain('ring-1 ring-inset ring-primary/50');
     });
   });
 

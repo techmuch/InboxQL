@@ -118,6 +118,8 @@ interface ViewerState {
    * make about which.
    */
   contact: string | null;
+  /** The message viewed before navigating to a contact, if any. */
+  previousMessage: any | null;
   selectedCount: number;
   setMessage: (message: any) => void;
   setContact: (address: string) => void;
@@ -131,15 +133,24 @@ interface ViewerState {
  * Held outside the tab because the list and the viewer are now separate
  * components in separate tabs, with no parent between them to hold it.
  */
-export const useViewerStore = create<ViewerState>((set) => ({
+export const useViewerStore = create<ViewerState>((set, get) => ({
   messageId: null,
   message: null,
   contact: null,
+  previousMessage: null,
   selectedCount: 0,
-  setMessage: (message) => set({ message, messageId: message?.id ?? null, contact: null }),
-  setContact: (contact) => set({ contact, message: null, messageId: null }),
+  setMessage: (message) => set({ message, messageId: message?.id ?? null, contact: null, previousMessage: null }),
+  setContact: (contact) => {
+    const currentMsg = get().message;
+    set((s) => ({
+      contact,
+      message: null,
+      messageId: null,
+      previousMessage: currentMsg ?? s.previousMessage,
+    }));
+  },
   setSelectedCount: (selectedCount) => set({ selectedCount }),
-  clear: () => set({ message: null, messageId: null, contact: null, selectedCount: 0 }),
+  clear: () => set({ message: null, messageId: null, contact: null, previousMessage: null, selectedCount: 0 }),
 }));
 
 /**

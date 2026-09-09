@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Bot, Building2, Check, HelpCircle, Mail, User, Users } from 'lucide-react';
-import { openContact, openQuery } from '../lib/tabs';
+import { ArrowLeft, Bot, Building2, Check, HelpCircle, Mail, User, Users } from 'lucide-react';
+import { openContact, openMessage, openQuery, useViewerStore } from '../lib/tabs';
 import { contactName, runQuery, type Contact } from './Desk/api';
 
 interface ContactTopic {
@@ -25,6 +25,7 @@ interface ContactTopic {
  * reads and does not write.
  */
 export const ContactCard = ({ address }: { address: string }) => {
+  const previousMessage = useViewerStore(s => s.previousMessage);
   const [contact, setContact] = useState<Contact | null>(null);
   const [topics, setTopics] = useState<ContactTopic[]>([]);
   const [network, setNetwork] = useState<{ label: string; value: number }[]>([]);
@@ -84,8 +85,19 @@ export const ContactCard = ({ address }: { address: string }) => {
   if (loading) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
   if (!contact) {
     return (
-      <div className="p-8 text-sm text-muted-foreground">
-        Nothing is known about <span className="font-mono">{address}</span> yet.
+      <div className="p-8 text-sm text-muted-foreground space-y-4">
+        {previousMessage && (
+          <div>
+            <button
+              type="button"
+              onClick={() => openMessage(previousMessage)}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to message
+            </button>
+          </div>
+        )}
+        <div>Nothing is known about <span className="font-mono">{address}</span> yet.</div>
       </div>
     );
   }
@@ -93,6 +105,18 @@ export const ContactCard = ({ address }: { address: string }) => {
   return (
     <div className="h-full overflow-auto p-6">
       <div className="mx-auto max-w-3xl space-y-6">
+        {previousMessage && (
+          <div>
+            <button
+              type="button"
+              onClick={() => openMessage(previousMessage)}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              title={previousMessage.subject ? `Back to "${previousMessage.subject}"` : 'Back to message'}
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to message
+            </button>
+          </div>
+        )}
         <header className="flex items-start gap-4">
           <KindIcon kind={contact.kind} />
           <div className="min-w-0 flex-1">

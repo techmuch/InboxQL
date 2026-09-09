@@ -5,7 +5,82 @@ import {
   Globe, Code, Copy, Check,
 } from 'lucide-react';
 import { ContactCard } from './ContactCard';
-import { useViewerStore } from '../lib/tabs';
+import { useViewerStore, openContact } from '../lib/tabs';
+
+/**
+ * Extract a clean email address from an address header string.
+ * Handles:
+ * - "alice@example.com" -> "alice@example.com"
+ * - "Alice Smith <alice@example.com>" -> "alice@example.com"
+ * - "<alice@example.com>" -> "alice@example.com"
+ * - "mailto:alice@example.com" -> "alice@example.com"
+ */
+export const parseEmailAddress = (raw?: string | null): string => {
+  if (!raw) return '';
+  let str = raw.trim();
+  if (str.toLowerCase().startsWith('mailto:')) {
+    str = str.slice(7).trim();
+  }
+  const angleMatch = str.match(/<([^>]+)>/);
+  if (angleMatch) {
+    return angleMatch[1].trim();
+  }
+  return str.replace(/^[<"'\s]+|[>"'\s]+$/g, '').trim();
+};
+
+const RecipientList = ({
+  prefix,
+  recipients,
+  fallback,
+}: {
+  prefix: string;
+  recipients?: string[] | string;
+  fallback?: string;
+}) => {
+  const list: string[] = Array.isArray(recipients)
+    ? recipients
+    : typeof recipients === 'string' && recipients.trim().length > 0
+      ? recipients.split(',').map(s => s.trim())
+      : [];
+
+  if (list.length === 0) {
+    if (!fallback) return null;
+    return (
+      <div className="text-xs text-muted-foreground truncate">
+        {prefix} {fallback}
+      </div>
+    );
+  }
+
+  return (
+    <div className="text-xs text-muted-foreground truncate">
+      <span>{prefix} </span>
+      {list.map((raw, idx) => {
+        const addr = parseEmailAddress(raw);
+        return (
+          <span key={addr || idx}>
+            {idx > 0 && ', '}
+            {addr ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openContact(addr);
+                }}
+                className="hover:underline hover:text-primary transition-colors font-mono cursor-pointer"
+                title={`Open contact card for ${addr}`}
+              >
+                {raw}
+              </button>
+            ) : (
+              <span>{raw}</span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
 
 /**
  * The message viewer, as its own workbench tab.
@@ -128,7 +203,24 @@ export const MessageViewer = () => {
               Draft
             </span>
           )}
-          <span className="truncate">{isDraft ? 'Not sent' : message.from}</span>
+          {isDraft ? (
+            <span className="truncate">Not sent</span>
+          ) : (
+            (() => {
+              const addr = parseEmailAddress(message.from);
+              if (!addr) return <span className="truncate">{message.from}</span>;
+              return (
+                <button
+                  type="button"
+                  onClick={() => openContact(addr)}
+                  className="truncate hover:underline hover:text-primary transition-colors cursor-pointer text-left"
+                  title={`Open contact card for ${addr}`}
+                >
+                  {message.from}
+                </button>
+              );
+            })()
+          )}
           {selectedCount > 1 && (
             <span className="shrink-0 px-2 py-0.5 text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20 rounded animate-in fade-in">
               1 of {selectedCount} selected
@@ -196,21 +288,55 @@ export const MessageViewer = () => {
         </h1>
 
         <div className="flex items-start gap-4 mb-8">
-          <div className="w-10 h-10 bg-primary/20 flex items-center justify-center text-primary font-bold shrink-0">
+          <div
+            className={`w-10 h-10 bg-primary/20 flex items-center justify-center text-primary font-bold shrink-0 ${
+              !isDraft && message.from ? 'cursor-pointer hover:bg-primary/30 transition-colors' : ''
+            }`}
+            onClick={() => {
+              if (!isDraft && message.from) {
+                const addr = parseEmailAddress(message.from);
+                if (addr) openContact(addr);
+              }
+            }}
+            data-testid="sender-avatar"
+            aria-label={!isDraft && message.from ? `Contact avatar for ${parseEmailAddress(message.from)}` : undefined}
+            title={!isDraft && message.from ? `Open contact card for ${parseEmailAddress(message.from)}` : undefined}
+          >
             {isDraft ? <FileText className="w-4 h-4" /> : message.from?.[0]?.toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-center mb-1 gap-4">
               <div className="font-bold truncate">
-                {isDraft ? <span className="italic font-normal text-muted-foreground">Draft — never sent</span> : message.from}
+                {isDraft ? (
+                  <span className="italic font-normal text-muted-foreground">Draft — never sent</span>
+                ) : (
+                  (() => {
+                    const addr = parseEmailAddress(message.from);
+                    if (!addr) return <span>{message.from}</span>;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => openContact(addr)}
+                        className="hover:underline hover:text-primary transition-colors cursor-pointer text-left font-bold"
+                        title={`Open contact card for ${addr}`}
+                      >
+                        {message.from}
+                      </button>
+                    );
+                  })()
+                )}
               </div>
               <div className="text-xs text-muted-foreground shrink-0">
                 {message.date ? `${isDraft ? 'Edited ' : ''}${new Date(message.date).toLocaleString()}` : ''}
               </div>
             </div>
-            <div className="text-xs text-muted-foreground truncate">
-              to {message.to?.join(', ') || (isDraft ? '(no recipient yet)' : '(undisclosed)')}
-            </div>
+            <RecipientList
+              prefix="to"
+              recipients={message.to}
+              fallback={isDraft ? '(no recipient yet)' : '(undisclosed)'}
+            />
+            <RecipientList prefix="cc" recipients={message.cc} />
+            <RecipientList prefix="bcc" recipients={message.bcc} />
           </div>
           <div className="flex gap-2 shrink-0">
             {!isDraft && <button className="p-2 hover:bg-accent transition-colors" title="Reply"><CornerUpLeft className="w-4 h-4" /></button>}

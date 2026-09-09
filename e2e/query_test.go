@@ -482,3 +482,75 @@ func TestNetworkStageReportsCoOccurrence(t *testing.T) {
 		}
 	}
 }
+
+func TestContactNotesTagsAndResponsiveness(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+
+	// Add tag and note via CLI
+	if r := e.run("contact", "tag", "alice@acme.com", "client"); r.ExitCode != 0 {
+		t.Fatalf("contact tag: %s%s", r.Stdout, r.Stderr)
+	}
+	if r := e.run("contact", "note", "alice@acme.com", "Important partner lead"); r.ExitCode != 0 {
+		t.Fatalf("contact note: %s%s", r.Stdout, r.Stderr)
+	}
+
+	// Show via CLI (JSON)
+	r := e.run("--json", "contact", "show", "alice@acme.com")
+	if r.ExitCode != 0 {
+		t.Fatalf("contact show: %s%s", r.Stdout, r.Stderr)
+	}
+	var alice struct {
+		Address string   `json:"address"`
+		Notes   string   `json:"notes"`
+		Tags    []string `json:"tags"`
+	}
+	r.JSON(t, &alice)
+	if alice.Notes != "Important partner lead" {
+		t.Errorf("alice.Notes = %q, want %q", alice.Notes, "Important partner lead")
+	}
+	if len(alice.Tags) != 1 || alice.Tags[0] != "client" {
+		t.Errorf("alice.Tags = %v, want [client]", alice.Tags)
+	}
+
+	// Query: in:contacts tag:client
+	rQuery := e.run("--json", "query", "in:contacts tag:client")
+	if rQuery.ExitCode != 0 {
+		t.Fatalf("query tag:client: %s%s", rQuery.Stdout, rQuery.Stderr)
+	}
+	var qRes struct {
+		Contacts []struct {
+			Address string `json:"address"`
+		} `json:"contacts"`
+	}
+	rQuery.JSON(t, &qRes)
+	if len(qRes.Contacts) != 1 || qRes.Contacts[0].Address != "alice@acme.com" {
+		t.Errorf("query tag:client returned %v, want alice@acme.com", qRes.Contacts)
+	}
+
+	// Query: in:contacts has:notes
+	if r := e.run("query", "in:contacts has:notes"); r.ExitCode != 0 {
+		t.Errorf("in:contacts has:notes: %s%s", r.Stdout, r.Stderr)
+	}
+
+	// Responsiveness command
+	rResp := e.run("--json", "contact", "responsiveness", "alice@acme.com")
+	if rResp.ExitCode != 0 {
+		t.Fatalf("contact responsiveness: %s%s", rResp.Stdout, rResp.Stderr)
+	}
+	var resp struct {
+		Address              string `json:"address"`
+		AwaitingMyReplyCount int    `json:"awaitingMyReplyCount"`
+		ToCount              int64  `json:"toCount"`
+	}
+	rResp.JSON(t, &resp)
+	if resp.Address != "alice@acme.com" {
+		t.Errorf("resp.Address = %q, want alice@acme.com", resp.Address)
+	}
+
+	// Untag
+	if r := e.run("contact", "untag", "alice@acme.com", "client"); r.ExitCode != 0 {
+		t.Fatalf("contact untag: %s%s", r.Stdout, r.Stderr)
+	}
+}
+

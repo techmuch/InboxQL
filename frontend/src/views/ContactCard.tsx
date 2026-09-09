@@ -1,13 +1,51 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Bot, Building2, Check, HelpCircle, Mail, User, Users } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  Bot,
+  Building2,
+  Check,
+  Clock,
+  FileText,
+  HelpCircle,
+  Mail,
+  MessageSquare,
+  Plus,
+  Tag,
+  User,
+  Users,
+  X,
+} from 'lucide-react';
 import { openContact, openMessage, openQuery, useViewerStore } from '../lib/tabs';
-import { contactName, runQuery, type Contact } from './Desk/api';
+import {
+  contactName,
+  getContactResponsiveness,
+  modifyContactTag,
+  runQuery,
+  setContactNotes,
+  type Contact,
+  type ContactResponsiveness,
+} from './Desk/api';
 
 interface ContactTopic {
   topic: string;
   messages: number;
   share: number;
   lift: number;
+}
+
+function formatDurationSecs(secs?: number | null): string {
+  if (secs === undefined || secs === null) return '—';
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.round(secs / 60)}m`;
+  if (secs < 86400) {
+    const hours = Math.floor(secs / 3600);
+    const mins = Math.round((secs % 3600) / 60);
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  }
+  const days = Math.floor(secs / 86400);
+  const hours = Math.round((secs % 86400) / 3600);
+  return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
 }
 
 /**
@@ -29,21 +67,35 @@ export const ContactCard = ({ address }: { address: string }) => {
   const [contact, setContact] = useState<Contact | null>(null);
   const [topics, setTopics] = useState<ContactTopic[]>([]);
   const [network, setNetwork] = useState<{ label: string; value: number }[]>([]);
+  const [responsiveness, setResponsiveness] = useState<ContactResponsiveness | null>(null);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
+
+  // Tag editing state
+  const [newTag, setNewTag] = useState('');
+  const [isAddingTag, setIsAddingTag] = useState(false);
+
+  // Notes editing state
+  const [notesDraft, setNotesDraft] = useState('');
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
 
   const quoted = `=${address}`;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [who, theirTopics, theirNetwork] = await Promise.all([
+      const [who, theirTopics, theirNetwork, resp] = await Promise.all([
         runQuery(`in:contacts email:${quoted}`, 1, 0),
         runQuery(`in:contacts email:${quoted} | topics 8`, 8, 0),
         runQuery(`anyone:${quoted} | count by anyone`, 1000, 0),
+        getContactResponsiveness(address).catch(() => null),
       ]);
-      setContact(who.contacts?.[0] ?? null);
+      const c = who.contacts?.[0] ?? null;
+      setContact(c);
+      setNotesDraft(c?.notes ?? '');
+      setResponsiveness(resp);
       setTopics((theirTopics as any).topics ?? []);
       // Every participant who appeared on a message alongside this contact,
       // ranked by how many messages they shared, excluding the contact themselves.
@@ -80,6 +132,43 @@ export const ContactCard = ({ address }: { address: string }) => {
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2000);
     await load();
+  };
+
+  const handleAddTag = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const tag = newTag.trim().toLowerCase();
+    if (!tag) return;
+    try {
+      const res = await modifyContactTag(address, tag, 'add');
+      setContact(prev => prev ? { ...prev, tags: res.tags } : null);
+      setNewTag('');
+      setIsAddingTag(false);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRemoveTag = async (tag: string) => {
+    try {
+      const res = await modifyContactTag(address, tag, 'remove');
+      setContact(prev => prev ? { ...prev, tags: res.tags } : null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveNotes = async () => {
+    setNotesSaving(true);
+    try {
+      await setContactNotes(address, notesDraft);
+      setNotesSaved(true);
+      setContact(prev => prev ? { ...prev, notes: notesDraft } : null);
+      window.setTimeout(() => setNotesSaved(false), 2000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setNotesSaving(false);
+    }
   };
 
   if (loading) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
@@ -122,11 +211,73 @@ export const ContactCard = ({ address }: { address: string }) => {
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-2xl font-bold">{contactName(contact)}</h2>
             <p className="truncate font-mono text-sm text-muted-foreground">{contact.address}</p>
+
+            {/* Custom tags pills */}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {(contact.tags ?? []).map(t => (
+                <span
+                  key={t}
+                  className="inline-flex items-center gap-1 border border-border bg-accent/30 px-2 py-0.5 text-xs text-foreground group rounded-sm"
+                >
+                  <button
+                    type="button"
+                    onClick={() => openQuery(`in:contacts tag:${t}`)}
+                    className="hover:underline flex items-center gap-1 cursor-pointer"
+                    title={`Filter contacts by tag:${t}`}
+                  >
+                    <Tag className="h-2.5 w-2.5 text-muted-foreground" />
+                    <span>{t}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTag(t)}
+                    className="text-muted-foreground hover:text-destructive cursor-pointer ml-0.5"
+                    title={`Remove tag ${t}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              {isAddingTag ? (
+                <form onSubmit={handleAddTag} className="inline-flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={newTag}
+                    onChange={e => setNewTag(e.target.value)}
+                    placeholder="tag name..."
+                    autoFocus
+                    className="h-6 w-24 bg-background border border-primary px-1.5 text-xs outline-none rounded-xs"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newTag.trim()}
+                    className="h-6 px-2 bg-primary text-primary-foreground text-xs font-medium cursor-pointer disabled:opacity-50 rounded-xs"
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIsAddingTag(false); setNewTag(''); }}
+                    className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingTag(true)}
+                  className="inline-flex items-center gap-1 border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors cursor-pointer rounded-sm"
+                >
+                  <Plus className="h-3 w-3" /> Tag
+                </button>
+              )}
+            </div>
           </div>
           <button
             type="button"
             onClick={() => openQuery(`anyone:${contact.address}`)}
-            className="flex shrink-0 items-center gap-1 border border-border px-3 py-1.5 text-xs hover:bg-accent/40"
+            className="flex shrink-0 items-center gap-1 border border-border px-3 py-1.5 text-xs hover:bg-accent/40 cursor-pointer"
           >
             <Mail className="h-3 w-3" /> Their mail
           </button>
@@ -142,6 +293,203 @@ export const ContactCard = ({ address }: { address: string }) => {
             label="Last seen"
             value={contact.lastSeen ? new Date(contact.lastSeen).toLocaleDateString() : '—'}
           />
+        </section>
+
+        {/* Communication Dynamics & Open Loops */}
+        {responsiveness && (
+          <section className="space-y-4 border border-border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" /> Communication Dynamics
+              </h3>
+            </div>
+
+            {/* Latency & Role Grid */}
+            <div className="grid grid-cols-3 gap-px border border-border bg-border">
+              <div className="bg-card p-3">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Your Turnaround</div>
+                <div className="font-mono text-lg font-semibold tabular-nums mt-0.5">
+                  {formatDurationSecs(responsiveness.myMedianReplySecs)}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">Median time to reply to them</div>
+              </div>
+              <div className="bg-card p-3">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Their Turnaround</div>
+                <div className="font-mono text-lg font-semibold tabular-nums mt-0.5">
+                  {formatDurationSecs(responsiveness.theirMedianReplySecs)}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">Median time to reply to you</div>
+              </div>
+              <div className="bg-card p-3">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Addressing Role</div>
+                <div className="font-mono text-lg font-semibold tabular-nums mt-0.5">
+                  {responsiveness.toCount + responsiveness.ccCount > 0
+                    ? `${Math.round(responsiveness.toRatio * 100)}% Direct`
+                    : '—'}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  {responsiveness.toCount} in To · {responsiveness.ccCount} in Cc
+                </div>
+              </div>
+            </div>
+
+            {/* Open Loops */}
+            <div className="space-y-3 pt-1">
+              <div className="text-xs font-medium text-foreground">Open Loops (Pending Replies)</div>
+
+              {responsiveness.awaitingMyReplyCount === 0 && responsiveness.awaitingTheirReplyCount === 0 && (
+                <div className="border border-border/70 bg-accent/20 px-3 py-2 text-xs text-muted-foreground flex items-center gap-2">
+                  <Check className="h-4 w-4 text-green-500 shrink-0" />
+                  <span>All loops closed — no pending replies in either direction.</span>
+                </div>
+              )}
+
+              {responsiveness.awaitingMyReplyCount > 0 && (
+                <div className="border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-semibold text-amber-600 dark:text-amber-400">
+                    <span className="flex items-center gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5" /> Awaiting your reply ({responsiveness.awaitingMyReplyCount})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openQuery(`anyone:${contact.address} is:unread`)}
+                      className="text-[11px] hover:underline font-normal cursor-pointer"
+                    >
+                      View mail
+                    </button>
+                  </div>
+                  <ul className="divide-y divide-border/40 text-xs space-y-1.5 pt-1">
+                    {(responsiveness.awaitingMyReplyThreads ?? []).map(t => (
+                      <li key={t.threadKey} className="pt-1.5 first:pt-0">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openQuery(`thread:${t.threadKey}`)}
+                            className="font-medium hover:text-primary text-left truncate cursor-pointer"
+                          >
+                            {t.subject || '(no subject)'}
+                          </button>
+                          <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                            {new Date(t.lastMessageAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        {t.snippet && (
+                          <p className="text-[11px] text-muted-foreground truncate mt-0.5">{t.snippet}</p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {responsiveness.awaitingTheirReplyCount > 0 && (
+                <div className="border border-blue-500/30 bg-blue-500/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-semibold text-blue-600 dark:text-blue-400">
+                    <span className="flex items-center gap-1.5">
+                      <MessageSquare className="h-3.5 w-3.5" /> Awaiting their reply ({responsiveness.awaitingTheirReplyCount})
+                    </span>
+                  </div>
+                  <ul className="divide-y divide-border/40 text-xs space-y-1.5 pt-1">
+                    {(responsiveness.awaitingTheirReplyThreads ?? []).map(t => (
+                      <li key={t.threadKey} className="pt-1.5 first:pt-0">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openQuery(`thread:${t.threadKey}`)}
+                            className="font-medium hover:text-primary text-left truncate cursor-pointer"
+                          >
+                            {t.subject || '(no subject)'}
+                          </button>
+                          <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                            {new Date(t.lastMessageAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        {t.snippet && (
+                          <p className="text-[11px] text-muted-foreground truncate mt-0.5">{t.snippet}</p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* 24h Activity Cadence */}
+            {Array.isArray(responsiveness.hourlyDistribution) && responsiveness.hourlyDistribution.length === 24 && (
+              <div className="space-y-1.5 pt-2 border-t border-border">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>Active hours (incoming messages by UTC hour)</span>
+                  <span className="font-mono text-[10px]">00:00 — 23:00</span>
+                </div>
+                <div className="flex items-end gap-1 h-12 pt-2 bg-muted/20 px-2 rounded-xs border border-border/50">
+                  {(() => {
+                    const max = Math.max(1, ...responsiveness.hourlyDistribution);
+                    return responsiveness.hourlyDistribution.map((cnt, hour) => {
+                      const heightPct = Math.round((cnt / max) * 100);
+                      return (
+                        <div
+                          key={hour}
+                          className="flex-1 flex flex-col items-center justify-end h-full group relative"
+                        >
+                          <div
+                            style={{ height: `${cnt > 0 ? Math.max(15, heightPct) : 0}%` }}
+                            className={`w-full transition-all rounded-t-xs ${
+                              cnt > 0 ? 'bg-primary/70 hover:bg-primary' : 'bg-transparent'
+                            }`}
+                          />
+                          <div className="absolute bottom-full mb-1 hidden group-hover:block z-10 bg-popover text-popover-foreground border border-border px-1.5 py-0.5 text-[10px] rounded-xs shadow-sm whitespace-nowrap pointer-events-none">
+                            {String(hour).padStart(2, '0')}:00 — {cnt} {cnt === 1 ? 'msg' : 'msgs'}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Private Notes */}
+        <section className="space-y-2 border border-border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Private Notes
+              </h3>
+            </div>
+            <div className="flex items-center gap-2">
+              {notesSaved && (
+                <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                  <Check className="h-3 w-3" /> Saved
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleSaveNotes}
+                disabled={notesSaving || notesDraft === (contact.notes ?? '')}
+                className="border border-border px-2.5 py-0.5 text-xs hover:bg-accent/40 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {notesSaving ? 'Saving…' : 'Save note'}
+              </button>
+            </div>
+          </div>
+          <textarea
+            value={notesDraft}
+            onChange={e => setNotesDraft(e.target.value)}
+            onBlur={() => {
+              if (notesDraft !== (contact.notes ?? '')) {
+                handleSaveNotes();
+              }
+            }}
+            placeholder="Private notes (markdown supported)... Visible only to you. Searchable via in:contacts notes:keyword or has:notes."
+            rows={3}
+            className="w-full bg-background border border-border p-2.5 text-xs focus:ring-1 focus:ring-primary outline-none resize-y rounded-xs"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Private notes are never synced or transmitted. Search with <code className="font-mono">in:contacts has:notes</code> or <code className="font-mono">in:contacts notes:keyword</code>.
+          </p>
         </section>
 
         <section className="space-y-2 border border-border bg-card p-4">
@@ -162,7 +510,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                 key={k}
                 type="button"
                 onClick={() => correct({ kind: k })}
-                className={`border px-2 py-1 text-xs ${
+                className={`border px-2 py-1 text-xs cursor-pointer ${
                   contact.kind === k
                     ? 'border-primary bg-primary/10 text-primary font-semibold'
                     : 'border-border hover:bg-accent/40'
@@ -215,7 +563,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                     <button
                       type="button"
                       onClick={() => openQuery(`topic:${t.topic} anyone:${contact.address}`)}
-                      className="min-w-0 flex-1 truncate text-left hover:text-primary"
+                      className="min-w-0 flex-1 truncate text-left hover:text-primary cursor-pointer"
                     >
                       {t.topic}
                     </button>
@@ -266,7 +614,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                       placeholder="Filter correspondents…"
                       value={filter}
                       onChange={e => setFilter(e.target.value)}
-                      className="w-full bg-background border border-border px-2.5 py-1 text-xs focus:ring-1 focus:ring-primary outline-none"
+                      className="w-full bg-background border border-border px-2.5 py-1 text-xs focus:ring-1 focus:ring-primary outline-none rounded-xs"
                     />
                   )}
                   <ul className="divide-y divide-border/60">
@@ -277,7 +625,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                           <button
                             type="button"
                             onClick={() => openContact(otherAddr)}
-                            className="min-w-0 flex-1 truncate text-left font-mono text-xs hover:text-primary"
+                            className="min-w-0 flex-1 truncate text-left font-mono text-xs hover:text-primary cursor-pointer"
                             title={`Open contact card for ${otherAddr}`}
                           >
                             {otherAddr}
@@ -285,7 +633,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                           <button
                             type="button"
                             onClick={() => openQuery(`anyone:${otherAddr}`)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary cursor-pointer"
                             title={`Show mail with ${otherAddr}`}
                           >
                             <Mail className="h-3 w-3" />

@@ -154,8 +154,11 @@ var Registry = []Field{
 	},
 	{
 		Name: "has", Entity: EntityMessage, Type: TypeEnum,
-		Enum:    []string{"attachment", "file", "label", "reply", "to", "cc", "bcc"},
-		Summary: "what the message carries", Example: "has:attachment",
+		Enum: []string{
+			"attachment", "file", "label", "reply", "to", "cc", "bcc",
+			"phone", "name", "org", "notes", "note", "tag", "tags", "awaiting",
+		},
+		Summary: "what the entity carries", Example: "has:attachment",
 	},
 	{
 		Name: "after", Entity: EntityMessage, Type: TypeDate, Aliases: []string{"since"},
@@ -342,6 +345,22 @@ var Registry = []Field{
 	{
 		Name: "id", Entity: EntityContact, Type: TypeIdent,
 		Summary: "this exact contact", Example: "in:contacts id:(a OR b)",
+	},
+	{
+		Name: "tag", Entity: EntityContact, Type: TypeText,
+		Ops:     matchOps,
+		Summary: "a custom tag on this contact", Example: "in:contacts tag:client",
+	},
+	{
+		Name: "notes", Entity: EntityContact, Type: TypeText,
+		Ops:     matchOps,
+		Aliases: []string{"note"},
+		Summary: "words in private notes on this contact", Example: "in:contacts notes:conference",
+	},
+	{
+		Name: "awaiting", Entity: EntityContact, Type: TypeEnum,
+		Enum:    []string{"me", "them"},
+		Summary: "who a conversation is waiting on for a reply", Example: "in:contacts awaiting:me",
 	},
 
 	{
@@ -620,7 +639,7 @@ func unknownFieldError(name string) error {
 // GroupKeys are the fields an aggregate can group by.
 var GroupKeys = []string{
 	"from", "domain", "to", "cc", "bcc", "anyone",
-	"account", "mailbox", "label", "thread", "subject", "topic",
+	"account", "mailbox", "label", "thread", "subject", "topic", "tag",
 	"hour", "day", "week", "month", "year",
 }
 

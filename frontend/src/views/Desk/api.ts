@@ -109,11 +109,34 @@ export interface Contact {
   kind: 'person' | 'organization' | 'system' | 'unknown';
   kindSource?: string;
   enrichedBy?: string;
+  notes?: string;
+  tags?: string[];
   messages: number;
   sent: number;
   received: number;
   firstSeen?: string;
   lastSeen?: string;
+}
+
+export interface PendingThread {
+  threadKey: string;
+  subject: string;
+  lastMessageAt: string;
+  snippet?: string;
+}
+
+export interface ContactResponsiveness {
+  address: string;
+  myMedianReplySecs?: number;
+  theirMedianReplySecs?: number;
+  awaitingMyReplyCount: number;
+  awaitingTheirReplyCount: number;
+  awaitingMyReplyThreads: PendingThread[];
+  awaitingTheirReplyThreads: PendingThread[];
+  toCount: number;
+  ccCount: number;
+  toRatio: number;
+  hourlyDistribution: number[];
 }
 
 /** What to call a contact, strongest source first — the same order Go uses. */
@@ -276,3 +299,39 @@ export async function setMessageFlag(
   if (!res.ok) throw new Error(body?.error ?? 'could not update those messages');
   return body?.changed ?? 0;
 }
+
+/** Get contact communication dynamics and responsiveness metrics. */
+export async function getContactResponsiveness(address: string): Promise<ContactResponsiveness | null> {
+  const res = await fetch(`/api/contacts/responsiveness?address=${encodeURIComponent(address)}`);
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+/** Update contact private markdown notes. */
+export async function setContactNotes(address: string, notes: string): Promise<{ address: string; notes: string }> {
+  const res = await fetch('/api/contacts/notes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, notes }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error ?? 'could not save contact notes');
+  return body;
+}
+
+/** Add or remove a custom tag for a contact. */
+export async function modifyContactTag(
+  address: string,
+  tag: string,
+  action: 'add' | 'remove',
+): Promise<{ address: string; tags: string[] }> {
+  const res = await fetch('/api/contacts/tags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, tag, action }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error ?? 'could not update contact tag');
+  return body;
+}
+

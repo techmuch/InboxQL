@@ -49,6 +49,9 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/messages/counts", auth.Middleware(http.HandlerFunc(handleFolderCounts)))
 	mux.Handle("/api/messages/flags", auth.Middleware(http.HandlerFunc(handleMessageFlags)))
 	mux.Handle("/api/contacts", auth.Middleware(http.HandlerFunc(handleContacts)))
+	mux.Handle("/api/contacts/tags", auth.Middleware(http.HandlerFunc(handleContactTags)))
+	mux.Handle("/api/contacts/notes", auth.Middleware(http.HandlerFunc(handleContactNotes)))
+	mux.Handle("/api/contacts/responsiveness", auth.Middleware(http.HandlerFunc(handleContactResponsiveness)))
 	mux.Handle("/api/message", auth.Middleware(http.HandlerFunc(handleMessage)))
 	mux.Handle("/api/message/attachments", auth.Middleware(http.HandlerFunc(handleMessageAttachments)))
 	mux.Handle("/api/profile", auth.Middleware(http.HandlerFunc(handleProfile)))
@@ -189,7 +192,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.50",
+	Version: "0.0.51",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.
@@ -795,14 +798,16 @@ func handleContacts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Address     string `json:"address"`
-		DisplayName string `json:"displayName"`
-		FirstName   string `json:"firstName"`
-		LastName    string `json:"lastName"`
-		Phone       string `json:"phone"`
-		Org         string `json:"org"`
-		Title       string `json:"title"`
-		Kind        string `json:"kind"`
+		Address     string   `json:"address"`
+		DisplayName string   `json:"displayName"`
+		FirstName   string   `json:"firstName"`
+		LastName    string   `json:"lastName"`
+		Phone       string   `json:"phone"`
+		Org         string   `json:"org"`
+		Title       string   `json:"title"`
+		Kind        string   `json:"kind"`
+		Notes       *string  `json:"notes"`
+		Tags        []string `json:"tags"`
 	}
 	if err := decodeJSON(w, r, &req); err != nil {
 		return
@@ -829,6 +834,18 @@ func handleContacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Notes != nil {
+		if err := store.SetContactNotes(req.Address, *req.Notes); err != nil {
+			writeError(w, http.StatusInternalServerError, "%v", err)
+			return
+		}
+	}
+	if req.Tags != nil {
+		for _, t := range req.Tags {
+			_ = store.AddContactTag(req.Address, t)
+		}
+	}
+
 	saved, err := store.GetContact(req.Address)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "%v", err)
@@ -836,4 +853,94 @@ func handleContacts(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(saved)
+}
+
+func handleContactTags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Address string `json:"address"`
+		Tag     string `json:"tag"`
+		Action  string `json:"action"` // "add" or "remove"
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		return
+	}
+	if strings.TrimSpace(req.Address) == "" || strings.TrimSpace(req.Tag) == "" {
+		writeError(w, http.StatusBadRequest, "address and tag are required")
+		return
+	}
+	switch req.Action {
+	case "add", "":
+		if err := store.AddContactTag(req.Address, req.Tag); err != nil {
+			writeError(w, http.StatusInternalServerError, "%v", err)
+			return
+		}
+	case "remove":
+		if err := store.RemoveContactTag(req.Address, req.Tag); err != nil {
+			writeError(w, http.StatusInternalServerError, "%v", err)
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "action must be 'add' or 'remove'")
+		return
+	}
+	tags, err := store.GetContactTags(req.Address)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"address": req.Address,
+		"tags":    tags,
+	})
+}
+
+func handleContactNotes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Address string `json:"address"`
+		Notes   string `json:"notes"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		return
+	}
+	if strings.TrimSpace(req.Address) == "" {
+		writeError(w, http.StatusBadRequest, "address is required")
+		return
+	}
+	if err := store.SetContactNotes(req.Address, req.Notes); err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"address": req.Address,
+		"notes":   req.Notes,
+	})
+}
+
+func handleContactResponsiveness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	addr := r.URL.Query().Get("address")
+	if strings.TrimSpace(addr) == "" {
+		writeError(w, http.StatusBadRequest, "address parameter is required")
+		return
+	}
+	resp, err := store.GetContactResponsiveness(addr)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

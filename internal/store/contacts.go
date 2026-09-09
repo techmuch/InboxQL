@@ -67,6 +67,8 @@ type Contact struct {
 	KindSource  string   `json:"kindSource,omitempty"`
 	EnrichedBy  string   `json:"enrichedBy,omitempty"`
 	Confidence  *float64 `json:"confidence,omitempty"`
+	Notes       string   `json:"notes,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 
 	// --- derived, never stored
 	Messages  int64     `json:"messages"`
@@ -124,7 +126,7 @@ func ensureContacts(x execer, m *message.Message) error {
 const contactColumns = `c.address, COALESCE(c.header_name, ''), COALESCE(c.display_name, ''),
 	COALESCE(c.first_name, ''), COALESCE(c.last_name, ''), COALESCE(c.phone, ''),
 	COALESCE(c.org, ''), COALESCE(c.title, ''), c.kind, COALESCE(c.kind_source, ''),
-	COALESCE(c.enriched_by, ''), c.confidence`
+	COALESCE(c.enriched_by, ''), c.confidence, COALESCE(c.notes, '')`
 
 // contactDerived counts what a contact is, from the edges rather than a cache.
 //
@@ -147,7 +149,7 @@ func scanContact(scan func(...any) error) (*Contact, error) {
 	c := &Contact{}
 	var first, last sql.NullInt64
 	if err := scan(&c.Address, &c.HeaderName, &c.DisplayName, &c.FirstName, &c.LastName,
-		&c.Phone, &c.Org, &c.Title, &c.Kind, &c.KindSource, &c.EnrichedBy, &c.Confidence,
+		&c.Phone, &c.Org, &c.Title, &c.Kind, &c.KindSource, &c.EnrichedBy, &c.Confidence, &c.Notes,
 		&c.Messages, &c.Sent, &c.Received, &first, &last); err != nil {
 		return nil, err
 	}
@@ -171,7 +173,17 @@ func GetContact(address string) (*Contact, error) {
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return c, err
+	if err != nil {
+		return nil, err
+	}
+	if c != nil {
+		tags, err := GetContactTags(c.Address)
+		if err != nil {
+			return nil, err
+		}
+		c.Tags = tags
+	}
+	return c, nil
 }
 
 // SaveContact writes the asserted half of a contact.
@@ -209,8 +221,8 @@ func SaveContact(c *Contact, source string) error {
 
 	_, err = db.Exec(`
 		INSERT INTO contacts (address, header_name, display_name, first_name, last_name,
-			phone, org, title, kind, kind_source, enriched_by, confidence, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			phone, org, title, kind, kind_source, enriched_by, confidence, notes, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(address) DO UPDATE SET
 			header_name  = COALESCE(NULLIF(excluded.header_name, ''), contacts.header_name),
 			display_name = COALESCE(NULLIF(excluded.display_name, ''), contacts.display_name),
@@ -223,15 +235,158 @@ func SaveContact(c *Contact, source string) error {
 			kind_source  = excluded.kind_source,
 			enriched_by  = COALESCE(NULLIF(excluded.enriched_by, ''), contacts.enriched_by),
 			confidence   = COALESCE(excluded.confidence, contacts.confidence),
+			notes        = CASE WHEN excluded.notes != '' THEN excluded.notes ELSE contacts.notes END,
 			updated_at   = excluded.updated_at`,
 		addr, nullIfEmpty(c.HeaderName), nullIfEmpty(c.DisplayName),
 		nullIfEmpty(c.FirstName), nullIfEmpty(c.LastName), nullIfEmpty(c.Phone),
 		nullIfEmpty(c.Org), nullIfEmpty(c.Title), kind, nullIfEmpty(source),
-		nullIfEmpty(c.EnrichedBy), c.Confidence, now, now)
+		nullIfEmpty(c.EnrichedBy), c.Confidence, c.Notes, now, now)
 	return err
 }
 
 // SetContactKind records what an address is, and who says so.
 func SetContactKind(address, kind, source string) error {
 	return SaveContact(&Contact{Address: address, Kind: kind}, source)
+}
+
+// SetContactNotes records private markdown notes for a contact.
+func SetContactNotes(address, notes string) error {
+	addr, _ := NormaliseAddress(address)
+	if addr == "" {
+		addr = strings.ToLower(strings.TrimSpace(address))
+	}
+	if addr == "" {
+		return fmt.Errorf("a contact needs an address")
+	}
+	now := time.Now().UnixMilli()
+	_, err := db.Exec(`
+		INSERT INTO contacts (address, notes, created_at, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(address) DO UPDATE SET
+			notes = excluded.notes,
+			updated_at = excluded.updated_at`,
+		addr, notes, now, now)
+	return err
+}
+
+// AddContactTag adds a custom tag to a contact.
+func AddContactTag(address, tag string) error {
+	addr, _ := NormaliseAddress(address)
+	if addr == "" {
+		addr = strings.ToLower(strings.TrimSpace(address))
+	}
+	tag = strings.ToLower(strings.TrimSpace(tag))
+	if addr == "" || tag == "" {
+		return fmt.Errorf("address and tag are required")
+	}
+	now := time.Now().UnixMilli()
+	_, err := db.Exec(`
+		INSERT INTO contacts (address, created_at, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(address) DO NOTHING`,
+		addr, now, now)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`
+		INSERT INTO contact_tags (address, tag, created_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(address, tag) DO NOTHING`,
+		addr, tag, now)
+	return err
+}
+
+// RemoveContactTag removes a custom tag from a contact.
+func RemoveContactTag(address, tag string) error {
+	addr, _ := NormaliseAddress(address)
+	if addr == "" {
+		addr = strings.ToLower(strings.TrimSpace(address))
+	}
+	tag = strings.ToLower(strings.TrimSpace(tag))
+	if addr == "" || tag == "" {
+		return fmt.Errorf("address and tag are required")
+	}
+	_, err := db.Exec(`DELETE FROM contact_tags WHERE address = ? AND tag = ?`, addr, tag)
+	return err
+}
+
+// GetContactTags returns all tags assigned to a contact in alphabetical order.
+func GetContactTags(address string) ([]string, error) {
+	addr, _ := NormaliseAddress(address)
+	if addr == "" {
+		addr = strings.ToLower(strings.TrimSpace(address))
+	}
+	rows, err := db.Query(`SELECT tag FROM contact_tags WHERE address = ? ORDER BY tag ASC`, addr)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tags := []string{}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	return tags, rows.Err()
+}
+
+// ListAllTags returns every unique contact tag in use.
+func ListAllTags() ([]string, error) {
+	rows, err := db.Query(`SELECT DISTINCT tag FROM contact_tags ORDER BY tag ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tags := []string{}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	return tags, rows.Err()
+}
+
+// PopulateContactTags populates the Tags slice on a list of contacts.
+func PopulateContactTags(contacts []*Contact) error {
+	if len(contacts) == 0 {
+		return nil
+	}
+	contactMap := make(map[string]*Contact, len(contacts))
+	addrs := make([]string, 0, len(contacts))
+	for _, c := range contacts {
+		c.Tags = []string{}
+		contactMap[c.Address] = c
+		addrs = append(addrs, c.Address)
+	}
+
+	ph := make([]string, len(addrs))
+	args := make([]any, len(addrs))
+	for i, a := range addrs {
+		ph[i] = "?"
+		args[i] = a
+	}
+
+	rows, err := db.Query(`
+		SELECT address, tag FROM contact_tags
+		WHERE address IN (`+strings.Join(ph, ", ")+`)
+		ORDER BY tag ASC`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var a, t string
+		if err := rows.Scan(&a, &t); err != nil {
+			return err
+		}
+		if c, ok := contactMap[a]; ok {
+			c.Tags = append(c.Tags, t)
+		}
+	}
+	return rows.Err()
 }

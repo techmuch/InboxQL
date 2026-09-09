@@ -319,7 +319,13 @@ func scanContacts(plan *query.Plan) ([]*Contact, error) {
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := PopulateContactTags(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func scanTickets(plan *query.Plan) ([]*Ticket, error) {

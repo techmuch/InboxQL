@@ -51,6 +51,26 @@ describe('ContactCard', () => {
         } else {
           body = { query: q, kind: 'groups', count: 0, groups: [] };
         }
+      } else if (url.includes('/api/contacts/responsiveness')) {
+        body = {
+          address: 'alice@acme.com',
+          myMedianReplySecs: 1800,
+          theirMedianReplySecs: 3600,
+          awaitingMyReplyCount: 1,
+          awaitingTheirReplyCount: 0,
+          awaitingMyReplyThreads: [
+            { threadKey: 't1', subject: 'Project launch', lastMessageAt: '2026-03-01T10:00:00Z', snippet: 'Are we ready?' }
+          ],
+          awaitingTheirReplyThreads: [],
+          toCount: 10,
+          ccCount: 2,
+          toRatio: 0.83,
+          hourlyDistribution: [0, 0, 0, 0, 0, 0, 0, 0, 2, 5, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        };
+      } else if (url.includes('/api/contacts/tags')) {
+        body = { address: 'alice@acme.com', tags: ['vip', 'client'] };
+      } else if (url.includes('/api/contacts/notes')) {
+        body = { address: 'alice@acme.com', notes: 'Updated note' };
       } else if (url.startsWith('/api/contacts')) {
         body = contact;
       }
@@ -107,5 +127,58 @@ describe('ContactCard', () => {
     render(<ContactCard address="alice@acme.com" />);
 
     expect(await screen.findByText('Nobody — every message is one-to-one.')).toBeInTheDocument();
+  });
+
+  it('renders communication dynamics metrics and open loops', async () => {
+    mockServer();
+    render(<ContactCard address="alice@acme.com" />);
+
+    expect(await screen.findByText('Communication Dynamics')).toBeInTheDocument();
+    expect(await screen.findByText('Your Turnaround')).toBeInTheDocument();
+    expect(await screen.findByText('30m')).toBeInTheDocument(); // 1800s
+    expect(await screen.findByText('1h')).toBeInTheDocument(); // 3600s
+    expect(await screen.findByText('83% Direct')).toBeInTheDocument();
+
+    // Open loops awaiting your reply
+    expect(await screen.findByText(/Awaiting your reply/)).toBeInTheDocument();
+    expect(await screen.findByText('Project launch')).toBeInTheDocument();
+  });
+
+  it('renders private notes and supports editing', async () => {
+    mockServer();
+    render(<ContactCard address="alice@acme.com" />);
+
+    expect(await screen.findByText('Private Notes')).toBeInTheDocument();
+    const textarea = screen.getByPlaceholderText(/Private notes \(markdown supported\)/);
+    expect(textarea).toBeInTheDocument();
+
+    fireEvent.change(textarea, { target: { value: 'Updated test notes' } });
+    const saveButton = screen.getByRole('button', { name: /Save note/i });
+    expect(saveButton).not.toBeDisabled();
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Saved')).toBeInTheDocument();
+    });
+  });
+
+  it('renders tag controls and supports adding a tag', async () => {
+    mockServer();
+    render(<ContactCard address="alice@acme.com" />);
+
+    const tagButton = await screen.findByRole('button', { name: /Tag/i });
+    expect(tagButton).toBeInTheDocument();
+    fireEvent.click(tagButton);
+
+    const tagInput = screen.getByPlaceholderText('tag name...');
+    expect(tagInput).toBeInTheDocument();
+
+    fireEvent.change(tagInput, { target: { value: 'client' } });
+    const addButton = screen.getByRole('button', { name: 'Add' });
+    fireEvent.click(addButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('client')).toBeInTheDocument();
+    });
   });
 });

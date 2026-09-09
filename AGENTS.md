@@ -391,6 +391,41 @@ iql --json draft list --query "origin:agent"
 Results come back under `drafts` with `kind: "drafts"`, not under `messages` —
 a draft has no id in the message store, so do not pass one to `read`.
 
+---
+
+## `contact` / `in:contacts` — people, systems, notes, tags & responsiveness
+
+A contact is an address you have corresponded with. Every message creates one
+for every address it touches. Counts (messages, sent, received, first and last
+seen) are derived on every read from participant edges, never cached.
+
+```
+iql --json contact list [--query "tag:client"]
+iql --json contact show <address>
+iql --json contact tag <address> <tag>
+iql --json contact untag <address> <tag>
+iql --json contact note <address> [text]
+iql --json contact responsiveness <address>
+iql --json query "in:contacts tag:vip awaiting:me"
+iql --json query "in:contacts has:notes"
+```
+
+| Term | Matches |
+|---|---|
+| `kind:` | `person organization system unknown` |
+| `tag:` | custom tag assigned to contact |
+| `has:` | `phone name org notes tag awaiting` |
+| `notes:` | prose search in private contact notes |
+| `awaiting:` | `me` (contact sent last message) or `them` (user sent last message) |
+| `messages:` `sent:` `received:` | interaction thresholds, e.g. `messages>10` |
+
+`contact responsiveness <address>` returns communication dynamics including
+median reply turnaround time for me vs. them, open loops (`awaitingMyReplyCount`
+and `awaitingTheirReplyCount` with pending thread subjects and snippets), role
+ratio (`toRatio`), and a 24-hour histogram of incoming messages.
+
+---
+
 ## `annotate` — labels and extracted data
 
 An annotator is a named, versioned instruction applied to messages. A **label**

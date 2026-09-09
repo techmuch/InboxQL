@@ -818,8 +818,15 @@ func (p *pipeline) buildContactGroups(field string, limit int) (*Plan, error) {
 		expr = "COALESCE(NULLIF(c.org, ''), '(unknown)')"
 	case "domain":
 		expr = "SUBSTR(c.address, INSTR(c.address, '@') + 1)"
+	case "tag":
+		args := append([]any{}, p.args...)
+		args = append(args, limit)
+		sql := "SELECT ct.tag AS label, COUNT(DISTINCT c.address) AS value FROM contacts c JOIN contact_tags ct ON ct.address = c.address WHERE " + p.where +
+			" GROUP BY ct.tag ORDER BY value DESC LIMIT ?"
+		return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true,
+			Entity: EntityContact, GroupField: field}, nil
 	default:
-		return nil, fmt.Errorf("cannot group contacts by %q (try kind, org or domain)", field)
+		return nil, fmt.Errorf("cannot group contacts by %q (try kind, org, domain or tag)", field)
 	}
 
 	args := append([]any{}, p.args...)

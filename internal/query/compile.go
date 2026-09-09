@@ -339,6 +339,60 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 		}
 		return wrap(col+" "+op+" "+c.arg(n), negated), nil
 
+	case "tag":
+		tagVal := strings.ToLower(strings.TrimSpace(t.Value))
+		if t.Op == OpGlob {
+			pattern := strings.ReplaceAll(tagVal, "*", "%")
+			return wrap("EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.address = c.address AND ct.tag LIKE "+c.arg(pattern)+")", negated), nil
+		}
+		return wrap("EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.address = c.address AND ct.tag = "+c.arg(tagVal)+")", negated), nil
+
+	case "notes", "note":
+		return wrap(c.stringPredicate("COALESCE(c.notes, '')", t), negated), nil
+
+	case "awaiting":
+		val := strings.ToLower(strings.TrimSpace(t.Value))
+		switch val {
+		case "me":
+			return wrap(`EXISTS (
+				SELECT 1 FROM messages m_latest
+				JOIN message_participants p_latest ON p_latest.message_id = m_latest.id AND p_latest.role = 'from'
+				WHERE p_latest.address = c.address
+				  AND m_latest.date = (
+				      SELECT MAX(m_sub.date) FROM messages m_sub
+				      WHERE COALESCE(m_sub.thread_key, m_sub.id) = COALESCE(m_latest.thread_key, m_latest.id)
+				  )
+			)`, negated), nil
+		case "them":
+			if c.opt.SelfAddresses == nil {
+				return "", fmt.Errorf("awaiting:them needs configured accounts")
+			}
+			selfs, err := c.opt.SelfAddresses()
+			if err != nil {
+				return "", err
+			}
+			if len(selfs) == 0 {
+				return wrap("1=0", negated), nil
+			}
+			ph := make([]string, len(selfs))
+			for i, s := range selfs {
+				ph[i] = c.arg(strings.ToLower(s))
+			}
+			return wrap(`EXISTS (
+				SELECT 1 FROM messages m_latest
+				JOIN message_participants p_latest ON p_latest.message_id = m_latest.id AND p_latest.role = 'from'
+				JOIN messages m_contact ON COALESCE(m_contact.thread_key, m_contact.id) = COALESCE(m_latest.thread_key, m_latest.id)
+				JOIN message_participants p_contact ON p_contact.message_id = m_contact.id AND p_contact.address = c.address
+				WHERE p_latest.address IN (`+strings.Join(ph, ", ")+`)
+				  AND m_latest.date = (
+				      SELECT MAX(m_sub.date) FROM messages m_sub
+				      WHERE COALESCE(m_sub.thread_key, m_sub.id) = COALESCE(m_latest.thread_key, m_latest.id)
+				  )
+			)`, negated), nil
+		default:
+			return "", fmt.Errorf("awaiting:%s is not valid (try awaiting:me or awaiting:them)", t.Value)
+		}
+
 	case "has":
 		switch strings.ToLower(t.Value) {
 		case "phone":
@@ -347,8 +401,22 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 			return wrap("(COALESCE(c.display_name, '') != '' OR COALESCE(c.header_name, '') != '')", negated), nil
 		case "org":
 			return wrap("COALESCE(c.org, '') != ''", negated), nil
+		case "notes", "note":
+			return wrap("COALESCE(c.notes, '') != ''", negated), nil
+		case "tag", "tags":
+			return wrap("EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.address = c.address)", negated), nil
+		case "awaiting":
+			return wrap(`EXISTS (
+				SELECT 1 FROM messages m_latest
+				JOIN message_participants p_latest ON p_latest.message_id = m_latest.id AND p_latest.role = 'from'
+				WHERE p_latest.address = c.address
+				  AND m_latest.date = (
+				      SELECT MAX(m_sub.date) FROM messages m_sub
+				      WHERE COALESCE(m_sub.thread_key, m_sub.id) = COALESCE(m_latest.thread_key, m_latest.id)
+				  )
+			)`, negated), nil
 		}
-		return "", fmt.Errorf("has:%s is not something a contact can have (try phone, name or org)", t.Value)
+		return "", fmt.Errorf("has:%s is not something a contact can have (try phone, name, org, notes, tag or awaiting)", t.Value)
 	}
 
 	// Anything else is a question about their mail, answered through the edges.

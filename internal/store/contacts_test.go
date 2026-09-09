@@ -145,3 +145,132 @@ func TestOneForwardedNewsletterDoesNotMakeYouASystem(t *testing.T) {
 		t.Error("forwarding one newsletter classified a person as a system")
 	}
 }
+
+func TestContactNotesAndTags(t *testing.T) {
+	openQueryFixture(t)
+
+	// Set notes
+	if err := SetContactNotes("alice@acme.com", "Met at conference; leading search team."); err != nil {
+		t.Fatalf("SetContactNotes: %v", err)
+	}
+
+	c, err := GetContact("alice@acme.com")
+	if err != nil || c == nil {
+		t.Fatalf("GetContact: %v, %v", c, err)
+	}
+	if c.Notes != "Met at conference; leading search team." {
+		t.Errorf("Notes = %q, want %q", c.Notes, "Met at conference; leading search team.")
+	}
+
+	// Add tags
+	if err := AddContactTag("alice@acme.com", "vip"); err != nil {
+		t.Fatalf("AddContactTag(vip): %v", err)
+	}
+	if err := AddContactTag("alice@acme.com", "client"); err != nil {
+		t.Fatalf("AddContactTag(client): %v", err)
+	}
+
+	tags, err := GetContactTags("alice@acme.com")
+	if err != nil {
+		t.Fatalf("GetContactTags: %v", err)
+	}
+	if len(tags) != 2 || tags[0] != "client" || tags[1] != "vip" {
+		t.Errorf("tags = %v, want [client vip]", tags)
+	}
+
+	// Reload contact and verify Tags populated
+	c2, err := GetContact("alice@acme.com")
+	if err != nil || c2 == nil {
+		t.Fatalf("GetContact: %v", err)
+	}
+	if len(c2.Tags) != 2 || c2.Tags[0] != "client" || c2.Tags[1] != "vip" {
+		t.Errorf("c2.Tags = %v, want [client vip]", c2.Tags)
+	}
+
+	// List all tags
+	allTags, err := ListAllTags()
+	if err != nil {
+		t.Fatalf("ListAllTags: %v", err)
+	}
+	if len(allTags) != 2 {
+		t.Errorf("allTags = %v, want 2 tags", allTags)
+	}
+
+	// Remove a tag
+	if err := RemoveContactTag("alice@acme.com", "vip"); err != nil {
+		t.Fatalf("RemoveContactTag: %v", err)
+	}
+	tagsAfter, _ := GetContactTags("alice@acme.com")
+	if len(tagsAfter) != 1 || tagsAfter[0] != "client" {
+		t.Errorf("tagsAfter = %v, want [client]", tagsAfter)
+	}
+
+	// Query: in:contacts tag:client
+	res, err := RunQuery("in:contacts tag:client", 10, 0)
+	if err != nil {
+		t.Fatalf("RunQuery(in:contacts tag:client): %v", err)
+	}
+	if len(res.Contacts) != 1 || res.Contacts[0].Address != "alice@acme.com" {
+		t.Fatalf("expected 1 contact alice@acme.com, got %v", res.Contacts)
+	}
+	if len(res.Contacts[0].Tags) != 1 || res.Contacts[0].Tags[0] != "client" {
+		t.Errorf("expected tags populated on query result, got %v", res.Contacts[0].Tags)
+	}
+
+	// Query: in:contacts -tag:client
+	resNeg, err := RunQuery("in:contacts -tag:client", 100, 0)
+	if err != nil {
+		t.Fatalf("RunQuery(in:contacts -tag:client): %v", err)
+	}
+	for _, c := range resNeg.Contacts {
+		if c.Address == "alice@acme.com" {
+			t.Errorf("alice should not match -tag:client")
+		}
+	}
+
+	// Query: in:contacts has:notes
+	resNotes, err := RunQuery("in:contacts has:notes", 10, 0)
+	if err != nil {
+		t.Fatalf("RunQuery(in:contacts has:notes): %v", err)
+	}
+	if len(resNotes.Contacts) != 1 || resNotes.Contacts[0].Address != "alice@acme.com" {
+		t.Fatalf("expected alice for has:notes, got %v", resNotes.Contacts)
+	}
+
+	// Query: in:contacts notes:conference
+	resNotesText, err := RunQuery("in:contacts notes:conference", 10, 0)
+	if err != nil {
+		t.Fatalf("RunQuery(in:contacts notes:conference): %v", err)
+	}
+	if len(resNotesText.Contacts) != 1 || resNotesText.Contacts[0].Address != "alice@acme.com" {
+		t.Fatalf("expected alice for notes:conference, got %v", resNotesText.Contacts)
+	}
+
+	// Grouping: in:contacts | count by tag
+	resGroup, err := RunQuery("in:contacts | count by tag", 10, 0)
+	if err != nil {
+		t.Fatalf("RunQuery(in:contacts | count by tag): %v", err)
+	}
+	if len(resGroup.Groups) != 1 || resGroup.Groups[0].Label != "client" || resGroup.Groups[0].Value != 1 {
+		t.Fatalf("expected 1 group 'client' with value 1, got %v", resGroup.Groups)
+	}
+
+	// Query: in:contacts awaiting:me
+	resAwaiting, err := RunQuery("in:contacts awaiting:me", 10, 0)
+	if err != nil {
+		t.Fatalf("RunQuery(in:contacts awaiting:me): %v", err)
+	}
+	if len(resAwaiting.Contacts) == 0 {
+		t.Errorf("expected contacts awaiting me")
+	}
+
+	// Query: in:contacts has:awaiting
+	resHasAwaiting, err := RunQuery("in:contacts has:awaiting", 10, 0)
+	if err != nil {
+		t.Fatalf("RunQuery(in:contacts has:awaiting): %v", err)
+	}
+	if len(resHasAwaiting.Contacts) == 0 {
+		t.Errorf("expected contacts with has:awaiting")
+	}
+}
+

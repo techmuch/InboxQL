@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Layout, Mail, MoreVertical,
-  Bot, HelpCircle, MessagesSquare, Plus, RefreshCw, Send, Star, Trash2, Users,
+  Bot, HelpCircle, MessagesSquare, Plus, RefreshCw, Send, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { openMessage, previewMessage, useViewerStore } from '../../lib/tabs';
 import { navRow, useRovingFocus } from '../../lib/rovingFocus';
@@ -647,7 +647,29 @@ export const Desk = () => {
                   <span className={`text-sm ${isOpen ? 'font-semibold text-foreground' : isUnread ? 'font-bold' : 'font-medium'}`}>{msg.subject || '(No Subject)'}</span>
                   <span className="text-sm text-muted-foreground opacity-60">— {msg.body?.substring(0, 100).replace(/\n/g, ' ')}</span>
                 </div>
-                <div className={`ml-4 text-xs tabular-nums whitespace-nowrap ${isOpen ? 'font-bold text-primary' : isUnread ? 'font-bold text-primary' : 'text-muted-foreground'}`}>
+                {/* In the flow rather than floated over the date, and
+                    `invisible` rather than removed, so the space is reserved
+                    whether or not the cursor is here. Overlaying it hid the
+                    date on hover; adding it on hover made the row twitch. */}
+                <button
+                  type="button"
+                  title="Find messages like this one"
+                  aria-label="Find messages like this one"
+                  onClick={e => {
+                    e.stopPropagation();
+                    setQuery(`similar:${msg.id}`);
+                  }}
+                  // opacity rather than visibility: `group-hover:visible` does
+                  // not take effect in this build while the opacity variant
+                  // does, and an opacity-0 element still occupies its space,
+                  // which is the property that matters here.
+                  className="ml-2 shrink-0 border border-border p-1 opacity-0 transition-opacity
+                             hover:bg-accent group-hover:opacity-100 focus:opacity-100"
+                >
+                  <Sparkles className="h-3 w-3 text-muted-foreground" />
+                </button>
+
+                <div className={`ml-3 text-xs tabular-nums whitespace-nowrap ${isOpen ? 'font-bold text-primary' : isUnread ? 'font-bold text-primary' : 'text-muted-foreground'}`}>
                   {formatDate(msg.date)}
                 </div>
               </div>

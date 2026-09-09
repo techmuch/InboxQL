@@ -5,6 +5,7 @@ import {
   Globe, Code, Copy, Check,
 } from 'lucide-react';
 import { ContactCard } from './ContactCard';
+import { SimilarButton } from './SimilarButton';
 import { useViewerStore, openContact } from '../lib/tabs';
 
 /**
@@ -475,6 +476,9 @@ export const MessageViewer = () => {
             <button className="px-6 py-2 border border-border flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
               <CornerUpRight className="w-4 h-4" /> Forward
             </button>
+            {/* Beside Reply and Forward because that is where you are when you
+                want it: reading something and wanting the rest of it. */}
+            <SimilarButton messageId={message.id} />
           </div>
         )}
       </div>

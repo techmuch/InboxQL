@@ -48,6 +48,7 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/messages", auth.Middleware(http.HandlerFunc(handleMessages)))
 	mux.Handle("/api/messages/counts", auth.Middleware(http.HandlerFunc(handleFolderCounts)))
 	mux.Handle("/api/messages/flags", auth.Middleware(http.HandlerFunc(handleMessageFlags)))
+	mux.Handle("/api/contacts", auth.Middleware(http.HandlerFunc(handleContacts)))
 	mux.Handle("/api/message", auth.Middleware(http.HandlerFunc(handleMessage)))
 	mux.Handle("/api/message/attachments", auth.Middleware(http.HandlerFunc(handleMessageAttachments)))
 	mux.Handle("/api/profile", auth.Middleware(http.HandlerFunc(handleProfile)))
@@ -776,4 +777,63 @@ func handleMessageFlags(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"changed": changed})
+}
+
+// handleContacts records a correction to a contact.
+//
+// Write-only on purpose. Reading contacts goes through /api/query like every
+// other entity — a second read path would be a second set of filtering,
+// ordering and paging semantics to keep in step with the first. But the query
+// language reads and does not write, so a correction needs somewhere to go.
+//
+// Everything written here is attributed to a person, which is what stops the
+// next rule or model run from undoing it.
+func handleContacts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Address     string `json:"address"`
+		DisplayName string `json:"displayName"`
+		FirstName   string `json:"firstName"`
+		LastName    string `json:"lastName"`
+		Phone       string `json:"phone"`
+		Org         string `json:"org"`
+		Title       string `json:"title"`
+		Kind        string `json:"kind"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		return
+	}
+	if strings.TrimSpace(req.Address) == "" {
+		writeError(w, http.StatusBadRequest, "address is required")
+		return
+	}
+	switch req.Kind {
+	case "", store.KindPerson, store.KindOrganization, store.KindSystem, store.KindUnknown:
+	default:
+		writeError(w, http.StatusBadRequest,
+			"kind must be person, organization, system or unknown")
+		return
+	}
+
+	c := &store.Contact{
+		Address: req.Address, DisplayName: req.DisplayName,
+		FirstName: req.FirstName, LastName: req.LastName, Phone: req.Phone,
+		Org: req.Org, Title: req.Title, Kind: req.Kind,
+	}
+	if err := store.SaveContact(c, store.ContactFromHuman); err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+
+	saved, err := store.GetContact(req.Address)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(saved)
 }

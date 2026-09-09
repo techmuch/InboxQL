@@ -558,6 +558,17 @@ func (p *parser) parseStage() (Stage, error) {
 	case "timeline":
 		return Stage{Kind: StageTimeline}, nil
 
+	case "topics":
+		s := Stage{Kind: StageTopics, N: 20}
+		if f, ok := word(); ok {
+			n, err := strconv.Atoi(f)
+			if err != nil || n <= 0 {
+				return Stage{}, &Error{Pos: verb.pos, Msg: fmt.Sprintf("topics: %q is not a row count", f)}
+			}
+			s.N = n
+		}
+		return s, nil
+
 	case "network", "graph":
 		s := Stage{Kind: StageNetwork, N: 50}
 		if f, ok := word(); ok {

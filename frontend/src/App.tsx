@@ -1079,6 +1079,15 @@ function App() {
       execute: () => openToolCb('board', 'Board'),
     });
     commandRegistry.registerCommand({
+      id: 'iql.open-contacts',
+      label: 'Contacts',
+      keybinding: 'Control+Shift+C',
+      // Desk on a contact query rather than a tab of its own: contacts are an
+      // entity in the query language, and giving them a separate surface would
+      // mean a second place that filters, sorts and pages them.
+      execute: () => { useQueryStore.getState().set('in:contacts'); openToolCb('desk', 'Desk'); },
+    });
+    commandRegistry.registerCommand({
       id: 'iql.open-annotators',
       label: 'Annotators',
       keybinding: 'Control+Shift+L',
@@ -1120,6 +1129,7 @@ function App() {
         { id: 'tools.desk', label: 'Desk', commandId: 'iql.open-desk' },
         { id: 'tools.board', label: 'Ticket Board', commandId: 'iql.open-board' },
         { id: 'tools.search', label: 'Search Email', commandId: 'iql.open-search' },
+        { id: 'tools.contacts', label: 'Contacts', commandId: 'iql.open-contacts' },
         { id: 'tools.annotators', label: 'Annotators', commandId: 'iql.open-annotators' },
         { id: 'tools.agents', label: 'AI Agents', commandId: 'iql.open-agents' },
       ],

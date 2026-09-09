@@ -4,6 +4,7 @@ import {
   CornerUpLeft, CornerUpRight, Inbox, Paperclip, FileText,
   Globe, Code, Copy, Check,
 } from 'lucide-react';
+import { ContactCard } from './ContactCard';
 import { useViewerStore } from '../lib/tabs';
 
 /**
@@ -18,6 +19,7 @@ import { useViewerStore } from '../lib/tabs';
  */
 export const MessageViewer = () => {
   const message = useViewerStore(s => s.message);
+  const contact = useViewerStore(s => s.contact);
   const selectedCount = useViewerStore(s => s.selectedCount);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw'>('html');
@@ -101,12 +103,18 @@ export const MessageViewer = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // The tab holds one subject at a time — a message or a contact — which is
+  // why it is called Viewer rather than Message.
+  if (contact) {
+    return <ContactCard address={contact} />;
+  }
+
   if (!message) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
         <Inbox className="w-8 h-8 opacity-40" />
-        <p className="text-sm italic">No message selected.</p>
-        <p className="text-xs">Pick one in Desk to read it here.</p>
+        <p className="text-sm italic">Nothing selected.</p>
+        <p className="text-xs">Pick a message or a contact in Desk to see it here.</p>
       </div>
     );
   }

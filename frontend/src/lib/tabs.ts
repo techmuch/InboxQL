@@ -109,8 +109,18 @@ interface ViewerState {
   /** The message currently shown in the viewer tab, if any. */
   messageId: string | null;
   message: any | null;
+  /**
+   * The contact currently shown, if any.
+   *
+   * The tab holds one subject at a time and its name says which — it was
+   * called "Message" when a message was all it could show. Setting either one
+   * clears the other, so the tab never has two things to render and a guess to
+   * make about which.
+   */
+  contact: string | null;
   selectedCount: number;
   setMessage: (message: any) => void;
+  setContact: (address: string) => void;
   setSelectedCount: (count: number) => void;
   clear: () => void;
 }
@@ -124,10 +134,12 @@ interface ViewerState {
 export const useViewerStore = create<ViewerState>((set) => ({
   messageId: null,
   message: null,
+  contact: null,
   selectedCount: 0,
-  setMessage: (message) => set({ message, messageId: message?.id ?? null }),
+  setMessage: (message) => set({ message, messageId: message?.id ?? null, contact: null }),
+  setContact: (contact) => set({ contact, message: null, messageId: null }),
   setSelectedCount: (selectedCount) => set({ selectedCount }),
-  clear: () => set({ message: null, messageId: null, selectedCount: 0 }),
+  clear: () => set({ message: null, messageId: null, contact: null, selectedCount: 0 }),
 }));
 
 /**
@@ -180,6 +192,12 @@ export const openMessage = (message: any): void => {
  */
 export const previewMessage = (message: any): void => {
   useViewerStore.getState().setMessage(message);
+};
+
+/** Show a contact in the viewer, opening the tab when it is not already there. */
+export const openContact = (address: string): void => {
+  useViewerStore.getState().setContact(address);
+  openTool(MESSAGE_VIEWER_TAB, 'Viewer');
 };
 
 interface ErrorLogState {

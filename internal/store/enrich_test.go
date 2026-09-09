@@ -102,3 +102,52 @@ func TestTopicSourcesDoNotOverwriteEachOther(t *testing.T) {
 		t.Error("the model's new answer was not recorded")
 	}
 }
+
+// The topics stage is how the contact card reads a contact's topics, so it has
+// to agree with the function the CLI uses. Two answers to "what do they talk
+// about" is exactly the drift this project keeps finding.
+func TestTopicsStageAgreesWithTopicsFor(t *testing.T) {
+	openQueryFixture(t)
+
+	if err := SetMessageTopics("m1", []string{"invoices"}, TopicFromModel, nil); err != nil {
+		t.Fatalf("SetMessageTopics: %v", err)
+	}
+	if err := SetMessageTopics("m5", []string{"invoices", "logistics"}, TopicFromModel, nil); err != nil {
+		t.Fatalf("SetMessageTopics: %v", err)
+	}
+	if err := SetMessageTopics("m3", []string{"logistics"}, TopicFromModel, nil); err != nil {
+		t.Fatalf("SetMessageTopics: %v", err)
+	}
+
+	direct, err := TopicsFor("alice@acme.com", 10)
+	if err != nil {
+		t.Fatalf("TopicsFor: %v", err)
+	}
+	res, err := RunQuery("in:contacts email:=alice@acme.com | topics 10", 10, 0)
+	if err != nil {
+		t.Fatalf("RunQuery: %v", err)
+	}
+	if res.Kind != "topics" {
+		t.Fatalf("kind = %q, want topics", res.Kind)
+	}
+
+	if len(direct) != len(res.Topics) {
+		t.Fatalf("TopicsFor returned %d topics, the stage returned %d", len(direct), len(res.Topics))
+	}
+	for i := range direct {
+		if direct[i].Topic != res.Topics[i].Topic {
+			t.Errorf("row %d: TopicsFor says %q, the stage says %q",
+				i, direct[i].Topic, res.Topics[i].Topic)
+		}
+		if direct[i].Messages != res.Topics[i].Messages {
+			t.Errorf("%s: counts differ, %d vs %d",
+				direct[i].Topic, direct[i].Messages, res.Topics[i].Messages)
+		}
+		// Lift is what the ordering is built on, so a disagreement here is a
+		// disagreement about the answer.
+		if diff := direct[i].Lift - res.Topics[i].Lift; diff > 0.001 || diff < -0.001 {
+			t.Errorf("%s: lift differs, %.3f vs %.3f",
+				direct[i].Topic, direct[i].Lift, res.Topics[i].Lift)
+		}
+	}
+}

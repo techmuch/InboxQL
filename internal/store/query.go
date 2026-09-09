@@ -34,6 +34,7 @@ type QueryResult struct {
 	Tickets  []*Ticket          `json:"tickets,omitempty"`
 	Drafts   []*Draft           `json:"drafts,omitempty"`
 	Contacts []*Contact         `json:"contacts,omitempty"`
+	Topics   []ContactTopic     `json:"topics,omitempty"`
 	Threads  []*Thread          `json:"threads,omitempty"`
 	Groups   []QueryGroup       `json:"groups,omitempty"`
 	Total    int64              `json:"total,omitempty"`
@@ -155,6 +156,14 @@ func RunQuery(src string, limit, offset int) (*QueryResult, error) {
 		GroupField: plan.GroupField, Bucket: plan.Bucket}
 
 	switch plan.Kind {
+	case query.PlanTopics:
+		topics, err := scanContactTopics(plan)
+		if err != nil {
+			return nil, err
+		}
+		res.Kind, res.Topics, res.Count = "topics", topics, len(topics)
+		return res, nil
+
 	case query.PlanContacts:
 		contacts, err := scanContacts(plan)
 		if err != nil {
@@ -258,6 +267,37 @@ func scanDrafts(plan *query.Plan) ([]*Draft, error) {
 			return nil, err
 		}
 		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// scanContactTopics reads the topic rows and finishes the arithmetic.
+//
+// The plan orders by lift because ordering has to happen before the LIMIT.
+// Share and lift are computed here from the counts it returned, so the numbers
+// shown are the ones the ordering used rather than a second calculation that
+// could disagree with it.
+func scanContactTopics(plan *query.Plan) ([]ContactTopic, error) {
+	rows, err := db.Query(plan.SQL, plan.Args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []ContactTopic{}
+	for rows.Next() {
+		var ct ContactTopic
+		var mine, corpusHits, corpus int64
+		if err := rows.Scan(&ct.Topic, &ct.Messages, &mine, &corpusHits, &corpus); err != nil {
+			return nil, err
+		}
+		if mine > 0 {
+			ct.Share = float64(ct.Messages) / float64(mine)
+		}
+		if corpusHits > 0 && corpus > 0 && ct.Share > 0 {
+			ct.Lift = ct.Share / (float64(corpusHits) / float64(corpus))
+		}
+		out = append(out, ct)
 	}
 	return out, rows.Err()
 }
@@ -389,6 +429,8 @@ func ExplainQuery(src string) (*QueryResult, error) {
 		kind = "threads"
 	case query.PlanContacts:
 		kind = "contacts"
+	case query.PlanTopics:
+		kind = "topics"
 	}
 	return &QueryResult{Query: src, Kind: kind, SQL: plan.SQL, Args: plan.Args}, nil
 }

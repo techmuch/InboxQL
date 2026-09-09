@@ -302,6 +302,8 @@ func stageSummary(name string) string {
 		return "conversations, with the tickets and drafts they produced"
 	case "network":
 		return "who appears alongside whom, and how often"
+	case "topics":
+		return "what these contacts are associated with, most distinctive first"
 	case "participants":
 		return "who appears, and how often"
 	case "extract":

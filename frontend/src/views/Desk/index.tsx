@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Layout, Mail, MoreVertical,
-  MessagesSquare, Plus, RefreshCw, Send, Star, Trash2,
+  Bot, HelpCircle, MessagesSquare, Plus, RefreshCw, Send, Star, Trash2, Users,
 } from 'lucide-react';
 import { openMessage, previewMessage, useViewerStore } from '../../lib/tabs';
 import { navRow, useRovingFocus } from '../../lib/rovingFocus';
@@ -345,10 +345,21 @@ export const Desk = () => {
             </>
           )}
 
+          {/* Entities other than mail.
+              Contacts were reachable only by knowing to type `in:contacts` —
+              the entity, the fields and the renderer all existed and nothing
+              pointed at them. A rail exists precisely so a surface does not
+              require knowing its name. */}
           <div className="px-4 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Other</div>
           {[
-            { label: 'Tickets', q: 'in:tickets -status:done -status:rejected' },
-            { label: 'Proposed', q: 'in:tickets status:proposed' },
+            { label: 'Tickets', icon: Layout, q: 'in:tickets -status:done -status:rejected' },
+            { label: 'Proposed', icon: Layout, q: 'in:tickets status:proposed' },
+            { label: 'People', icon: Users, q: 'in:contacts kind:person' },
+            { label: 'Systems', icon: Bot, q: 'in:contacts kind:system' },
+            // The queue the enrichment annotator exists to work through: most
+            // addresses cannot be classified from headers alone, and this is
+            // where you see how many are waiting.
+            { label: 'Unclassified', icon: HelpCircle, q: 'in:contacts kind:unknown' },
           ].map(entry => (
             <button
               key={entry.label}
@@ -356,7 +367,7 @@ export const Desk = () => {
               title={entry.q}
               className={`w-full flex items-center gap-4 px-4 py-2  text-sm transition-colors ${queryText.trim() === entry.q ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground/70'}`}
             >
-              <Layout className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+              <entry.icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
               <span className="flex-1 text-left truncate">{entry.label}</span>
             </button>
           ))}

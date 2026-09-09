@@ -356,3 +356,56 @@ func TestIdentityQueriesNameAHandPickedSet(t *testing.T) {
 		t.Errorf("id:(a OR b) matched %d messages, want 2", len(listed.Messages))
 	}
 }
+
+// A correction is a human ruling, and nothing a rule or a model does later may
+// undo it. The write path exists because the query language reads and does not
+// write; reading contacts still goes through /api/query.
+func TestContactCorrectionsOverAPI(t *testing.T) {
+	e := newEnv(t)
+	e.seedMailbox(t)
+	c := &apiClient{t: t, srv: e.startServer()}
+
+	var saved struct {
+		Address     string `json:"address"`
+		DisplayName string `json:"displayName"`
+		Kind        string `json:"kind"`
+		KindSource  string `json:"kindSource"`
+		Phone       string `json:"phone"`
+	}
+	body := `{"address":"alice@acme.com","displayName":"Alice A.","kind":"organization","phone":"+1 555 0100"}`
+	if code := c.do("POST", "/api/contacts", body, &saved); code != 200 {
+		t.Fatalf("correcting a contact returned %d", code)
+	}
+	if saved.DisplayName != "Alice A." || saved.Kind != "organization" || saved.Phone != "+1 555 0100" {
+		t.Errorf("the correction did not stick: %+v", saved)
+	}
+	if saved.KindSource != "human" {
+		t.Errorf("kindSource = %q, want human", saved.KindSource)
+	}
+
+	// A classify run must leave it alone.
+	if r := e.run("contact", "classify"); r.ExitCode != 0 {
+		t.Fatalf("contact classify: %s%s", r.Stdout, r.Stderr)
+	}
+	var listed struct {
+		Contacts []struct {
+			Address string `json:"address"`
+			Kind    string `json:"kind"`
+		} `json:"contacts"`
+	}
+	c.do("GET", "/api/query?q="+url.QueryEscape("in:contacts email:=alice@acme.com"), "", &listed)
+	if len(listed.Contacts) != 1 {
+		t.Fatalf("matched %d contacts", len(listed.Contacts))
+	}
+	if listed.Contacts[0].Kind != "organization" {
+		t.Errorf("a rule run overwrote a human ruling: kind = %q", listed.Contacts[0].Kind)
+	}
+
+	// Reads are the query language's job; the write path does not serve them.
+	if code := c.do("GET", "/api/contacts", "", nil); code != 405 {
+		t.Errorf("GET /api/contacts returned %d, want 405", code)
+	}
+	if code := c.do("POST", "/api/contacts", `{"address":"x@y.com","kind":"alien"}`, nil); code != 400 {
+		t.Errorf("an invalid kind returned %d, want 400", code)
+	}
+}

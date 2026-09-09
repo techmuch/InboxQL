@@ -21,6 +21,8 @@ const (
 	PlanDrafts
 	// PlanContacts returns contact rows.
 	PlanContacts
+	// PlanTopics returns a contact's topics with their association strength.
+	PlanTopics
 	// PlanThreads returns conversation keys, one per row.
 	//
 	// Unlike every other kind, the statement is not the answer — it selects
@@ -121,7 +123,7 @@ func (p *pipeline) read(stages []Stage) error {
 			p.limit = s.N
 			p.sample = true
 
-		case StageCount, StageTop, StageSeries, StageAggregate, StageParticipants, StageTimeline, StageNetwork:
+		case StageCount, StageTop, StageSeries, StageAggregate, StageParticipants, StageTimeline, StageNetwork, StageTopics:
 			if p.terminal != nil {
 				return fmt.Errorf("a query can end in only one aggregate; found %s after %s", s.Kind, p.terminal.Kind)
 			}
@@ -175,6 +177,9 @@ func (p *pipeline) build() (*Plan, error) {
 		return p.buildDrafts()
 	}
 	if p.entity == EntityContact {
+		if p.terminal != nil && p.terminal.Kind == StageTopics {
+			return p.buildContactTopics()
+		}
 		return p.buildContacts()
 	}
 	if p.terminal == nil {
@@ -868,4 +873,52 @@ func (p *pipeline) buildNetwork() (*Plan, error) {
 
 	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true,
 		GroupField: "pair"}, nil
+}
+
+// buildContactTopics plans the topics associated with the matched contacts.
+//
+// # Why the SQL computes lift rather than the caller
+//
+// Ranking by count answers every question with whoever you exchange the most
+// mail with — on a real archive one address was on 185 of 188 messages. Lift is
+// this contact's share of a topic over the mailbox's share of it, which asks
+// the question that was actually meant: who discusses this *disproportionately*.
+//
+// It belongs in the plan because it is the ordering, and an ordering applied
+// after a LIMIT is not an ordering.
+func (p *pipeline) buildContactTopics() (*Plan, error) {
+	limit := p.clampLimit(p.terminal.N)
+	args := append([]any{}, p.args...)
+	args = append(args, limit)
+
+	sql := `WITH scope AS (SELECT c.address FROM contacts c WHERE ` + p.where + `),
+		theirs AS (
+			SELECT DISTINCT p.message_id
+			FROM message_participants p JOIN scope ON scope.address = p.address
+		),
+		totals AS (
+			SELECT (SELECT COUNT(*) FROM theirs) AS mine,
+			       (SELECT COUNT(*) FROM messages) AS corpus
+		)
+		SELECT t.topic AS label,
+		       COUNT(DISTINCT t.message_id) AS value,
+		       (SELECT mine FROM totals) AS mine,
+		       (SELECT COUNT(DISTINCT t2.message_id) FROM message_topics t2 WHERE t2.topic = t.topic) AS corpus_hits,
+		       (SELECT corpus FROM totals) AS corpus
+		FROM message_topics t
+		JOIN theirs ON theirs.message_id = t.message_id
+		GROUP BY t.topic
+		ORDER BY
+			CASE WHEN (SELECT mine FROM totals) = 0
+			       OR (SELECT COUNT(DISTINCT t2.message_id) FROM message_topics t2 WHERE t2.topic = t.topic) = 0
+			     THEN 0
+			     ELSE (CAST(COUNT(DISTINCT t.message_id) AS REAL) / (SELECT mine FROM totals))
+			          / (CAST((SELECT COUNT(DISTINCT t2.message_id) FROM message_topics t2 WHERE t2.topic = t.topic) AS REAL)
+			             / (SELECT corpus FROM totals))
+			END DESC,
+			value DESC
+		LIMIT ?`
+
+	return &Plan{SQL: sql, Args: args, Kind: PlanTopics, Limit: limit, Ordered: true,
+		Entity: EntityContact, GroupField: "topic"}, nil
 }

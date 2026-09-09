@@ -1,5 +1,5 @@
 import { Inbox } from 'lucide-react';
-import { openMessage, previewMessage } from '../../lib/tabs';
+import { openContact, openMessage, previewMessage } from '../../lib/tabs';
 import { navRow } from '../../lib/rovingFocus';
 import { contactName, drillDownTerm, type Contact, type QueryResult } from './api';
 import { ThreadResult } from './Timeline';
@@ -38,7 +38,7 @@ export const Results = ({ result, onDrillDown }: ResultsProps) => {
     case 'contacts': {
       const contacts = result.contacts ?? [];
       if (contacts.length === 0) return <Empty label="No contacts matched" />;
-      return <ContactResult contacts={contacts} onDrillDown={onDrillDown} />;
+      return <ContactResult contacts={contacts} />;
     }
     case 'threads': {
       const threads = result.threads ?? [];
@@ -292,13 +292,7 @@ const Empty = ({ label }: { label: string }) => (
  * Activating a contact narrows the query to their mail, which is what a
  * contact is *for*: the address is the least interesting thing about them.
  */
-const ContactResult = ({
-  contacts,
-  onDrillDown,
-}: {
-  contacts: Contact[];
-  onDrillDown: (terms: string | string[], stage?: string) => void;
-}) => (
+const ContactResult = ({ contacts }: { contacts: Contact[] }) => (
   <div className="overflow-auto h-full">
     <table className="w-full text-sm">
       <thead className="sticky top-0 bg-background border-b border-border">
@@ -319,12 +313,11 @@ const ContactResult = ({
             data-sel-id={c.address}
             data-sel-field="email"
             data-sel-label={contactName(c)}
-            // Two terms, not one string: the entity has to move as well.
-            // `anyone:x` alone leaves `in:contacts` in place, which filters
-            // the contact list to their correspondents — a real answer to a
-            // question nobody asked by clicking a person's name.
-            onClick={() => onDrillDown([`anyone:${c.address}`, 'in:messages'])}
-            title="Show their mail"
+            // Opens the card, the way clicking a message opens the message.
+            // Narrowing to their mail is an explicit action on the card —
+            // clicking a person's name should show you the person.
+            onClick={() => openContact(c.address)}
+            title="Open this contact"
             className="border-b border-border/50 cursor-pointer hover:bg-accent/40"
           >
             <td className="px-4 py-1.5 truncate max-w-0">{contactName(c)}</td>

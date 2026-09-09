@@ -137,6 +137,9 @@ const (
 	StageTimeline StageKind = "timeline"
 	// StageNetwork returns who appears alongside whom.
 	StageNetwork StageKind = "network"
+	// StageTopics returns what a contact is associated with, ranked by how
+	// disproportionately they discuss it.
+	StageTopics StageKind = "topics"
 )
 
 // Stage is one step of the pipeline.

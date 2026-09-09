@@ -16,6 +16,21 @@ import (
 // is resolved when it is saved, not when it is used. That single decision is
 // what makes LLMProfile.IsRemote a pure string inspection instead of a lookup
 // that has to agree with a second copy of these defaults somewhere else.
+// What a profile is for.
+const (
+	PurposeChat      = "chat"
+	PurposeEmbedding = "embedding"
+)
+
+// nullIfZero keeps an unknown dimension NULL rather than storing a zero that
+// reads like a real width.
+func nullIfZero(n int) any {
+	if n == 0 {
+		return nil
+	}
+	return n
+}
+
 var DefaultLLMEndpoints = map[string]string{
 	"ollama": "http://localhost:11434",
 	"openai": "https://api.openai.com/v1",
@@ -47,7 +62,13 @@ type LLMProfile struct {
 	Endpoint string `json:"endpoint"`
 	// APIKey is decrypted on read and encrypted on write, and is never
 	// serialised — see MarshalJSON's absence and Redacted below.
-	APIKey        string `json:"-"`
+	APIKey string `json:"-"`
+	// Purpose is chat or embedding. A profile serves one or the other, and
+	// naming the wrong kind is a configuration error rather than a runtime one.
+	Purpose string `json:"purpose"`
+	// Dimensions is the width an embedding profile's vectors come back at,
+	// learned by probing. Vectors of different widths cannot be compared.
+	Dimensions    int    `json:"dimensions,omitempty"`
 	IsDefault     bool   `json:"isDefault"`
 	AutoStart     bool   `json:"autoStart"`
 	LaunchMode    string `json:"launchMode"`
@@ -104,6 +125,8 @@ func (p LLMProfile) Redacted() map[string]any {
 		"autoStart":     p.AutoStart,
 		"launchMode":    p.LaunchMode,
 		"lifecycleMode": p.LifecycleMode,
+		"purpose":       p.Purpose,
+		"dimensions":    p.Dimensions,
 		"scope":         p.Scope(),
 		"hasApiKey":     p.HasAPIKey(),
 		"createdAt":     p.CreatedAt,
@@ -112,17 +135,21 @@ func (p LLMProfile) Redacted() map[string]any {
 }
 
 const llmProfileColumns = `id, name, provider, model, endpoint, COALESCE(api_key, ''),
+	COALESCE(purpose, 'chat'), dimensions,
 	is_default, auto_start, launch_mode, lifecycle_mode, created_at, updated_at`
 
 func scanLLMProfile(scan func(...any) error) (*LLMProfile, error) {
 	p := &LLMProfile{}
 	var sealed string
 	var created, updated int64
+	var dims sql.NullInt64
 	if err := scan(&p.ID, &p.Name, &p.Provider, &p.Model, &p.Endpoint, &sealed,
+		&p.Purpose, &dims,
 		&p.IsDefault, &p.AutoStart, &p.LaunchMode, &p.LifecycleMode,
 		&created, &updated); err != nil {
 		return nil, err
 	}
+	p.Dimensions = int(dims.Int64)
 	p.CreatedAt = millisToTime(created)
 	p.UpdatedAt = millisToTime(updated)
 
@@ -228,6 +255,9 @@ func SaveLLMProfile(p *LLMProfile) error {
 	if p.LifecycleMode == "" {
 		p.LifecycleMode = "managed"
 	}
+	if p.Purpose == "" {
+		p.Purpose = PurposeChat
+	}
 
 	now := time.Now()
 	if p.ID == "" {
@@ -264,15 +294,18 @@ func SaveLLMProfile(p *LLMProfile) error {
 
 	if _, err := tx.Exec(`
 		INSERT INTO llm_profiles (id, name, provider, model, endpoint, api_key,
+			purpose, dimensions,
 			is_default, auto_start, launch_mode, lifecycle_mode, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name, provider = excluded.provider, model = excluded.model,
 			endpoint = excluded.endpoint, api_key = excluded.api_key,
+			purpose = excluded.purpose, dimensions = excluded.dimensions,
 			is_default = excluded.is_default, auto_start = excluded.auto_start,
 			launch_mode = excluded.launch_mode, lifecycle_mode = excluded.lifecycle_mode,
 			updated_at = excluded.updated_at`,
 		p.ID, p.Name, p.Provider, p.Model, p.Endpoint, nullIfEmpty(sealed),
+		p.Purpose, nullIfZero(p.Dimensions),
 		p.IsDefault, p.AutoStart, p.LaunchMode, p.LifecycleMode,
 		p.CreatedAt.UnixMilli(), p.UpdatedAt.UnixMilli()); err != nil {
 		return err

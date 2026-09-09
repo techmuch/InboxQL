@@ -30,6 +30,7 @@ func registerLLMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/llm/profiles", handleLLMProfileDelete)
 	mux.HandleFunc("POST /api/llm/profiles/default", handleLLMProfileDefault)
 	mux.HandleFunc("POST /api/llm/refresh", handleLLMRefresh)
+	mux.HandleFunc("GET /api/llm/similarity", handleSimilarityHistogram)
 }
 
 func handleLLMStatus(w http.ResponseWriter, r *http.Request) {
@@ -335,6 +336,7 @@ func handleLLMProfileSave(w http.ResponseWriter, r *http.Request) {
 		IsDefault bool    `json:"isDefault"`
 		AutoStart bool    `json:"autoStart"`
 		Launch    string  `json:"launchMode"`
+		Purpose   string  `json:"purpose"`
 	}
 	if err := decodeJSON(w, r, &req); err != nil {
 		return
@@ -355,6 +357,21 @@ func handleLLMProfileSave(w http.ResponseWriter, r *http.Request) {
 	}
 	p.Provider, p.Model, p.Endpoint = req.Provider, req.Model, req.Endpoint
 	p.IsDefault, p.AutoStart = req.IsDefault, req.AutoStart
+	if req.Purpose != "" {
+		p.Purpose = req.Purpose
+	}
+	// An embedding profile's width is probed rather than declared: only the
+	// model knows it, and a stored vector that does not match cannot be
+	// compared against anything.
+	if p.Purpose == store.PurposeEmbedding {
+		dims, err := llm.ProbeEmbedding(r.Context(), p.Endpoint, p.APIKey, p.Provider, p.Model)
+		if err != nil {
+			writeError(w, http.StatusBadRequest,
+				"%s does not embed at %s: %v", p.Model, p.Endpoint, err)
+			return
+		}
+		p.Dimensions = dims
+	}
 	if req.Launch != "" {
 		p.LaunchMode = req.Launch
 	}
@@ -449,6 +466,11 @@ func handleLLMRefresh(w http.ResponseWriter, r *http.Request) {
 		if req.Provider != "" && rt.Provider != req.Provider {
 			continue
 		}
+		// Ask each running runtime what its models are actually for. A bare
+		// list of names would offer an embedding model for completions and a
+		// chat model for embeddings, and both fail at use rather than here.
+		rt.Classify(r.Context())
+
 		report := runtimeReport{RuntimeInfo: rt}
 		switch {
 		case !rt.Installed:
@@ -458,6 +480,11 @@ func handleLLMRefresh(w http.ResponseWriter, r *http.Request) {
 		case len(rt.Models) == 0:
 			report.Problem = rt.Name + " is running but reported no models. Pull one, or check " +
 				rt.Endpoint + " is reachable."
+		case rt.Embeddings != nil && !*rt.Embeddings:
+			// Said plainly, because otherwise the only symptom is that no
+			// embedding profile can be configured and nothing explains why.
+			report.Problem = rt.Name + " serves chat only — none of its models embed. " +
+				"Pull an embedding model to use similarity."
 		}
 		found += len(rt.Models)
 		out = append(out, report)
@@ -489,4 +516,35 @@ func annotatorsUsingProfile(name string) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// handleSimilarityHistogram reports how many neighbours a message has at each
+// threshold.
+//
+// The number beside the slider. A cosine threshold is not portable between
+// embedding models and the values sit in a band whose width the model decides
+// — measured on a real archive with bge-m3, everything lived between 0.26 and
+// 0.65, so a plausible-sounding 0.8 returns nothing at all. Without the
+// distribution the control is a dial with no markings.
+func handleSimilarityHistogram(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	buckets := []float64{0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}
+	hist, err := store.SimilarityHistogram(id, buckets)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"id":        id,
+		"buckets":   buckets,
+		"counts":    hist,
+		"threshold": store.DefaultSimilarityThreshold(),
+	})
 }

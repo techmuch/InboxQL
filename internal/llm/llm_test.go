@@ -132,3 +132,26 @@ func TestDetectRuntimes(t *testing.T) {
 		t.Fatalf("expected swama in detected runtimes")
 	}
 }
+
+// A name is a convention and conventions are broken, so names only ever order
+// the probing.
+func TestLooksLikeEmbedding(t *testing.T) {
+	embedding := []string{
+		"nomic-embed-text", "mlx-community/bge-m3-mlx-fp16", "all-minilm",
+		"text-embedding-3-small", "gte-large", "e5-mistral", "mxbai-embed-large",
+	}
+	chat := []string{
+		"llama3.3:70b", "mlx-community/gemma-4-e4b-it-4bit", "gpt-4o-mini",
+		"mistral", "qwen2.5-coder",
+	}
+	for _, name := range embedding {
+		if !LooksLikeEmbedding(name) {
+			t.Errorf("%q was not recognised as an embedding model", name)
+		}
+	}
+	for _, name := range chat {
+		if LooksLikeEmbedding(name) {
+			t.Errorf("%q was mistaken for an embedding model", name)
+		}
+	}
+}

@@ -25,7 +25,36 @@ type RuntimeInfo struct {
 	Running     bool     `json:"running"`
 	Endpoint    string   `json:"endpoint"`
 	LaunchModes []string `json:"launchModes"`
-	Models      []string `json:"models"`
+	// Models are the bare names the runtime reports, kept for compatibility
+	// with anything that just wants a list.
+	Models []string `json:"models"`
+	// Catalog is the same models with what each one is for, and how wide its
+	// vectors are when it embeds.
+	Catalog []Model `json:"catalog,omitempty"`
+	// Embeddings says whether this runtime can embed at all. A runtime with a
+	// chat model loaded and no embedding backend refuses every embedding
+	// model it lists, which is a fact about the runtime rather than the model.
+	Embeddings *bool `json:"embeddings,omitempty"`
+}
+
+// Classify fills in a runtime's catalog by probing the models worth probing.
+//
+// Separate from detection because it costs a model load: detection runs on
+// every page render, and this runs when somebody asks what is available.
+func (r *RuntimeInfo) Classify(ctx context.Context) {
+	if !r.Running || len(r.Models) == 0 {
+		return
+	}
+	r.Catalog = ClassifyModels(ctx, r.Endpoint, "", r.Provider, r.Models)
+
+	supports := false
+	for _, m := range r.Catalog {
+		if m.Kind == KindEmbedding {
+			supports = true
+			break
+		}
+	}
+	r.Embeddings = &supports
 }
 
 // DetectRuntimes scans the local system for supported LLM runtimes (Swama, Ollama).

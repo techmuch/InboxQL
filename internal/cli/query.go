@@ -35,6 +35,9 @@ Filter terms
   label: unlabeled: conf>     annotator results
   extract:name.field>10       extracted structured data
   thread:<message-id>         every message in that conversation
+  topic:<name>                a topic an annotator extracted
+  similar:<id>>0.7            messages near this one in meaning; needs
+                              embeddings, see "iql annotate embed"
   saved:<name>                everything a saved query matches
   a bare word                 full-text search
 
@@ -344,6 +347,7 @@ func runQuery(ctx *Context, args []string) error {
 	explain := fs.Bool("explain", false, "print the compiled SQL without running it")
 	countOnly := fs.Bool("count", false, "return only the number of matches")
 	complete := fs.Int("complete", -1, "list what may be typed at this cursor position")
+	histogram := fs.String("similarity", "", "show how a message's neighbours are spread, by threshold")
 	expr, err := parseQueryArgs(fs, args)
 	if err != nil {
 		return Fail(ExitUsage, "invalid flags")
@@ -353,6 +357,10 @@ func runQuery(ctx *Context, args []string) error {
 		return err
 	}
 	defer store.CloseDB()
+
+	if *histogram != "" {
+		return printSimilarityHistogram(ctx, *histogram)
+	}
 
 	if *complete >= 0 {
 		c, err := store.Complete(expr, *complete)
@@ -627,6 +635,37 @@ func formatNumber(v float64) string {
 		return fmt.Sprintf("%d", int64(v))
 	}
 	return fmt.Sprintf("%.2f", v)
+}
+
+// printSimilarityHistogram shows how the neighbours of a message are spread.
+//
+// Printed rather than left to guesswork because a similarity threshold means
+// nothing on its own: the band a model produces is a property of the model.
+func printSimilarityHistogram(ctx *Context, id string) error {
+	buckets := []float64{0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}
+	hist, err := store.SimilarityHistogram(id, buckets)
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	if ctx.JSON {
+		return ctx.EmitJSON(map[string]any{
+			"id": id, "counts": hist, "threshold": store.DefaultSimilarityThreshold(),
+		})
+	}
+
+	p := ctx.Printer()
+	t := p.NewTable("AT OR ABOVE", "MESSAGES")
+	for _, b := range buckets {
+		t.Row(fmt.Sprintf("%.2f", b), fmt.Sprintf("%d", hist[fmt.Sprintf("%.2f", b)]))
+	}
+	if err := t.Flush(); err != nil {
+		return err
+	}
+	ctx.Printf("\n%s\n", p.Dim(fmt.Sprintf(
+		"Default threshold is %.2f. Cosine values sit in a band the embedding model decides, "+
+			"so a number that sounds strict may match nothing.",
+		store.DefaultSimilarityThreshold())))
+	return nil
 }
 
 func runSQL(ctx *Context, args []string) error {

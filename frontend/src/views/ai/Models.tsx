@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  AlertCircle, Check, Cpu, Globe, Play, Plus, RefreshCw, Square, Star, Trash2, Zap,
+  AlertCircle, Binary, Check, Cpu, Globe, MessageSquare, Play, Plus, RefreshCw,
+  Square, Star, Trash2, Zap,
 } from 'lucide-react';
 import {
   deleteProfile, getStatus, refreshRuntimes, saveProfile, setDefaultProfile,
@@ -298,6 +299,20 @@ const ProfileRow = ({
         </span>
       </button>
 
+      {/* What the profile is for. Pointing an annotator at an embedding model
+          used to fail at the moment of use with a provider error; the purpose
+          is on the profile so it is a configuration fact instead. */}
+      <span
+        title={profile.purpose === 'embedding'
+          ? `Embeddings, ${profile.dimensions ?? '?'} dimensions`
+          : 'Completions'}
+        className="flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-mono bg-muted text-muted-foreground"
+      >
+        {profile.purpose === 'embedding'
+          ? <><Binary className="h-3 w-3" />{profile.dimensions ?? '?'}</>
+          : <><MessageSquare className="h-3 w-3" />chat</>}
+      </span>
+
       {/* Scope is the column that matters most: it says whether using this
           profile sends mail off the machine. */}
       <span
@@ -400,6 +415,7 @@ const ProfileEditor = ({
   const [endpoint, setEndpoint] = useState(profile.endpoint ?? '');
   const [apiKey, setApiKey] = useState('');
   const [isDefault, setIsDefault] = useState(profile.isDefault ?? false);
+  const [purpose, setPurpose] = useState<'chat' | 'embedding'>(profile.purpose ?? 'chat');
 
   const runtime = runtimes.find(r => r.provider === provider);
   const models = runtime?.models ?? [];
@@ -492,6 +508,31 @@ const ProfileEditor = ({
           />
         </Field>
 
+        <Field
+          label="For"
+          hint={purpose === 'embedding'
+            ? 'Its width is probed when you save, because only the model knows it and vectors of different widths cannot be compared.'
+            : 'Completions: annotators, analyze and draft.'}
+        >
+          <select
+            value={purpose}
+            onChange={e => setPurpose(e.target.value as 'chat' | 'embedding')}
+            className="w-full border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="chat">chat — completions</option>
+            <option value="embedding">embedding — similarity and topics</option>
+          </select>
+        </Field>
+
+        {/* Only the models that can do the chosen job. */}
+        {purpose === 'embedding' && runtime?.catalog && (
+          <p className="text-[11px] text-muted-foreground">
+            {runtime.catalog.some(m => m.kind === 'embedding')
+              ? <>Embedding models here: {runtime.catalog.filter(m => m.kind === 'embedding').map(m => m.name).join(', ')}</>
+              : <>{runtime.name} reports no embedding model. Pull one, then re-scan.</>}
+          </p>
+        )}
+
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={isDefault} onChange={e => setIsDefault(e.target.checked)} />
           Use this when nothing names a profile
@@ -527,7 +568,7 @@ const ProfileEditor = ({
             disabled={!name.trim() || !model.trim() || duplicate}
             onClick={() => onSave({
               id: profile.id, name: name.trim(), provider, model: model.trim(),
-              endpoint: endpoint.trim(), isDefault,
+              endpoint: endpoint.trim(), isDefault, purpose,
               // Omitted when untouched, so saving a form that cannot show the
               // stored key does not erase it.
               ...(apiKey ? { apiKey } : {}),

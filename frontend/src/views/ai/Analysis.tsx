@@ -24,14 +24,20 @@ import { Notice } from './Models';
 export const Analysis = () => {
   const [ignoreWords, setIgnoreWords] = useState('');
   const [autoAccept, setAutoAccept] = useState('');
+  const [similarity, setSimilarity] = useState('');
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getSetting('ignore_words'), getSetting('ticket_auto_accept')])
-      .then(([words, threshold]) => {
+    Promise.all([
+      getSetting('ignore_words'),
+      getSetting('ticket_auto_accept'),
+      getSetting('similarity_threshold'),
+    ])
+      .then(([words, threshold, similarity]) => {
         setIgnoreWords(words);
         setAutoAccept(threshold);
+        setSimilarity(similarity);
       })
       .catch(() => {/* an unset setting is empty, not an error */})
       .finally(() => setLoading(false));
@@ -53,6 +59,8 @@ export const Analysis = () => {
   // task list you cannot trust is worse than no task list at all.
   const threshold = parseFloat(autoAccept);
   const never = !(threshold >= 0 && threshold <= 1);
+  const parsedSimilarity = parseFloat(similarity);
+  const similarityValue = parsedSimilarity >= 0 && parsedSimilarity <= 1 ? parsedSimilarity : 0.5;
 
   return (
     <div className="max-w-4xl space-y-8">
@@ -109,6 +117,50 @@ export const Analysis = () => {
       </section>
 
       <section className="space-y-3 border border-border bg-card p-6">
+        <h3 className="font-bold">Similarity</h3>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          How near two messages must be for <code className="font-mono">similar:</code> to
+          consider them related. A query can override it —{' '}
+          <code className="font-mono">similar:&lt;id&gt;&gt;0.6</code> — and this is the default
+          when it does not.
+        </p>
+
+        <div className="flex items-center gap-4">
+          <input
+            type="range"
+            min="0.1"
+            max="0.95"
+            step="0.05"
+            value={similarityValue}
+            onChange={e => setSimilarity(e.target.value)}
+            className="max-w-xs flex-1"
+            aria-label="Similarity threshold"
+          />
+          <span className="w-32 font-mono text-sm tabular-nums">{similarityValue.toFixed(2)}</span>
+        </div>
+
+        {/* Said here because it cannot be shown here: the distribution depends
+            on a specific message, and this page has none. Measured on a real
+            archive with bge-m3, every neighbour of a message sat between 0.26
+            and 0.65 — so a value that sounds strict matches nothing at all. */}
+        <p className="text-[11px] text-muted-foreground">
+          Cosine similarity sits in a band the embedding model decides, and the band is usually
+          much narrower than 0 to 1 — a number that sounds strict often matches nothing. To see
+          the spread for a real message, run{' '}
+          <code className="font-mono">iql query --similarity &lt;message-id&gt;</code>. Changing
+          the embedding model changes what these numbers mean.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => save('similarity_threshold', String(similarityValue), 'the similarity threshold')}
+          className="bg-primary px-4 py-1.5 text-xs font-bold text-primary-foreground hover:opacity-90"
+        >
+          Save threshold
+        </button>
+      </section>
+
+      <section className="space-y-3 border border-border bg-card p-6">
         <h3 className="font-bold">Topic extraction</h3>
         <p className="text-xs leading-relaxed text-muted-foreground">
           Topics are taken from the first meaningful word of a subject line. Words listed here
@@ -151,9 +203,10 @@ export const Analysis = () => {
             Run <code className="font-mono">iql doctor</code> to see which is active.
           </Fact>
           <Fact term="Ranking">
-            There is none. Results come back newest first, or in whatever order a query&rsquo;s
-            <span className="font-mono"> | sort</span> asked for. There is no relevance model and
-            no vector search.
+            Results come back newest first, or in whatever order a query&rsquo;s
+            <span className="font-mono"> | sort</span> asked for. There is no relevance ranking
+            for text search. <span className="font-mono">similar:</span> is the exception — it
+            ranks by vector distance, and only over messages that have been embedded.
           </Fact>
         </dl>
       </section>

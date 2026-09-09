@@ -426,3 +426,78 @@ func TestFormatGroupTerm(t *testing.T) {
 		}
 	}
 }
+
+// The threshold rides inside the value because the id comes first. A caller
+// writing `similar:abc>0.85` means "near abc, at 0.85 or better" — not a
+// comparison against a field called similar.
+func TestSimilarTermParsesItsThreshold(t *testing.T) {
+	var gotID string
+	var gotThreshold float64
+	opt := Options{
+		SimilarIDs: func(id string, threshold float64) ([]string, error) {
+			gotID, gotThreshold = id, threshold
+			return []string{"x"}, nil
+		},
+	}
+
+	cases := []struct {
+		expr      string
+		wantID    string
+		wantLevel float64
+	}{
+		{"similar:abc", "abc", -1}, // -1 means "use the configured default"
+		{"similar:abc>0.85", "abc", 0.85},
+		{"similar:abc>=0.5", "abc", 0.5},
+		{"similar:abc>0", "abc", 0},
+	}
+	for _, c := range cases {
+		q, err := Parse(c.expr)
+		if err != nil {
+			t.Errorf("Parse(%q): %v", c.expr, err)
+			continue
+		}
+		if _, _, err := CompileFilter(q.Filter, opt); err != nil {
+			t.Errorf("compile(%q): %v", c.expr, err)
+			continue
+		}
+		if gotID != c.wantID || gotThreshold != c.wantLevel {
+			t.Errorf("%q resolved to id=%q threshold=%v, want %q and %v",
+				c.expr, gotID, gotThreshold, c.wantID, c.wantLevel)
+		}
+	}
+}
+
+// A threshold outside 0..1 is a mistake worth naming: cosine similarity cannot
+// exceed 1, so `similar:abc>2` would silently match nothing forever.
+func TestSimilarTermRejectsImpossibleThresholds(t *testing.T) {
+	opt := Options{
+		SimilarIDs: func(string, float64) ([]string, error) { return nil, nil },
+	}
+	for _, expr := range []string{"similar:abc>2", "similar:abc>-1", "similar:abc>high", "similar:>0.5"} {
+		q, err := Parse(expr)
+		if err != nil {
+			continue // rejected at parse time, which is also fine
+		}
+		if _, _, err := CompileFilter(q.Filter, opt); err == nil {
+			t.Errorf("%q compiled without complaint", expr)
+		}
+	}
+}
+
+// Nothing near enough is an answer, not a failure.
+func TestSimilarTermWithNoNeighboursMatchesNothing(t *testing.T) {
+	opt := Options{
+		SimilarIDs: func(string, float64) ([]string, error) { return nil, nil },
+	}
+	q, err := Parse("similar:abc>0.99")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	sql, _, err := CompileFilter(q.Filter, opt)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if !strings.Contains(sql, "1=0") {
+		t.Errorf("compiled to %q, want an impossible predicate", sql)
+	}
+}

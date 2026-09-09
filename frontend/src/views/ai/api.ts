@@ -21,6 +21,10 @@ export interface Profile {
   launchMode: string;
   /** The key itself is never sent to the client. */
   hasApiKey: boolean;
+  /** What the profile is for. A model serves one or the other. */
+  purpose: 'chat' | 'embedding';
+  /** Vector width, probed when an embedding profile is saved. */
+  dimensions?: number;
 }
 
 /** A local model runner this machine may or may not have. */
@@ -33,6 +37,10 @@ export interface Runtime {
   endpoint: string;
   launchModes: string[];
   models: string[];
+  /** The same models with what each is for, and how wide its vectors are. */
+  catalog?: { name: string; kind: 'chat' | 'embedding' | 'unknown'; dimensions?: number }[];
+  /** Whether this runtime can embed at all. */
+  embeddings?: boolean;
   /** Why this runtime yielded no models. Present only when something is wrong. */
   problem?: string;
 }

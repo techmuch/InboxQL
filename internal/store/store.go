@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 26
+	SchemaVersion = 27
 )
 
 var (
@@ -1139,6 +1139,53 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 26
+	}
+
+	if currentVersion < 27 {
+		log.Println("Applying schema migration v27 (embeddings)...")
+		// A profile is for chat or for embedding, and vectors carry the width
+		// of the model that made them.
+		//
+		// Both facts have to be recorded rather than discovered. A profile
+		// pointed at the wrong kind of model fails with a provider error at
+		// the moment of use, and vectors of different widths cannot be
+		// compared at all — so a stored embedding that does not say which
+		// model produced it is unusable the first time the model changes.
+		for _, stmt := range []string{
+			`ALTER TABLE llm_profiles ADD COLUMN purpose TEXT NOT NULL DEFAULT 'chat';`,
+			`ALTER TABLE llm_profiles ADD COLUMN dimensions INTEGER;`,
+		} {
+			if _, err := db.Exec(stmt); err != nil {
+				log.Printf("Warning v27: %v", err)
+			}
+		}
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS message_embeddings (
+				message_id TEXT PRIMARY KEY,
+				-- The profile, model and width that produced this vector.
+				-- Changing any of them invalidates it, the same way changing
+				-- an annotator's instruction invalidates its results.
+				profile    TEXT NOT NULL,
+				model      TEXT NOT NULL,
+				dimensions INTEGER NOT NULL,
+				-- float32 little-endian, dimensions wide. A BLOB rather than a
+				-- vector extension: sqlite-vec is a cgo extension and a
+				-- distribution burden, and a brute-force scan in Go is fast
+				-- enough well past the size of a personal mailbox.
+				vector     BLOB NOT NULL,
+				created_at INTEGER NOT NULL,
+				FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_embeddings_model ON message_embeddings(model, dimensions);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v27: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 27;"); err != nil {
+			return err
+		}
+		currentVersion = 27
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

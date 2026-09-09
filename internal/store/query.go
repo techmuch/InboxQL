@@ -8,6 +8,7 @@ import (
 
 	"github.com/user/inboxql/internal/message"
 	"github.com/user/inboxql/internal/query"
+	"strconv"
 )
 
 // QueryGroup is one row of an aggregate result.
@@ -72,6 +73,7 @@ func queryOptions(limit, offset int) query.Options {
 			return folderClause(folder), true
 		},
 		IgnoredTopicWords: ignoredTopicWords,
+		SimilarIDs:        similarMessageIDs,
 		ThreadIDs:         ThreadMessageIDs,
 		SavedQuery:        savedQueryText,
 		SelfAddresses:     selfAddresses,
@@ -497,4 +499,44 @@ func ignoredTopicWords() []string {
 		}
 	}
 	return out
+}
+
+// SettingSimilarityThreshold is the default for `similar:` when a query does
+// not name one.
+//
+// A stored preference rather than a constant because the right value depends
+// on the embedding model: cosine values sit in a band whose width the model
+// decides, so a number tuned against one model means something else against
+// another.
+const SettingSimilarityThreshold = "similarity_threshold"
+
+// DefaultSimilarityThreshold reads the stored default.
+func DefaultSimilarityThreshold() float64 {
+	raw, err := GetSetting(SettingSimilarityThreshold)
+	if err == nil {
+		if v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil && v >= 0 && v <= 1 {
+			return v
+		}
+	}
+	// Deliberately loose. A first look at "more like this" that returns
+	// nothing teaches nothing; one that returns too much at least shows the
+	// shape of the distribution, and the number is adjustable from there.
+	return 0.5
+}
+
+func similarMessageIDs(messageID string, threshold float64) ([]string, error) {
+	if threshold < 0 {
+		threshold = DefaultSimilarityThreshold()
+	}
+	// A cap, because `similar:` is a filter and an unbounded one over a large
+	// mailbox would put every id into a single IN clause.
+	neighbours, err := SimilarTo(messageID, threshold, 500)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(neighbours))
+	for _, n := range neighbours {
+		ids = append(ids, n.MessageID)
+	}
+	return ids, nil
 }

@@ -24,6 +24,13 @@ type Options struct {
 	// question with two answers depending on where it was asked.
 	IgnoredTopicWords func() []string
 
+	// SimilarIDs resolves a message id to the messages nearest it in meaning,
+	// at or above a threshold. A negative threshold means "use the configured
+	// default", which is the only place the default is read — a similarity
+	// threshold is not portable between embedding models, so it belongs with
+	// the data rather than in this package.
+	SimilarIDs func(messageID string, threshold float64) ([]string, error)
+
 	// ThreadIDs resolves a message id to every message in its thread.
 	//
 	// Resolved in Go rather than compiled to a recursive CTE because the CTE
@@ -484,6 +491,9 @@ func (c *compiler) dispatch(t *Term, negated bool) (string, error) {
 
 	case "extract":
 		return c.extractTerm(t, negated)
+
+	case "similar":
+		return c.similarTerm(t, negated)
 
 	case "topic":
 		// An anti-join, like every other multi-valued field: -topic:x has to
@@ -1019,4 +1029,59 @@ func comparisonOperator(op Op, dflt string) (string, error) {
 	default:
 		return "", fmt.Errorf("operator %s is not a comparison", op)
 	}
+}
+
+// similarTerm resolves a message id to its neighbours.
+//
+// # Why the threshold is part of the term
+//
+// A similarity threshold is not one number. Browsing wants it loose, assigning
+// a message to a topic wants it middling, and deciding two topics are the same
+// wants it tight — and none of those values transfer to a different embedding
+// model, because cosine values sit in a band whose width is a property of the
+// model. So it is written where the question is asked, with a configured
+// default behind it, exactly like every other tunable in this language.
+func (c *compiler) similarTerm(t *Term, negated bool) (string, error) {
+	if c.opt.SimilarIDs == nil {
+		return "", fmt.Errorf("similar: needs embeddings; run `iql annotate embed --profile <name>`")
+	}
+
+	spec := t.Value
+	threshold := -1.0
+
+	// The comparison rides inside the value: `similar:abc>0.85` splits after
+	// the id, because the id is the value and the threshold qualifies it.
+	for _, sym := range []string{">=", ">"} {
+		if i := strings.Index(spec, sym); i > 0 {
+			raw := strings.TrimSpace(spec[i+len(sym):])
+			n, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				return "", fmt.Errorf("similar: %q is not a similarity between 0 and 1", raw)
+			}
+			if n < 0 || n > 1 {
+				return "", fmt.Errorf("similar: %v is outside 0..1; cosine similarity cannot exceed 1", n)
+			}
+			threshold, spec = n, strings.TrimSpace(spec[:i])
+			break
+		}
+	}
+	if spec == "" {
+		return "", fmt.Errorf("similar: needs a message id")
+	}
+
+	ids, err := c.opt.SimilarIDs(spec, threshold)
+	if err != nil {
+		return "", err
+	}
+	if len(ids) == 0 {
+		// Nothing is near enough. An impossible predicate rather than an
+		// error: "no neighbours at this threshold" is an answer.
+		return wrap("1=0", negated), nil
+	}
+
+	placeholders := make([]string, 0, len(ids))
+	for _, id := range ids {
+		placeholders = append(placeholders, c.arg(id))
+	}
+	return wrap("m.id IN ("+strings.Join(placeholders, ", ")+")", negated), nil
 }

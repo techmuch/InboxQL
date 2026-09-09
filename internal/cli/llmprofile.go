@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/llm"
@@ -39,7 +42,7 @@ func runLLMProfile(ctx *Context, args []string) error {
 		}
 
 		p := ctx.Printer()
-		t := p.NewTable("", "NAME", "PROVIDER", "MODEL", "SCOPE", "KEY")
+		t := p.NewTable("", "NAME", "PROVIDER", "MODEL", "FOR", "SCOPE", "KEY")
 		for _, prof := range profiles {
 			marker := ""
 			if prof.IsDefault {
@@ -51,8 +54,12 @@ func runLLMProfile(ctx *Context, args []string) error {
 			if prof.IsRemote() {
 				scope = p.Yellow(scope)
 			}
+			purpose := prof.Purpose
+			if prof.Purpose == store.PurposeEmbedding && prof.Dimensions > 0 {
+				purpose = fmt.Sprintf("embed/%d", prof.Dimensions)
+			}
 			t.Row(marker, prof.Name, prof.Provider,
-				ui.Truncate(prof.Model, 32), scope, yesNo(prof.HasAPIKey()))
+				ui.Truncate(prof.Model, 32), purpose, scope, yesNo(prof.HasAPIKey()))
 		}
 		if err := t.Flush(); err != nil {
 			return err
@@ -72,6 +79,7 @@ func runLLMProfile(ctx *Context, args []string) error {
 		endpoint := fs.String("endpoint", "", "base URL; defaults per provider")
 		withKey := fs.Bool("api-key", false, "prompt for an API key")
 		makeDefault := fs.Bool("default", false, "use this profile when nothing names one")
+		purpose := fs.String("purpose", "", "chat or embedding")
 		if err := parseArgs(fs, flags); err != nil {
 			return Fail(ExitUsage, "invalid flags")
 		}
@@ -105,6 +113,26 @@ func runLLMProfile(ctx *Context, args []string) error {
 		if *makeDefault {
 			prof.IsDefault = true
 		}
+		if *purpose != "" {
+			if *purpose != store.PurposeChat && *purpose != store.PurposeEmbedding {
+				return Fail(ExitUsage, "--purpose must be chat or embedding")
+			}
+			prof.Purpose = *purpose
+		}
+		// An embedding profile's width is probed rather than declared: the
+		// model is the only thing that knows it, and a stored vector that does
+		// not match it cannot be compared against anything.
+		if prof.Purpose == store.PurposeEmbedding {
+			ctxProbe, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+			dims, err := llm.ProbeEmbedding(ctxProbe, prof.Endpoint, prof.APIKey, prof.Provider, prof.Model)
+			cancel()
+			if err != nil {
+				return Fail(ExitUsage,
+					"%s does not embed at %s: %v\n\nRun `iql llm profile list` after pulling an embedding model.",
+					prof.Model, orDefault(prof.Endpoint, llm.DefaultEndpoints[prof.Provider]), err)
+			}
+			prof.Dimensions = dims
+		}
 		if *withKey || os.Getenv("INBOXQL_LLM_API_KEY") != "" {
 			key, err := ctx.ReadSecret("INBOXQL_LLM_API_KEY", "API key")
 			if err != nil {
@@ -123,8 +151,12 @@ func runLLMProfile(ctx *Context, args []string) error {
 		if existing != nil {
 			verb = "Updated"
 		}
-		ctx.Printf("%s profile %s (%s, %s).\n", verb,
+		ctx.Printf("%s profile %s (%s, %s", verb,
 			ctx.Printer().Bold(prof.Name), prof.Provider, prof.Model)
+		if prof.Purpose == store.PurposeEmbedding {
+			ctx.Printf(", embedding, %d dimensions", prof.Dimensions)
+		}
+		ctx.Printf(").\n")
 		if prof.IsRemote() {
 			// Said plainly, because this is the sentence that decides whether
 			// message bodies leave the machine.

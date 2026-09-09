@@ -33,6 +33,14 @@ are the same mechanism, so they version, re-run and query the same way.
   plan      report what a run would do, without doing it
   correct   record a human ruling, which outranks the machine
   probe     define, run and measure an annotator in one go
+  embed     compute message vectors with an embedding profile
+
+embed flags:
+  --profile <name>  an embedding profile; see "iql llm profile list"
+  --scope <query>   only messages matching this filter
+  --limit <n>       stop after n messages
+  --dry-run         report how much would be sent and write nothing
+  --allow-remote    consent to sending bodies to a non-local profile
 
 create flags:
   --kind <label|extract>    yes/no, or structured records (default label)
@@ -92,6 +100,9 @@ func runAnnotate(ctx *Context, args []string) error {
 		return annotatePlan(ctx, rest)
 	case "correct":
 		return annotateCorrect(ctx, rest)
+	case "embed":
+		return annotateEmbed(ctx, rest)
+
 	case "probe":
 		return annotateProbe(ctx, rest)
 	default:
@@ -724,5 +735,60 @@ func annotateCorrect(ctx *Context, args []string) error {
 		})
 	}
 	ctx.Printf("Recorded. This ruling outranks the annotator and survives every re-run.\n")
+	return nil
+}
+
+func annotateEmbed(ctx *Context, args []string) error {
+	fs := flag.NewFlagSet("annotate embed", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	profile := fs.String("profile", "", "embedding profile to use")
+	scope := fs.String("scope", "", "only messages matching this filter")
+	limit := fs.Int("limit", 0, "stop after n messages")
+	dryRun := fs.Bool("dry-run", false, "report what would be sent and write nothing")
+	allowRemote := fs.Bool("allow-remote", false, "consent to sending bodies to a remote profile")
+	if err := parseArgs(fs, args); err != nil {
+		return Fail(ExitUsage, "invalid flags")
+	}
+
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	var out *annotate.EmbedOutcome
+	var err error
+	if *allowRemote && !*dryRun {
+		out, err = annotate.EmbedMessagesRemote(context.Background(), *profile, *scope, *limit)
+	} else {
+		out, err = annotate.EmbedMessages(context.Background(), *profile, *scope, *limit, *dryRun)
+	}
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+
+	if ctx.JSON {
+		return ctx.EmitJSON(out)
+	}
+	p := ctx.Printer()
+	if *dryRun {
+		ctx.Printf("%s would embed %s with %s.\n",
+			p.Bold(out.Profile), count(out.Pending, "message", "messages"), out.Model)
+		// The size of what would be sent, before agreeing to send it.
+		ctx.Printf("%s\n", p.Dim(sprintf("Roughly %d characters of text, after quoted material is stripped.", out.Chars)))
+		return nil
+	}
+	ctx.Printf("Embedded %s with %s.\n",
+		count(out.Embedded, "message", "messages"), out.Model)
+	if out.Skipped > 0 {
+		ctx.Printf("%s\n", p.Dim(sprintf("%d skipped for having no text to embed.", out.Skipped)))
+	}
+
+	coverage, err := store.Coverage()
+	if err == nil {
+		for _, c := range coverage {
+			ctx.Printf("%s\n", p.Dim(sprintf("%s: %d of %d messages (%d dimensions).",
+				c.Model, c.Embedded, c.Total, c.Dimensions)))
+		}
+	}
 	return nil
 }

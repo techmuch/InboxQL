@@ -218,6 +218,14 @@ var Registry = []Field{
 		Summary: "every message in that conversation", Example: "thread:<message-id or thread key>",
 	},
 	{
+		// The threshold rides inside the value, like extract:, because the id
+		// comes first: `similar:<id>>0.85` splits after the id, not after the
+		// field name.
+		Name: "similar", Entity: EntityMessage, Type: TypeIdent,
+		Summary: "messages whose meaning is near this one's",
+		Example: "similar:<message-id>>0.85",
+	},
+	{
 		Name: "topic", Entity: EntityMessage, Type: TypeText,
 		Ops:     matchOps,
 		Summary: "a topic an annotator extracted", Example: "topic:invoices",

@@ -356,7 +356,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, offset := clampPaging(r, 50, 500)
+	limit, offset := clampPaging(r, 50, 1000)
 	res, err := store.RunQuery(r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		writeQueryError(w, err)

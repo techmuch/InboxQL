@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Bot, Building2, Check, HelpCircle, Mail, User, Users } from 'lucide-react';
-import { openQuery } from '../lib/tabs';
+import { openContact, openQuery } from '../lib/tabs';
 import { contactName, runQuery, type Contact } from './Desk/api';
 
 interface ContactTopic {
@@ -16,10 +16,10 @@ interface ContactTopic {
  * # Why it reads through the query language
  *
  * The contact, their topics and their correspondents are three queries —
- * `in:contacts email:=x`, `| topics`, `anyone:x | network` — rather than three
- * endpoints. Contacts are an entity in the language, and a second read path
- * would be a second set of filtering and ordering semantics to keep in step
- * with the first.
+ * `in:contacts email:=x`, `| topics`, `anyone:=x | count by anyone` — rather
+ * than three endpoints. Contacts are an entity in the language, and a second
+ * read path would be a second set of filtering and ordering semantics to keep
+ * in step with the first.
  *
  * The one thing that is not a query is the correction, because the language
  * reads and does not write.
@@ -28,6 +28,7 @@ export const ContactCard = ({ address }: { address: string }) => {
   const [contact, setContact] = useState<Contact | null>(null);
   const [topics, setTopics] = useState<ContactTopic[]>([]);
   const [network, setNetwork] = useState<{ label: string; value: number }[]>([]);
+  const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
 
@@ -39,21 +40,33 @@ export const ContactCard = ({ address }: { address: string }) => {
       const [who, theirTopics, theirNetwork] = await Promise.all([
         runQuery(`in:contacts email:${quoted}`, 1, 0),
         runQuery(`in:contacts email:${quoted} | topics 8`, 8, 0),
-        runQuery(`anyone:${address} | network 8`, 8, 0),
+        runQuery(`anyone:${quoted} | count by anyone`, 1000, 0),
       ]);
       setContact(who.contacts?.[0] ?? null);
       setTopics((theirTopics as any).topics ?? []);
-      // `| network` returns every pair among the matched messages, which
-      // includes pairs between two *other* people who were both cc'd
-      // alongside this contact. Those are real edges and they are not this
-      // contact's edges, so they do not belong on their card.
-      setNetwork((theirNetwork.groups ?? []).filter(g => g.label.includes(address)));
+      // Every participant who appeared on a message alongside this contact,
+      // ranked by how many messages they shared, excluding the contact themselves.
+      const selfAddr = address.toLowerCase();
+      const peers = (theirNetwork.groups ?? [])
+        .map(g => ({
+          label: other(g.label, address),
+          value: g.value,
+        }))
+        .filter(g => {
+          const target = g.label.toLowerCase();
+          return target !== selfAddr && target.length > 0;
+        });
+      setNetwork(peers);
     } catch {
       setContact(null);
     } finally {
       setLoading(false);
     }
   }, [address, quoted]);
+
+  useEffect(() => {
+    setFilter('');
+  }, [address]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -203,31 +216,73 @@ export const ContactCard = ({ address }: { address: string }) => {
           )}
         </section>
 
-        <section className="space-y-2 border border-border bg-card p-4">
-          <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            <Users className="h-3 w-3" /> Appears alongside
-          </h3>
-          {network.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Nobody — every message is one-to-one.</p>
-          ) : (
-            <ul className="divide-y divide-border/60">
-              {network.map(edge => (
-                <li key={edge.label} className="flex items-baseline gap-3 py-1.5 text-sm">
-                  <button
-                    type="button"
-                    onClick={() => openQuery(`anyone:${other(edge.label, contact.address)}`)}
-                    className="min-w-0 flex-1 truncate text-left font-mono text-xs hover:text-primary"
-                  >
-                    {other(edge.label, contact.address)}
-                  </button>
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {edge.value}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        {(() => {
+          const displayedNetwork = filter.trim()
+            ? network.filter(edge => other(edge.label, contact.address).toLowerCase().includes(filter.toLowerCase().trim()))
+            : network;
+          return (
+            <section className="space-y-3 border border-border bg-card p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <Users className="h-3 w-3" /> Appears alongside
+                  {network.length > 0 && (
+                    <span className="font-mono text-[11px] font-normal text-muted-foreground">
+                      ({network.length})
+                    </span>
+                  )}
+                </h3>
+              </div>
+              {network.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nobody — every message is one-to-one.</p>
+              ) : (
+                <>
+                  {network.length > 10 && (
+                    <input
+                      type="text"
+                      placeholder="Filter correspondents…"
+                      value={filter}
+                      onChange={e => setFilter(e.target.value)}
+                      className="w-full bg-background border border-border px-2.5 py-1 text-xs focus:ring-1 focus:ring-primary outline-none"
+                    />
+                  )}
+                  <ul className="divide-y divide-border/60">
+                    {displayedNetwork.map(edge => {
+                      const otherAddr = other(edge.label, contact.address);
+                      return (
+                        <li key={edge.label} className="flex items-baseline gap-3 py-1.5 text-sm group">
+                          <button
+                            type="button"
+                            onClick={() => openContact(otherAddr)}
+                            className="min-w-0 flex-1 truncate text-left font-mono text-xs hover:text-primary"
+                            title={`Open contact card for ${otherAddr}`}
+                          >
+                            {otherAddr}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openQuery(`anyone:${otherAddr}`)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
+                            title={`Show mail with ${otherAddr}`}
+                          >
+                            <Mail className="h-3 w-3" />
+                          </button>
+                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                            {edge.value}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {displayedNetwork.length === 0 && filter.trim() && (
+                    <p className="text-xs text-muted-foreground italic py-1">
+                      No correspondents match "{filter}".
+                    </p>
+                  )}
+                </>
+              )}
+            </section>
+          );
+        })()}
       </div>
     </div>
   );

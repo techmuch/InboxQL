@@ -581,7 +581,15 @@ func (p *parser) parseStage() (Stage, error) {
 		return s, nil
 
 	case "participants":
-		return Stage{Kind: StageParticipants}, nil
+		s := Stage{Kind: StageParticipants, N: 500}
+		if f, ok := word(); ok {
+			n, err := strconv.Atoi(f)
+			if err != nil || n <= 0 {
+				return Stage{}, &Error{Pos: verb.pos, Msg: fmt.Sprintf("participants: %q is not a row count", f)}
+			}
+			s.N = n
+		}
+		return s, nil
 
 	default:
 		return Stage{}, &Error{Pos: verb.pos, Msg: fmt.Sprintf("unknown pipeline stage %q", verb.text)}

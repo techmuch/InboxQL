@@ -195,7 +195,11 @@ func (p *pipeline) build() (*Plan, error) {
 	case StageTop:
 		return p.buildGroupCount(p.terminal.Field, p.clampLimit(p.terminal.N), true)
 	case StageParticipants:
-		return p.buildGroupCount("anyone", p.clampLimit(p.terminal.N), true)
+		limit := p.terminal.N
+		if limit <= 0 {
+			limit = 500
+		}
+		return p.buildGroupCount("anyone", p.clampLimit(limit), true)
 	case StageSeries:
 		return p.buildSeries(*p.terminal)
 	case StageAggregate:

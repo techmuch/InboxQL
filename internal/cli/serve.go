@@ -23,7 +23,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.44"
+var Version = "0.0.45"
 
 func init() {
 	register(&Command{

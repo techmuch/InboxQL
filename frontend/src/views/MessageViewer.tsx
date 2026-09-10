@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Archive, AlertOctagon, Trash, Mail, MoreVertical,
-  CornerUpLeft, CornerUpRight, Inbox, Paperclip, FileText,
+  CornerUpLeft, CornerUpRight, Inbox, FileText,
   Globe, Code, Copy, Check,
 } from 'lucide-react';
 import { ContactCard } from './ContactCard';
 import { SimilarButton } from './SimilarButton';
+import {
+  AttachmentChip, AttachmentViewer, useAttachmentFile,
+  type MessageAttachment,
+} from './AttachmentPreview';
 import { useViewerStore, openContact } from '../lib/tabs';
 
 /**
@@ -97,7 +101,9 @@ export const MessageViewer = () => {
   const message = useViewerStore(s => s.message);
   const contact = useViewerStore(s => s.contact);
   const selectedCount = useViewerStore(s => s.selectedCount);
-  const [attachments, setAttachments] = useState<any[]>([]);
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const [openFileKey, setOpenFileKey] = useState<string | null>(null);
+  const openFile = useAttachmentFile(openFileKey);
   const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw'>('html');
   const [copied, setCopied] = useState(false);
 
@@ -113,14 +119,21 @@ export const MessageViewer = () => {
   useEffect(() => {
     if (!message?.id) { setAttachments([]); return; }
     let cancelled = false;
-    // Imported mail can carry attachments; synced mail never does yet. Either
-    // way an empty list is the normal case, so a failure here is silent.
+    // Most mail has none, so an empty list is the normal case and a failure
+    // here is silent. Mail imported before attachments were extracted also
+    // reports none until `iql maintenance attachments` recovers them, which
+    // `iql doctor` says outright rather than leaving to be noticed.
     fetch(`/api/message/attachments?id=${encodeURIComponent(message.id)}`)
       .then(r => (r.ok ? r.json() : []))
       .then(list => { if (!cancelled) setAttachments(Array.isArray(list) ? list : []); })
       .catch(() => { if (!cancelled) setAttachments([]); });
     return () => { cancelled = true; };
   }, [message?.id]);
+
+  // Moving to another message closes the preview: the file belonged to the
+  // message that was on screen, and leaving it open would leave one message's
+  // attachment sitting under another's body.
+  useEffect(() => { setOpenFileKey(null); }, [message?.id]);
 
   // A draft is not received mail: it has no sender, it was never delivered,
   // and offering Reply on it would be nonsense. It reaches this viewer through
@@ -346,23 +359,30 @@ export const MessageViewer = () => {
         </div>
 
         {attachments.length > 0 && (
-          <div className="mb-6 flex flex-wrap gap-2">
-            {attachments.map(a => (
-              <span
-                key={a.id}
-                title={a.skipped || undefined}
-                className={`flex items-center gap-2 border px-3 py-1.5 text-xs ${
-                  a.storagePath ? 'border-border' : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400'
-                }`}
-              >
-                <Paperclip className="w-3 h-3" />
-                {a.filename}
-                <span className="text-muted-foreground">{formatBytes(a.size)}</span>
-                {/* A row with no stored bytes is a record that the message
-                    carried something InboxQL chose not to keep, not a broken link. */}
-                {!a.storagePath && <span className="italic">not stored</span>}
-              </span>
-            ))}
+          <div className="mb-6 space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {attachments.map(a => (
+                <AttachmentChip
+                  key={a.id}
+                  filename={a.filename}
+                  mimeType={a.mimeType}
+                  size={a.size}
+                  contentHash={a.contentHash}
+                  skipped={a.skipped}
+                  // Clicking the open file closes it, so the chip is a toggle
+                  // rather than a one-way door with the close button as the
+                  // only way back.
+                  onOpen={() => setOpenFileKey(k => (k === a.contentHash ? null : a.contentHash ?? null))}
+                />
+              ))}
+            </div>
+            {openFile && (
+              <AttachmentViewer
+                file={openFile}
+                currentMessageId={message.id}
+                onClose={() => setOpenFileKey(null)}
+              />
+            )}
           </div>
         )}
 
@@ -486,11 +506,3 @@ export const MessageViewer = () => {
   );
 };
 
-const formatBytes = (n: number): string => {
-  if (!n) return '';
-  if (n < 1024) return `${n} B`;
-  const units = ['KB', 'MB', 'GB'];
-  let v = n / 1024, i = 0;
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-  return `${v.toFixed(1)} ${units[i]}`;
-};

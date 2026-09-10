@@ -188,6 +188,32 @@ export const openMessage = (message: any): void => {
 };
 
 /**
+ * Show a message the caller only knows the id of.
+ *
+ * # Why this is separate from openMessage
+ *
+ * Every existing caller is a list that already holds the whole message, and
+ * making them all fetch again to open a row they are looking at would be
+ * absurd. But a link out of something that is not a message list — a file's
+ * occurrences, a ticket's evidence — has an id and nothing else. Fetching here
+ * keeps that one case from either duplicating the fetch at each call site or
+ * pushing an id-shaped message into a viewer that expects a real one.
+ *
+ * The viewer is opened only once the message is in hand, so a failed fetch
+ * leaves the user where they were rather than on an empty viewer.
+ */
+export const openMessageByID = async (id: string): Promise<void> => {
+  try {
+    const response = await fetch(`/api/message?id=${encodeURIComponent(id)}`);
+    if (!response.ok) return;
+    openMessage(await response.json());
+  } catch {
+    // A message that will not load is not worth an error state here: the user
+    // asked to follow a link, and the link simply goes nowhere.
+  }
+};
+
+/**
  * Point the viewer at a message without bringing it forward.
  *
  * # Why this exists

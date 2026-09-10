@@ -91,6 +91,47 @@ func safeContentType(stored string) (contentType string, inlineOK bool) {
 	return "application/octet-stream", false
 }
 
+// contentSecurityPolicy is what the browser is allowed to do with these bytes.
+//
+// # What this does and does not achieve for a PDF
+//
+// `sandbox; default-src 'none'` is the right policy and is what everything
+// else gets: an opaque origin and no network access, so a rendered document
+// can neither touch this origin nor phone home.
+//
+// A PDF is the exception, and the honest version is worth writing down because
+// the tempting comment here — "the CSP sandboxes it" — is not true. Chrome
+// renders a PDF through a built-in viewer hosted in a same-origin shell
+// document, and the sandbox directive does not give that shell an opaque
+// origin; the embedding page really can reach its contentDocument. That was
+// measured against Chrome, not reasoned from the spec. Granting allow-scripts
+// only makes the viewer work; it does not buy the isolation the token name
+// suggests.
+//
+// So what actually contains a mailed PDF is upstream of this function: only a
+// stored application/pdf ever gets served as one (see safeContentType), so
+// nothing else can reach a frame; nosniff stops reinterpretation; and a PDF's
+// own JavaScript executes inside PDFium's process, where it cannot script the
+// shell or this page. The session cookie is HttpOnly, so it is out of reach of
+// page script regardless.
+//
+// The residual exposure is a PDFium escape — a browser vulnerability that an
+// iframe sandbox would not reliably contain either. The fix, should that trade
+// stop being acceptable, is to render PDFs to a canvas with pdf.js rather than
+// to hand them to the browser at all.
+//
+// Anything downloaded rather than rendered keeps the strict policy: the bytes
+// are never interpreted, so there is nothing to concede.
+func contentSecurityPolicy(contentType, disposition string) string {
+	if disposition == "inline" && strings.HasPrefix(contentType, "application/pdf") {
+		// default-src 'none' is dropped here because it blocks the viewer's
+		// own resources, and allow-scripts because the viewer is scripted.
+		// Neither was buying isolation for this case; see above.
+		return "sandbox allow-scripts"
+	}
+	return "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'"
+}
+
 // contentDisposition builds the header, with the filename escaped both ways.
 //
 // The name came out of a mail header written by a stranger, so it may contain
@@ -261,9 +302,7 @@ func handleAttachmentContent(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Type", contentType)
 	h.Set("Content-Disposition", contentDisposition(disposition, file.Filename))
 	h.Set("X-Content-Type-Options", "nosniff")
-	// sandbox with no allow-* tokens: no script, no forms, no plugins, and an
-	// opaque origin, so a rendered document cannot reach this host's session.
-	h.Set("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'")
+	h.Set("Content-Security-Policy", contentSecurityPolicy(contentType, disposition))
 	h.Set("Cross-Origin-Resource-Policy", "same-origin")
 	h.Set("Referrer-Policy", "no-referrer")
 	// The bytes are immutable — the URL is their hash — but they are also

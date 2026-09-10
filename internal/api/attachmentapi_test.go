@@ -71,6 +71,54 @@ func TestSafeContentTypeDropsParameters(t *testing.T) {
 	}
 }
 
+// An inline PDF is the one relaxed case, because Chrome will not run its PDF
+// viewer under the strict policy. Everything else keeps the opaque origin and
+// the network lockout — including a PDF being downloaded, which is never
+// interpreted and so concedes nothing.
+func TestContentSecurityPolicy(t *testing.T) {
+	strict := []struct {
+		contentType string
+		disposition string
+		why         string
+	}{
+		{"application/pdf", "attachment", "a download is never interpreted"},
+		{"image/png", "inline", "an image needs no relaxation"},
+		{"text/plain", "inline", "nor does text"},
+		{"application/octet-stream", "inline", "and opaque bytes least of all"},
+		{"text/html", "attachment", "above all not this"},
+	}
+
+	for _, tc := range strict {
+		got := contentSecurityPolicy(tc.contentType, tc.disposition)
+		if !strings.HasPrefix(got, "sandbox;") {
+			t.Errorf("CSP for %s/%s = %q, want a bare sandbox — %s",
+				tc.contentType, tc.disposition, got, tc.why)
+		}
+		if !strings.Contains(got, "default-src 'none'") {
+			t.Errorf("CSP for %s/%s = %q, which lets the file reach the network — %s",
+				tc.contentType, tc.disposition, got, tc.why)
+		}
+	}
+
+	// The exception, narrowed to exactly inline PDFs so it cannot spread.
+	pdf := contentSecurityPolicy("application/pdf", "inline")
+	if !strings.HasPrefix(pdf, "sandbox") {
+		t.Errorf("inline PDF CSP = %q, want it to still declare a sandbox", pdf)
+	}
+
+	// Whatever else changes, this must never appear. It is the one token that
+	// would hand a mailed file this origin outright, rather than leaving the
+	// exposure at the PDFium level the comment describes.
+	for _, disposition := range []string{"inline", "attachment"} {
+		for _, contentType := range []string{"application/pdf", "image/png", "text/html", "text/plain"} {
+			if got := contentSecurityPolicy(contentType, disposition); strings.Contains(got, "allow-same-origin") {
+				t.Errorf("CSP for %s/%s = %q, which grants allow-same-origin",
+					contentType, disposition, got)
+			}
+		}
+	}
+}
+
 // The filename comes from a mail header, which is to say from a stranger. A
 // newline in it is response splitting; a path in it is a write outside the
 // downloads folder.

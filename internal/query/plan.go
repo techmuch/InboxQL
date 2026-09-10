@@ -23,6 +23,8 @@ const (
 	PlanContacts
 	// PlanTopics returns a contact's topics with their association strength.
 	PlanTopics
+	// PlanAttachments returns one row per distinct file, not per occurrence.
+	PlanAttachments
 	// PlanThreads returns conversation keys, one per row.
 	//
 	// Unlike every other kind, the statement is not the answer — it selects
@@ -181,6 +183,9 @@ func (p *pipeline) build() (*Plan, error) {
 			return p.buildContactTopics()
 		}
 		return p.buildContacts()
+	}
+	if p.entity == EntityAttachment {
+		return p.buildAttachments()
 	}
 	if p.terminal == nil {
 		return p.buildMessages()
@@ -807,6 +812,136 @@ func (p *pipeline) buildContacts() (*Plan, error) {
 		args = append(args, p.opt.Offset)
 	}
 	return &Plan{SQL: sql, Args: args, Kind: PlanContacts, Limit: limit, Entity: EntityContact}, nil
+}
+
+// attachmentSelectList is the column list store.scanAttachmentFile expects.
+var attachmentSelectList = ""
+
+// SetAttachmentSelectList lets the store declare its file column list once.
+func SetAttachmentSelectList(cols string) { attachmentSelectList = cols }
+
+// buildAttachments plans a query over files.
+//
+// # One row per file, not per occurrence
+//
+// The attachments table stores one row per (message, part), so a document sent
+// to five people is five rows. Listing those is a list of arrivals, and reads
+// as five different files with the same name. Grouping by content hash makes
+// the row what a person means by "a file" — and it is only possible because
+// the bytes are hashed on the way in.
+//
+// The bare columns beside MAX(m.date) are not a mistake: SQLite guarantees
+// that when a query has exactly one MIN or MAX aggregate, bare columns come
+// from the row that produced it. So the name, type and message shown are the
+// ones from the most recent arrival, which is the arrival someone means when
+// they click a file they last saw last week.
+func (p *pipeline) buildAttachments() (*Plan, error) {
+	args := append([]any{}, p.args...)
+
+	if p.terminal != nil {
+		switch p.terminal.Kind {
+		case StageCount:
+			if p.terminal.Field == "" {
+				return &Plan{
+					SQL: "SELECT COUNT(*) FROM (SELECT 1 FROM attachments a " +
+						"JOIN messages m ON m.id = a.message_id WHERE " + p.where +
+						" GROUP BY " + attachmentKey + ")",
+					Args:   args,
+					Kind:   PlanScalar,
+					Entity: EntityAttachment,
+				}, nil
+			}
+			return p.buildAttachmentGroups(p.terminal.Field, p.clampLimit(200))
+		case StageTop:
+			return p.buildAttachmentGroups(p.terminal.Field, p.clampLimit(p.terminal.N))
+		default:
+			return nil, fmt.Errorf("%s does not apply to attachments", p.terminal.Kind)
+		}
+	}
+
+	// Newest first, like mail. A file list ordered by name is a directory
+	// listing, and a mailbox is not a directory.
+	order := "last_seen DESC"
+	ordered := false
+	if p.sort != nil {
+		switch strings.ToLower(p.sort.Field) {
+		case "date", "last", "seen", "":
+			order = "last_seen"
+		case "first":
+			order = "first_seen"
+		case "size":
+			order = "a.size"
+		case "name", "filename":
+			order = "LOWER(COALESCE(a.filename, ''))"
+		case "messages", "shared":
+			order = "messages"
+		case "type":
+			order = "LOWER(COALESCE(a.mime_type, ''))"
+		default:
+			return nil, fmt.Errorf(
+				"cannot sort attachments by %q (try date, size, name, type or messages)", p.sort.Field)
+		}
+		if p.sort.Desc {
+			order += " DESC"
+		} else {
+			order += " ASC"
+		}
+		ordered = true
+	}
+
+	limit := p.clampLimit(p.opt.defaultLimit())
+	args = append(args, limit)
+	sql := "SELECT " + attachmentSelectList +
+		" FROM attachments a JOIN messages m ON m.id = a.message_id" +
+		" WHERE " + p.where +
+		" GROUP BY " + attachmentKey +
+		" ORDER BY " + order + " LIMIT ?"
+	if p.opt.Offset > 0 {
+		sql += " OFFSET ?"
+		args = append(args, p.opt.Offset)
+	}
+	return &Plan{SQL: sql, Args: args, Kind: PlanAttachments, Limit: limit,
+		Entity: EntityAttachment, Ordered: ordered}, nil
+}
+
+// buildAttachmentGroups answers `| top type` and `| count by type` over files.
+//
+// Counting files rather than arrivals throughout: "how many PDFs do I have" is
+// a question about documents, and answering it with the number of times one was
+// forwarded is a different question nobody asked.
+func (p *pipeline) buildAttachmentGroups(field string, limit int) (*Plan, error) {
+	var expr string
+	switch strings.ToLower(field) {
+	case "type", "mime", "filetype":
+		expr = "COALESCE(NULLIF(a.mime_type, ''), 'unknown')"
+	case "name", "filename":
+		expr = "COALESCE(NULLIF(a.filename, ''), 'unnamed')"
+	case "extension", "ext":
+		// Everything after the last dot, or the whole name when there is none.
+		expr = "LOWER(CASE WHEN instr(a.filename, '.') > 0 " +
+			"THEN replace(a.filename, rtrim(a.filename, replace(a.filename, '.', '')), '') " +
+			"ELSE '' END)"
+	case "from", "sender":
+		expr = "(SELECT p.address FROM message_participants p " +
+			"WHERE p.message_id = a.message_id AND p.role = 'from' LIMIT 1)"
+	case "month":
+		expr = "strftime('%Y-%m', MAX(m.date))"
+	case "year":
+		expr = "strftime('%Y', MAX(m.date))"
+	default:
+		return nil, fmt.Errorf(
+			"cannot group attachments by %q (try type, extension, from, month or year)", field)
+	}
+
+	args := append([]any{}, p.args...)
+	args = append(args, limit)
+	sql := "SELECT label, COUNT(*) AS n FROM (" +
+		"SELECT " + expr + " AS label FROM attachments a " +
+		"JOIN messages m ON m.id = a.message_id WHERE " + p.where +
+		" GROUP BY " + attachmentKey + ") " +
+		"GROUP BY label ORDER BY n DESC, label ASC LIMIT ?"
+	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit,
+		Entity: EntityAttachment, GroupField: field}, nil
 }
 
 func (p *pipeline) buildContactGroups(field string, limit int) (*Plan, error) {

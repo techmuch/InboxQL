@@ -54,8 +54,48 @@ func completionValues(source, prefix string) ([]query.Candidate, error) {
 			}
 		}
 		return out, nil
+	case query.ValuesFileTypes:
+		return fileTypeCandidates(prefix)
 	}
 	return nil, nil
+}
+
+// fileTypeCandidates offers the category names first, then the MIME types this
+// mailbox actually contains.
+//
+// Both, because they answer different moments. Someone who has not used `type:`
+// before needs to be told that "pdf" and "image" are words it knows; someone
+// looking at an odd row needs the exact string that row carries. Offering only
+// the categories would hide the octet-stream a scanner really did send, and
+// offering only the MIME types would make the friendly names undiscoverable.
+func fileTypeCandidates(prefix string) ([]query.Candidate, error) {
+	p := strings.ToLower(prefix)
+	out := []query.Candidate{}
+	for _, name := range query.FileTypeNames {
+		if strings.HasPrefix(name, p) {
+			out = append(out, query.Candidate{Value: name, Kind: "filetype"})
+		}
+	}
+
+	rows, err := db.Query(`
+		SELECT mime_type, COUNT(DISTINCT COALESCE(NULLIF(content_hash, ''), id)) AS n
+		FROM attachments
+		WHERE COALESCE(mime_type, '') != '' AND (? = '' OR instr(LOWER(mime_type), ?) > 0)
+		GROUP BY mime_type ORDER BY n DESC, mime_type ASC LIMIT 20`, p, p)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var mime string
+		var n int64
+		if err := rows.Scan(&mime, &n); err != nil {
+			return out, err
+		}
+		out = append(out, query.Candidate{Value: mime, Kind: "mime", Detail: plural(n, "file")})
+	}
+	return out, rows.Err()
 }
 
 // addressCandidates offers correspondents, most-corresponded-with first.

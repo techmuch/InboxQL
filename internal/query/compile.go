@@ -138,9 +138,23 @@ func (c *compiler) idColumn() string {
 		// A contact's identity is its address; there is no separate key,
 		// because two rows for one address would be two contacts.
 		return "c.address"
+	case EntityAttachment:
+		// A file's identity is its bytes. Falling back to the row's own id
+		// keeps a part whose bytes were never stored — too large, or arriving
+		// before extraction existed — as a file in its own right rather than
+		// collapsing every such part in the mailbox into one.
+		return attachmentKey
 	}
 	return "m.id"
 }
+
+// attachmentKey is what makes two attachment rows the same file.
+//
+// Content addressing, so the same document sent twice is one file with two
+// occurrences rather than two files that happen to look alike. This appears in
+// the compiler and again in the planner's GROUP BY; they must agree, so it is
+// written once.
+const attachmentKey = "COALESCE(NULLIF(a.content_hash, ''), a.id)"
 
 func (c *compiler) arg(v any) string {
 	c.args = append(c.args, v)
@@ -268,6 +282,11 @@ func (c *compiler) term(t *Term, negated bool) (string, error) {
 
 	if c.entity == EntityContact {
 		sql, err := c.contactTerm(t, negated)
+		return sql, at(t, err)
+	}
+
+	if c.entity == EntityAttachment {
+		sql, err := c.attachmentTerm(t, negated)
 		return sql, at(t, err)
 	}
 
@@ -427,6 +446,273 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 	c.args = append(c.args, args...)
 	return wrap("EXISTS (SELECT 1 FROM message_participants p JOIN messages m ON m.id = p.message_id "+
 		"WHERE p.address = c.address AND ("+inner+"))", negated), nil
+}
+
+// attachmentSameFile tests whether two attachment rows are the same file.
+//
+// Written from the same key both sides, so a row always matches itself: a part
+// with no stored hash falls back to its own id, and comparing that to another
+// row's id is false — which is right, since nothing is known to be identical
+// to bytes that were never captured.
+func attachmentSameFile(occ, outer string) string {
+	key := func(alias string) string {
+		return "COALESCE(NULLIF(" + alias + ".content_hash, ''), " + alias + ".id)"
+	}
+	return key(occ) + " = " + key(outer)
+}
+
+// attachmentTerm compiles a term about a file.
+//
+// # Why the counted fields reach across occurrences
+//
+// The row this compiles against is one occurrence — one (message, file) edge —
+// but the entity is the file, and the planner groups occurrences back down to
+// one row per file. So a predicate over a per-occurrence column applies to any
+// occurrence, and a predicate over the file as a whole is a subquery across all
+// of them. `filename:` is the first kind: a file sent once as "invoice.pdf" and
+// once as "invoice-copy.pdf" answers to both names, because it really did
+// arrive under both.
+func (c *compiler) attachmentTerm(t *Term, negated bool) (string, error) {
+	// Every occurrence of this same file, for the questions that are about the
+	// file rather than about one arrival of it.
+	occurrences := func(inner string) string {
+		return "(SELECT " + inner + " FROM attachments occ WHERE " +
+			attachmentSameFile("occ", "a") + ")"
+	}
+
+	// anyOccurrence lifts a predicate about one arrival to a predicate about
+	// the file. Every column that can differ between arrivals of identical
+	// bytes — the name it was sent under, whether it was embedded or attached —
+	// goes through this. It is not only about matching more: the planner groups
+	// occurrences into one row and counts them, so a predicate left at the
+	// occurrence level would drop some arrivals from the group and report a
+	// file that went to five people as having reached one.
+	anyOccurrence := func(pred string) string {
+		return "EXISTS (SELECT 1 FROM attachments occ WHERE " +
+			attachmentSameFile("occ", "a") + " AND " + pred + ")"
+	}
+
+	switch t.Field {
+	case "in":
+		// Read by Query.Entity; it selects the source, it does not filter.
+		return "1=1", nil
+
+	case "id":
+		// The content hash names the file. A prefix is accepted because that
+		// is how a hash is ever typed or pasted from a listing.
+		v := strings.ToLower(strings.TrimSpace(t.Value))
+		return wrap("LOWER("+attachmentKey+") = "+c.arg(v)+
+			" OR instr(LOWER(COALESCE(a.content_hash, '')), "+c.arg(v)+") = 1", negated), nil
+
+	case "filename", "file", "name":
+		// A file sent once as "invoice.pdf" and once as "invoice-copy.pdf"
+		// answers to both names, because it really did arrive under both.
+		return wrap(anyOccurrence(c.stringPredicate("COALESCE(occ.filename, '')", t)), negated), nil
+
+	case "type", "mime", "filetype":
+		pred, err := c.attachmentType(t)
+		if err != nil {
+			return "", err
+		}
+		return wrap(anyOccurrence(pred), negated), nil
+
+	case "size":
+		n, err := ParseSize(t.Value)
+		if err != nil {
+			return "", fmt.Errorf("size: %w", err)
+		}
+		op, err := comparisonOperator(t.Op, "=")
+		if err != nil {
+			return "", err
+		}
+		return wrap("a.size "+op+" "+c.arg(n), negated), nil
+
+	case "messages":
+		op, err := comparisonOperator(t.Op, "=")
+		if err != nil {
+			return "", err
+		}
+		n, err := strconv.ParseFloat(strings.TrimSpace(t.Value), 64)
+		if err != nil {
+			return "", fmt.Errorf("messages: %q is not a number", t.Value)
+		}
+		return wrap(occurrences("COUNT(DISTINCT occ.message_id)")+" "+op+" "+c.arg(n), negated), nil
+
+	case "is":
+		switch strings.ToLower(strings.TrimSpace(t.Value)) {
+		case "stored":
+			return wrap("COALESCE(a.storage_path, '') != ''", negated), nil
+		case "missing":
+			// Recorded but not on disk: too large to keep, or captured before
+			// there was anywhere to put it. Worth being able to ask for, since
+			// it is the set that a preview cannot open.
+			return wrap("COALESCE(a.storage_path, '') = ''", negated), nil
+		case "inline":
+			return wrap(anyOccurrence("occ.inline = 1"), negated), nil
+		case "attached":
+			return wrap(anyOccurrence("occ.inline = 0"), negated), nil
+		case "shared":
+			// The same bytes on more than one message — a document that went
+			// round, rather than a one-off.
+			return wrap(occurrences("COUNT(DISTINCT occ.message_id)")+" > 1", negated), nil
+		}
+		return "", fmt.Errorf("is: %q is not a file state (stored, missing, inline, attached, shared)", t.Value)
+
+	case "has":
+		return "", fmt.Errorf("has: a file has no parts to have; try is:stored or is:shared")
+	}
+
+	// Anything else is a question about the mail this file arrived on — "PDFs
+	// that came from Stripe", "files from last March". The same reach-through
+	// as tickets, and for the same reason: each message field is written once
+	// and works from both sides.
+	//
+	// Over every occurrence, not one, because the entity is the file. A
+	// document that arrived from two people is from both of them, and
+	// `from:alice` should find it.
+	// A bare word in a file query is nearly always the file's name. It is also
+	// sometimes a word in the mail that carried it, and nothing distinguishes
+	// which was meant — so it is both, and typing `invoice` finds invoice.pdf
+	// as well as a file attached to mail about one.
+	//
+	// Built before the mail half, and that ordering is load-bearing: arguments
+	// are bound in the order they are appended, so generating this predicate's
+	// placeholder after the mail compiler had already appended its own would
+	// bind the two the wrong way round — a query that runs, returns the wrong
+	// rows, and looks like a bad search rather than a bug.
+	byName := ""
+	if t.Field == "" {
+		byName = anyOccurrence(c.stringPredicate("COALESCE(occ.filename, '')", &Term{Value: t.Value}))
+	}
+
+	inner, args, err := CompileFilterFor(&Term{Field: t.Field, Value: t.Value, Op: t.Op}, c.opt, EntityMessage)
+	if err != nil {
+		return "", fmt.Errorf("%s is not a file field: %w", t.Field, err)
+	}
+	c.args = append(c.args, args...)
+	onMail := "EXISTS (SELECT 1 FROM attachments occ JOIN messages m ON m.id = occ.message_id " +
+		"WHERE " + attachmentSameFile("occ", "a") + " AND (" + inner + "))"
+
+	if byName != "" {
+		return wrap("("+byName+" OR "+onMail+")", negated), nil
+	}
+	return wrap(onMail, negated), nil
+}
+
+// attachmentType matches a kind of file.
+//
+// # Why one field and not two
+//
+// People ask for "pdfs" and "images", and MIME types are neither of those
+// spellings — application/vnd.openxmlformats-officedocument.wordprocessingml.document
+// is a Word file, and nobody is going to type that. But an exact MIME type is
+// the precise thing when precision is wanted. Rather than making the user
+// choose between `type:` and `mime:`, one field answers both: a known category
+// name expands to its types, and anything else is matched against the MIME
+// string directly. `type:pdf` and `type:application/pdf` both work, and so does
+// `type:openxmlformats` for someone who knows what they are looking at.
+//
+// Returns a bare predicate over alias `occ`; the caller lifts it to the file.
+func (c *compiler) attachmentType(t *Term) (string, error) {
+	value := strings.ToLower(strings.TrimSpace(t.Value))
+	if value == "" {
+		return "", fmt.Errorf("type: needs a kind of file (%s)", strings.Join(FileTypeNames, ", "))
+	}
+
+	if types, ok := FileTypeCategories[value]; ok && t.Op != OpGlob {
+		parts := make([]string, 0, len(types))
+		for _, mime := range types {
+			if strings.HasSuffix(mime, "/") {
+				// A whole top-level type: image/, audio/, video/.
+				parts = append(parts, "instr(LOWER(COALESCE(occ.mime_type, '')), "+c.arg(mime)+") = 1")
+				continue
+			}
+			parts = append(parts, "LOWER(COALESCE(occ.mime_type, '')) = "+c.arg(mime))
+		}
+		return "(" + strings.Join(parts, " OR ") + ")", nil
+	}
+
+	// Not a category: match the MIME type, and the filename's extension too,
+	// so `type:xlsx` finds a spreadsheet a server labelled octet-stream — which
+	// this mailbox really does contain.
+	byMIME := c.stringPredicate("COALESCE(occ.mime_type, '')", t)
+	byExt := "LOWER(COALESCE(occ.filename, '')) LIKE " + c.arg("%."+value)
+	return "(" + byMIME + " OR " + byExt + ")", nil
+}
+
+// FileTypeCategories are the words people actually use for kinds of file.
+//
+// A trailing slash means a whole top-level MIME type. Exported so autocomplete
+// can offer these names rather than making someone guess which words work.
+var FileTypeCategories = map[string][]string{
+	"pdf":   {"application/pdf"},
+	"image": {"image/"},
+	"photo": {"image/"},
+	"audio": {"audio/"},
+	"video": {"video/"},
+	"doc": {
+		"application/msword",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.oasis.opendocument.text",
+		"application/rtf",
+	},
+	"sheet": {
+		"application/vnd.ms-excel",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"application/vnd.oasis.opendocument.spreadsheet",
+		"text/csv",
+	},
+	"slides": {
+		"application/vnd.ms-powerpoint",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		"application/vnd.oasis.opendocument.presentation",
+	},
+	"archive": {
+		"application/zip", "application/x-tar", "application/gzip",
+		"application/x-7z-compressed", "application/x-rar-compressed",
+	},
+	"calendar": {"text/calendar", "application/ics"},
+	"contact":  {"text/vcard", "text/x-vcard"},
+	"text":     {"text/plain", "text/markdown"},
+}
+
+// FileTypeNames lists the categories in the order help should show them.
+var FileTypeNames = []string{
+	"pdf", "image", "doc", "sheet", "slides",
+	"archive", "calendar", "contact", "text", "audio", "video",
+}
+
+// FileTypeLabel names a MIME type the way a person would.
+//
+// The same table read backwards, so what a listing shows and what `type:`
+// accepts are the same words: a row labelled "doc" is found by `type:doc`. A
+// type in no category falls back to its subtype, because
+// "vnd.openxmlformats-officedocument.wordprocessingml.document" is not a label,
+// and neither is "application".
+func FileTypeLabel(mime string) string {
+	m := strings.ToLower(strings.TrimSpace(mime))
+	if m == "" {
+		return "unknown"
+	}
+	// Names in declared order, so a type in two categories gets the one help
+	// lists first rather than whichever the map iterated to.
+	for _, name := range FileTypeNames {
+		for _, candidate := range FileTypeCategories[name] {
+			if strings.HasSuffix(candidate, "/") {
+				if strings.HasPrefix(m, candidate) {
+					return name
+				}
+				continue
+			}
+			if m == candidate {
+				return name
+			}
+		}
+	}
+	if _, sub, ok := strings.Cut(m, "/"); ok && sub != "" {
+		return sub
+	}
+	return m
 }
 
 func (c *compiler) draftTerm(t *Term, negated bool) (string, error) {

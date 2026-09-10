@@ -35,10 +35,11 @@ const (
 // entity dimension onto a registry that assumed one row source would mean
 // touching every caller. Adding it now costs a struct field.
 const (
-	EntityMessage = "message"
-	EntityTicket  = "ticket"
-	EntityDraft   = "draft"
-	EntityContact = "contact"
+	EntityMessage    = "message"
+	EntityTicket     = "ticket"
+	EntityDraft      = "draft"
+	EntityContact    = "contact"
+	EntityAttachment = "attachment"
 )
 
 // Entities are the row sources a query can be about, and the values `in:`
@@ -55,10 +56,16 @@ var Entities = map[string]string{
 	"contacts": EntityContact,
 	"contact":  EntityContact,
 	"people":   EntityContact,
+	// Files rather than occurrences: `in:attachments` lists each distinct file
+	// once, however many messages carried it.
+	"attachments": EntityAttachment,
+	"attachment":  EntityAttachment,
+	"files":       EntityAttachment,
+	"file":        EntityAttachment,
 }
 
 // EntityNames lists what `in:` accepts, for help and completion.
-var EntityNames = []string{"mail", "drafts", "tickets", "contacts"}
+var EntityNames = []string{"mail", "drafts", "tickets", "contacts", "attachments"}
 
 // Field declares one queryable field.
 type Field struct {
@@ -97,6 +104,7 @@ const (
 	ValuesAnnotators = "annotators"
 	ValuesSaved      = "saved"
 	ValuesFolders    = "folders"
+	ValuesFileTypes  = "filetypes"
 )
 
 var matchOps = []Op{OpMatch, OpExact, OpGlob}
@@ -361,6 +369,49 @@ var Registry = []Field{
 		Name: "awaiting", Entity: EntityContact, Type: TypeEnum,
 		Enum:    []string{"me", "them"},
 		Summary: "who a conversation is waiting on for a reply", Example: "in:contacts awaiting:me",
+	},
+
+	// Attachment fields. The entity is the file, not the occurrence: two
+	// messages carrying the same bytes are one row here, and a predicate about
+	// mail — from:, date, topic: — asks whether *any* message carrying this
+	// file matches. That is why `filename` and `size` are declared here rather
+	// than reused from mail: in an attachment query `size>1mb` is a question
+	// about the file, and answering it with the message's size would quietly
+	// return the wrong rows.
+	{
+		Name: "filename", Entity: EntityAttachment, Type: TypeText, Primary: true,
+		Aliases: []string{"file"},
+		Ops:     matchOps,
+		Summary: "the name a file arrived under", Example: "in:attachments filename:*.pdf",
+	},
+	{
+		Name: "type", Entity: EntityAttachment, Type: TypeText,
+		Aliases: []string{"mime", "filetype"},
+		Ops:     matchOps,
+		Values:  ValuesFileTypes,
+		Summary: "a kind of file, or part of its MIME type", Example: "in:attachments type:pdf",
+	},
+	{
+		Name: "size", Entity: EntityAttachment, Type: TypeSize,
+		Ops:     compareOps,
+		Summary: "how big the file is", Example: "in:attachments size>1mb",
+	},
+	{
+		Name: "messages", Entity: EntityAttachment, Type: TypeNumber,
+		Ops:     compareOps,
+		Summary: "how many messages carried this file", Example: "in:attachments messages>1",
+	},
+	{
+		Name: "id", Entity: EntityAttachment, Type: TypeIdent,
+		Summary: "this exact file, by content hash", Example: "in:attachments id:a2a0fc5a…",
+	},
+	{
+		// Not the message's `is:`. A file has no read state; what it has is
+		// whether its bytes are on disk, and whether it was sent as a document
+		// or embedded in the body.
+		Name: "is", Entity: EntityAttachment, Type: TypeEnum,
+		Enum:    []string{"stored", "missing", "inline", "attached", "shared"},
+		Summary: "the state of the file itself", Example: "in:attachments is:shared",
 	},
 
 	{

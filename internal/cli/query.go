@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/user/inboxql/internal/cli/ui"
+	"github.com/user/inboxql/internal/query"
 	"github.com/user/inboxql/internal/store"
 )
 
@@ -40,6 +41,23 @@ Filter terms
                               embeddings, see "iql annotate embed"
   saved:<name>                everything a saved query matches
   a bare word                 full-text search
+
+Files
+  in:attachments              list files rather than mail. One row per file:
+                              the same document on five messages is one row,
+                              because the bytes are what makes it that file.
+  filename:*.pdf              the name it arrived under — any of them, if it
+                              arrived under more than one
+  type:pdf type:image         a kind of file, or part of a MIME type
+  size>1mb                    how big the file is, not the message
+  is:shared                   the same bytes on more than one message
+  is:stored is:missing        whether the bytes are on disk to open
+  is:inline is:attached       embedded in the body, or sent as a document
+  messages>2                  how many messages carried it
+
+  Every mail term still works and asks about the messages it came on:
+  "in:attachments from:acme after:2026-01 type:pdf" is the PDFs Acme sent
+  this year. Sort by date, size, name, type or messages.
 
 Shorthands
   from:(alice OR bob)         a group scoped to one field
@@ -510,6 +528,46 @@ func printQueryResult(ctx *Context, res *store.QueryResult) error {
 			return err
 		}
 		ctx.Printf("\n%s\n", p.Dim(count(len(res.Contacts), "contact", "contacts")))
+		return nil
+
+	case "attachments":
+		if len(res.Attachments) == 0 {
+			ctx.Printf("No files matched.\n")
+			return nil
+		}
+		t := p.NewTable("NAME", "TYPE", "SIZE", "SEEN", "LAST")
+		for _, f := range res.Attachments {
+			last := ""
+			if !f.LastSeen.IsZero() {
+				last = f.LastSeen.Format("2006-01-02")
+			}
+
+			// How far it reached, when that is more than "once". A file on one
+			// message needs no explaining, and "1 msg" on every row is noise
+			// that hides the rows where the number is the point.
+			seen := ""
+			if f.Messages > 1 {
+				seen = fmt.Sprintf("%d msgs", f.Messages)
+				if f.Threads > 1 {
+					seen = fmt.Sprintf("%d msgs · %d threads", f.Messages, f.Threads)
+				}
+			}
+
+			name := ui.Truncate(f.Filename, 40)
+			if !f.Stored() {
+				// The bytes are not on disk, so nothing can open this. Saying
+				// so in the listing beats letting someone find out by clicking.
+				name = p.Dim(name)
+				if seen == "" {
+					seen = p.Dim("not kept")
+				}
+			}
+			t.Row(name, ui.Truncate(query.FileTypeLabel(f.MimeType), 18), humanBytes(f.Size), seen, last)
+		}
+		if err := t.Flush(); err != nil {
+			return err
+		}
+		ctx.Printf("\n%s\n", p.Dim(count(len(res.Attachments), "file", "files")))
 		return nil
 
 	default:

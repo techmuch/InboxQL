@@ -53,21 +53,58 @@ func Hash(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// ErrBadHash rejects a key that is not a content address.
+var ErrBadHash = errors.New("not a content address")
+
+// ValidHash reports whether a string is a SHA-256 content address.
+//
+// # Why this is not merely tidiness
+//
+// A blob's path is built by joining the key onto the store root. A key is
+// normally a hash this package produced, but the moment one arrives from
+// outside — a URL parameter naming a file to serve is the obvious case — a key
+// like "../../../etc/passwd" would read whatever the process can read, and one
+// containing a separator would write outside the store. Every path-building
+// method checks this rather than trusting callers to, because the caller that
+// forgets is exactly the one that is taking the key from a request.
+func ValidHash(hash string) bool {
+	if len(hash) != 64 {
+		return false
+	}
+	for i := 0; i < len(hash); i++ {
+		c := hash[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // path shards by the first byte of the hash, so no single directory ends up
 // with hundreds of thousands of entries.
+//
+// Returns "" for anything that is not a content address, and every caller
+// treats that as absent. Constructing a path from an unvalidated key is the
+// one mistake in this package that would be a directory traversal rather than
+// a bug.
 func (s *Store) path(hash string) string {
-	if len(hash) < 2 {
-		return filepath.Join(s.root, hash)
+	if !ValidHash(hash) {
+		return ""
 	}
 	return filepath.Join(s.root, hash[:2], hash)
 }
 
-// Path is where a blob lives, whether or not it exists yet.
+// Path is where a blob lives, whether or not it exists yet. Empty when the
+// key is not a content address.
 func (s *Store) Path(hash string) string { return s.path(hash) }
 
 // Exists reports whether a blob is already stored.
 func (s *Store) Exists(hash string) bool {
-	_, err := os.Stat(s.path(hash))
+	p := s.path(hash)
+	if p == "" {
+		return false
+	}
+	_, err := os.Stat(p)
 	return err == nil
 }
 
@@ -118,7 +155,24 @@ var ErrNotFound = errors.New("blob not found")
 
 // Open returns a reader over a stored blob.
 func (s *Store) Open(hash string) (io.ReadCloser, error) {
-	f, err := os.Open(s.path(hash))
+	f, err := s.OpenFile(hash)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+// OpenFile returns the blob as a file, for callers that need to seek.
+//
+// Serving over HTTP wants this rather than [Store.Open]: http.ServeContent
+// needs a ReadSeeker to answer a Range request, and reading a 25 MB attachment
+// into memory to hand it to the response writer is the alternative.
+func (s *Store) OpenFile(hash string) (*os.File, error) {
+	p := s.path(hash)
+	if p == "" {
+		return nil, ErrBadHash
+	}
+	f, err := os.Open(p)
 	if os.IsNotExist(err) {
 		return nil, ErrNotFound
 	}
@@ -140,7 +194,11 @@ func (s *Store) Read(hash string) ([]byte, error) {
 // Only safe once nothing references it. Import never calls this; a sweep over
 // unreferenced blobs does.
 func (s *Store) Delete(hash string) error {
-	err := os.Remove(s.path(hash))
+	p := s.path(hash)
+	if p == "" {
+		return ErrBadHash
+	}
+	err := os.Remove(p)
 	if os.IsNotExist(err) {
 		return nil
 	}

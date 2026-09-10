@@ -92,6 +92,80 @@ const AttachmentSelectList = attachmentFileColumns
 // schema lives here, not there.
 func init() { query.SetAttachmentSelectList(AttachmentSelectList) }
 
+// GetAttachmentFile returns one file by its key, or nil when nothing has it.
+//
+// The key is a content hash for anything stored, so this is also how a request
+// for bytes resolves what it is allowed to serve: a caller holding a hash from
+// a URL learns the filename and type this mailbox recorded for it, and never
+// takes either from the request.
+func GetAttachmentFile(key string) (*AttachmentFile, error) {
+	f, err := scanAttachmentFile(db.QueryRow(
+		"SELECT "+AttachmentSelectList+
+			" FROM attachments a JOIN messages m ON m.id = a.message_id"+
+			" WHERE COALESCE(NULLIF(a.content_hash, ''), a.id) = ?"+
+			" GROUP BY COALESCE(NULLIF(a.content_hash, ''), a.id)", key).Scan)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+// AttachmentOccurrence is one arrival of a file: the message it came on, and
+// the name it came under there.
+type AttachmentOccurrence struct {
+	AttachmentID string    `json:"attachmentId"`
+	MessageID    string    `json:"messageId"`
+	ThreadKey    string    `json:"threadKey"`
+	Filename     string    `json:"filename"`
+	Subject      string    `json:"subject"`
+	From         string    `json:"from"`
+	Date         time.Time `json:"date"`
+	Mailbox      string    `json:"mailbox,omitempty"`
+	Inline       bool      `json:"inline"`
+}
+
+// ListAttachmentOccurrences returns every message a file arrived on, newest
+// first.
+//
+// # Why this is a list and not a count
+//
+// "This file is on 3 messages" is the summary; the question it immediately
+// provokes is "which ones". A count that cannot be opened is a dead end, and
+// the join that produces it is the same join that produces the rows.
+func ListAttachmentOccurrences(key string) ([]*AttachmentOccurrence, error) {
+	rows, err := db.Query(`
+		SELECT a.id, a.message_id, COALESCE(m.thread_key, m.id),
+		       COALESCE(a.filename, ''), COALESCE(m.subject, ''),
+		       COALESCE((SELECT p.address FROM message_participants p
+		                 WHERE p.message_id = a.message_id AND p.role = 'from' LIMIT 1), ''),
+		       m.date, COALESCE(m.mailbox, ''), a.inline
+		FROM attachments a JOIN messages m ON m.id = a.message_id
+		WHERE COALESCE(NULLIF(a.content_hash, ''), a.id) = ?
+		ORDER BY m.date DESC`, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*AttachmentOccurrence{}
+	for rows.Next() {
+		o := &AttachmentOccurrence{}
+		var date sql.NullInt64
+		if err := rows.Scan(&o.AttachmentID, &o.MessageID, &o.ThreadKey, &o.Filename,
+			&o.Subject, &o.From, &date, &o.Mailbox, &o.Inline); err != nil {
+			return nil, err
+		}
+		if date.Valid {
+			o.Date = time.UnixMilli(date.Int64)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 func scanAttachmentFile(scan func(...any) error) (*AttachmentFile, error) {
 	f := &AttachmentFile{}
 	var first, last sql.NullInt64

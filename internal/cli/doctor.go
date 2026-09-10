@@ -191,6 +191,22 @@ func runDoctor(ctx *Context, args []string) error {
 		}
 	}
 
+	// Attachments that were never extracted are invisible in exactly the way
+	// that reads as "this mail has no attachments" rather than "nobody looked" —
+	// every attachment filter, count and preview reports nothing, and nothing
+	// anywhere says why. The bytes are still in the stored raw message, so this
+	// is recoverable rather than lost.
+	if pending, err := store.UnextractedAttachments(); err != nil {
+		rep.add("attachments", statusWarn, err.Error())
+	} else if pending > 0 {
+		rep.add("attachments", statusWarn,
+			fmt.Sprintf("%d message(s) carry attachments that were never extracted, so they appear nowhere in the app",
+				pending),
+			fmt.Sprintf("iql maintenance attachments --data %s", ctx.DataDir))
+	} else {
+		rep.add("attachments", statusOK, "every stored message has been walked for attachments")
+	}
+
 	if version, err := store.SchemaVersionOnDisk(); err != nil {
 		rep.add("schema version", statusFail, err.Error())
 	} else if version != store.SchemaVersion {

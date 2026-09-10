@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/user/inboxql/internal/blobstore"
 	"github.com/user/inboxql/internal/importer"
 	"github.com/user/inboxql/internal/importer/applemail"
 	"github.com/user/inboxql/internal/store"
@@ -24,6 +25,9 @@ var (
 func SetDataDir(dir string) {
 	importDataDir = dir
 	llmDataDir = dir
+	// IMAP sync writes attachment bytes to the same blob store the importers
+	// use, and cannot until it is told where that is.
+	syncManager.Blobs = blobstore.New(dir)
 }
 
 func manager() *importer.Manager {

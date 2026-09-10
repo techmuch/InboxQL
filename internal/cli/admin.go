@@ -92,20 +92,31 @@ model while every other one stays local:
 	register(&Command{
 		Name:    "maintenance",
 		Summary: "vacuum, analyze and check the database",
-		Usage: `iql maintenance <vacuum|analyze|integrity|checkpoint|reindex>
+		Usage: `iql maintenance <vacuum|analyze|integrity|checkpoint|reindex|attachments>
 
-  vacuum      rebuild the database, reclaiming freed space
-  analyze     refresh query planner statistics
-  integrity   run SQLite's integrity_check
-  checkpoint  fold the write-ahead log back into the main file
-  reindex     rebuild the derived search and threading indexes
+  vacuum       rebuild the database, reclaiming freed space
+  analyze      refresh query planner statistics
+  integrity    run SQLite's integrity_check
+  checkpoint   fold the write-ahead log back into the main file
+  reindex      rebuild the derived search and threading indexes
+  attachments  extract attachment parts from stored messages
+
+flags:
+  --dry-run   report what attachments would recover, without writing
 
 Stop the server before vacuum: it needs exclusive access.
 
 reindex rebuilds the full-text index and the participant and reference tables
 from the stored messages. Those are derived data, so a database restored from a
 backup taken by a build without FTS5, or migrated by an older binary, can
-disagree with its own messages without anything reporting an error.`,
+disagree with its own messages without anything reporting an error.
+
+attachments walks the stored raw messages for MIME parts and writes them to the
+blob store. Mail imported before attachment extraction existed has its parts
+recorded nowhere, which reads as "no attachments" everywhere in the app; the
+bytes are still in the stored message, so this recovers them without going back
+to the original mailbox. Idempotent, and separate from reindex because it is
+the one maintenance operation that writes outside the database.`,
 		Run: runMaintenance,
 	})
 
@@ -464,7 +475,13 @@ func runLLM(ctx *Context, args []string) error {
 // --- maintenance ------------------------------------------------------------
 
 func runMaintenance(ctx *Context, args []string) error {
-	sub, _ := subcommand(args)
+	sub, rest := subcommand(args)
+	fs := flag.NewFlagSet("maintenance", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	dryRun := fs.Bool("dry-run", false, "report what would change without writing")
+	if err := parseArgs(fs, rest); err != nil {
+		return Fail(ExitUsage, "invalid flags")
+	}
 	if err := ctx.OpenStore(); err != nil {
 		return err
 	}
@@ -492,8 +509,34 @@ func runMaintenance(ctx *Context, args []string) error {
 			}
 			return store.ReindexGraph()
 		}
+	case "attachments":
+		// Attachment parts were never extracted on either ingestion path, and
+		// the raw MIME is still in the database — so this recovers them
+		// without going back to the original mailbox. Separate from reindex
+		// because it writes to the blob store, which reindex never does.
+		action = func() error {
+			out, err := store.RecoverAttachments(blobstore.New(ctx.DataDir), 0, *dryRun)
+			if err != nil {
+				return err
+			}
+			verb := "Recovered"
+			if out.DryRun {
+				verb = "Would recover"
+			}
+			ctx.Printf("%s %s from %s (%.1f MB).\n", verb,
+				count(out.Recovered, "attachment", "attachments"),
+				count(out.Messages, "message", "messages"),
+				float64(out.Bytes)/(1024*1024))
+			if out.Skipped > 0 {
+				ctx.Printf("%s\n", ctx.Printer().Dim(sprintf(
+					"%d had no bytes to store and were recorded as metadata only.", out.Skipped)))
+			}
+			return nil
+		}
+
 	case "":
-		return Fail(ExitUsage, "usage: iql maintenance <vacuum|analyze|integrity|checkpoint|reindex>")
+		return Fail(ExitUsage,
+			"usage: iql maintenance <vacuum|analyze|integrity|checkpoint|reindex|attachments> [--dry-run]")
 	default:
 		return Fail(ExitUsage, "unknown subcommand %q", sub)
 	}

@@ -305,47 +305,16 @@ func runMailbox(ctx context.Context, src Source, mailboxID string, opts Options,
 }
 
 // storeAttachments extracts and persists a message's attachment parts.
+//
+// The extraction itself lives in store.StoreAttachments so that import, IMAP
+// sync and recovery all derive attachments the same way. This wrapper is only
+// the import-specific half: attributing the counts to this run's Result.
 func storeAttachments(messageID string, raw []byte, opts Options, res *Result) error {
-	parts, err := message.ExtractAttachments(raw, opts.MaxAttachmentBytes)
-	if err != nil {
-		// A message whose MIME structure will not re-walk has no attachments
-		// as far as we are concerned; the body was already stored.
-		return nil //nolint:nilerr
-	}
-
-	for _, part := range parts {
-		record := &store.Attachment{
-			ID:        uuid.New().String(),
-			MessageID: messageID,
-			Filename:  part.Filename,
-			MimeType:  part.ContentType,
-			Size:      part.Size,
-			Inline:    part.Inline,
-			ContentID: part.ContentID,
-			Skipped:   part.Skipped,
-		}
-
-		if part.Data != nil && opts.Blobs != nil {
-			hash, err := opts.Blobs.Put(part.Data)
-			if err != nil {
-				return err
-			}
-			record.ContentHash = hash
-			record.StoragePath = opts.Blobs.Path(hash)
-			res.AttachmentsStored++
-			res.AttachmentBytes += part.Size
-		} else {
-			if record.Skipped == "" {
-				record.Skipped = "attachment storage unavailable"
-			}
-			res.AttachmentsSkipped++
-		}
-
-		if err := store.SaveAttachment(record); err != nil {
-			return err
-		}
-	}
-	return nil
+	counts, err := store.StoreAttachments(messageID, raw, opts.Blobs, opts.MaxAttachmentBytes)
+	res.AttachmentsStored += counts.Stored
+	res.AttachmentsSkipped += counts.Skipped
+	res.AttachmentBytes += counts.Bytes
+	return err
 }
 
 // SortMailboxes orders mailboxes by display path so listings are stable.

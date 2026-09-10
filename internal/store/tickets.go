@@ -69,6 +69,12 @@ type TicketSource struct {
 	Subject      string    `json:"subject,omitempty"`
 	From         string    `json:"from,omitempty"`
 	Date         time.Time `json:"date,omitempty"`
+	// Attachments is how many distinct files this evidence carried. Derived on
+	// read from the same edge table everything else reads, so it cannot fall
+	// out of step with the files themselves — and a count rather than the rows
+	// because a board shows many tickets at once and needs only to know
+	// whether there is anything to open.
+	Attachments int `json:"attachments,omitempty"`
 }
 
 const ticketColumns = `id, COALESCE(thread_key, ''), title, COALESCE(body, ''), status,
@@ -189,7 +195,9 @@ func GetTicket(id string) (*Ticket, error) {
 func ticketSources(ticketID string) ([]TicketSource, error) {
 	rows, err := db.Query(`
 		SELECT ts.message_id, COALESCE(ts.annotation_id, ''),
-		       COALESCE(m.subject, ''), COALESCE(m.from_addr, ''), COALESCE(m.date, 0)
+		       COALESCE(m.subject, ''), COALESCE(m.from_addr, ''), COALESCE(m.date, 0),
+		       (SELECT COUNT(DISTINCT COALESCE(NULLIF(a.content_hash, ''), a.id))
+		        FROM attachments a WHERE a.message_id = ts.message_id)
 		FROM ticket_sources ts
 		LEFT JOIN messages m ON m.id = ts.message_id
 		WHERE ts.ticket_id = ?
@@ -203,7 +211,8 @@ func ticketSources(ticketID string) ([]TicketSource, error) {
 	for rows.Next() {
 		var s TicketSource
 		var date int64
-		if err := rows.Scan(&s.MessageID, &s.AnnotationID, &s.Subject, &s.From, &date); err != nil {
+		if err := rows.Scan(&s.MessageID, &s.AnnotationID, &s.Subject, &s.From, &date,
+			&s.Attachments); err != nil {
 			return nil, err
 		}
 		s.Date = time.UnixMilli(date)

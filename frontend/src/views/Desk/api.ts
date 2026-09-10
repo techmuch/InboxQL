@@ -8,6 +8,10 @@
  * server then rejects.
  */
 
+import type { AttachmentFile } from '../AttachmentPreview';
+
+export type { AttachmentFile };
+
 export interface Candidate {
   value: string;
   detail?: string;
@@ -148,7 +152,7 @@ export const contactName = (c: Contact): string =>
 
 export interface QueryResult {
   query: string;
-  kind: 'messages' | 'groups' | 'count' | 'tickets' | 'drafts' | 'threads' | 'contacts';
+  kind: 'messages' | 'groups' | 'count' | 'tickets' | 'drafts' | 'threads' | 'contacts' | 'attachments';
   count: number;
   messages?: QueryMessage[];
   groups?: QueryGroup[];
@@ -156,6 +160,7 @@ export interface QueryResult {
   drafts?: Draft[];
   threads?: Thread[];
   contacts?: Contact[];
+  attachments?: AttachmentFile[];
   total?: number;
   /** What an aggregate grouped by, so a chart click can build a drill-down. */
   groupField?: string;

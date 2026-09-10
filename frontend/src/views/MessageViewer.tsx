@@ -100,6 +100,7 @@ const RecipientList = ({
 export const MessageViewer = () => {
   const message = useViewerStore(s => s.message);
   const contact = useViewerStore(s => s.contact);
+  const file = useViewerStore(s => s.file);
   const selectedCount = useViewerStore(s => s.selectedCount);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [openFileKey, setOpenFileKey] = useState<string | null>(null);
@@ -192,10 +193,23 @@ export const MessageViewer = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // The tab holds one subject at a time — a message or a contact — which is
-  // why it is called Viewer rather than Message.
+  // The tab holds one subject at a time — a message, a contact or a file —
+  // which is why it is called Viewer rather than Message.
   if (contact) {
     return <ContactCard address={contact} />;
+  }
+
+  // A file opened from a search that returned files. There is no message to
+  // show instead: the row was the file, and which of its messages you meant is
+  // exactly the question the occurrences list answers.
+  if (file) {
+    return (
+      <div className="h-full overflow-auto p-6">
+        <div className="mx-auto max-w-3xl">
+          <AttachmentViewer file={file} onClose={() => useViewerStore.getState().clear()} />
+        </div>
+      </div>
+    );
   }
 
   if (!message) {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import {
-  AttachmentChip, AttachmentViewer, AttachmentOccurrences,
+  AttachmentChip, AttachmentViewer, AttachmentOccurrences, AttachmentSection,
   attachmentURL, fileTypeLabel, formatBytes,
   type AttachmentFile, type AttachmentOccurrence,
 } from './AttachmentPreview';
@@ -180,6 +180,86 @@ describe('AttachmentViewer', () => {
 
     fireEvent.click(screen.getByTitle('Close preview'));
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('AttachmentSection', () => {
+  const queried: string[] = [];
+
+  const mockFiles = (files: AttachmentFile[]) => {
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
+      queried.push(url);
+      if (url.startsWith('/api/query')) {
+        return { ok: true, json: async () => ({ kind: 'attachments', count: files.length, attachments: files }) };
+      }
+      return { ok: true, json: async () => [] };
+    }) as never;
+  };
+
+  beforeEach(() => { queried.length = 0; });
+
+  it('lists the files its scope returns', async () => {
+    mockFiles([pdf]);
+    render(
+      <AttachmentSection
+        scopes={[{ label: 'They sent', query: 'in:attachments from:=alice@acme.com' }]}
+        emptyLabel="No files."
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('invoice.pdf')).toBeTruthy());
+    // URLSearchParams encodes the space as +, so assert on the term itself.
+    expect(queried[0]).toContain(encodeURIComponent('from:=alice@acme.com'));
+    expect(queried[0]).toContain('in%3Aattachments');
+  });
+
+  // The scope is the only thing a caller supplies, so switching it must
+  // actually re-ask rather than filter what was already fetched.
+  it('re-queries when the scope changes', async () => {
+    mockFiles([pdf]);
+    render(
+      <AttachmentSection
+        scopes={[
+          { label: 'They sent', query: 'in:attachments from:=alice@acme.com' },
+          { label: 'Any message with them', query: 'in:attachments anyone:=alice@acme.com' },
+        ]}
+        emptyLabel="No files."
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('invoice.pdf')).toBeTruthy());
+    fireEvent.click(screen.getByText('Any message with them'));
+
+    await waitFor(() =>
+      expect(queried.some(u => u.includes(encodeURIComponent('anyone:=alice@acme.com')))).toBe(true));
+  });
+
+  it('says so plainly when the scope has no files', async () => {
+    mockFiles([]);
+    render(
+      <AttachmentSection
+        scopes={[{ label: 'They sent', query: 'in:attachments from:=nobody@acme.com' }]}
+        emptyLabel="No files."
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('No files.')).toBeTruthy());
+  });
+
+  it('opens a preview for the file that was clicked', async () => {
+    mockFiles([pdf]);
+    const { container } = render(
+      <AttachmentSection
+        scopes={[{ label: 'They sent', query: 'in:attachments from:=alice@acme.com' }]}
+        emptyLabel="No files."
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('invoice.pdf')).toBeTruthy());
+    expect(container.querySelector('iframe')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /invoice\.pdf/ }));
+    await waitFor(() => expect(container.querySelector('iframe')).toBeTruthy());
   });
 });
 

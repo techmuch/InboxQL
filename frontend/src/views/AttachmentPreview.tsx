@@ -357,6 +357,105 @@ export const AttachmentViewer = ({ file, currentMessageId, onClose }: {
 };
 
 /**
+ * AttachmentSection lists the files reached by a query, with a preview.
+ *
+ * # Why a query rather than a panel per place
+ *
+ * A ticket's files, a contact's files and a search for files are the same
+ * question asked with a different scope: `in:attachments` plus a filter. The
+ * attachments table is an edge from a message to a file, structurally the same
+ * as message_participants, so anything that already reaches messages reaches
+ * files in one join — and the scope is the only thing each caller has to know.
+ *
+ * Building three bespoke panels instead would mean three definitions of "this
+ * thing's attachments" that drift, which is the shape this project has been
+ * bitten by before.
+ *
+ * `scopes` takes more than one so a caller can offer a narrower and a wider
+ * reading — a contact's files default to what they *sent*, because "files from
+ * Alice" means files Alice sent, not every file on a thread she was copied on.
+ * The wider reading is a click away rather than the default.
+ */
+export const AttachmentSection = ({ scopes, emptyLabel, limit = 24 }: {
+  scopes: { label: string; query: string; hint?: string }[];
+  emptyLabel: string;
+  limit?: number;
+}) => {
+  const [active, setActive] = useState(0);
+  const [files, setFiles] = useState<AttachmentFile[] | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+
+  const scope = scopes[Math.min(active, scopes.length - 1)];
+
+  useEffect(() => {
+    let cancelled = false;
+    setFiles(null);
+    setOpenKey(null);
+    const params = new URLSearchParams({ q: scope.query, limit: String(limit) });
+    fetch(`/api/query?${params}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(result => {
+        if (cancelled) return;
+        setFiles(Array.isArray(result?.attachments) ? result.attachments : []);
+      })
+      .catch(() => { if (!cancelled) setFiles([]); });
+    return () => { cancelled = true; };
+  }, [scope.query, limit]);
+
+  const open = files?.find(f => f.key === openKey) ?? null;
+
+  return (
+    <div className="space-y-3">
+      {scopes.length > 1 && (
+        <div className="flex items-center gap-1 text-xs">
+          {scopes.map((s, i) => (
+            <button
+              key={s.query}
+              type="button"
+              onClick={() => setActive(i)}
+              title={s.hint}
+              className={`px-2 py-1 border transition-colors ${
+                i === active
+                  ? 'border-border bg-accent'
+                  : 'border-transparent text-muted-foreground hover:bg-accent'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {files === null ? (
+        <div className="text-xs text-muted-foreground">Looking for files…</div>
+      ) : files.length === 0 ? (
+        <div className="text-xs text-muted-foreground italic">{emptyLabel}</div>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {files.map(f => (
+              <AttachmentChip
+                key={f.key}
+                filename={f.filename}
+                mimeType={f.mimeType}
+                size={f.size}
+                contentHash={f.contentHash}
+                skipped={f.skipped}
+                shared={f.messages}
+                onOpen={() => setOpenKey(k => (k === f.key ? null : f.key))}
+              />
+            ))}
+          </div>
+          {open && (
+            <AttachmentViewer file={open} onClose={() => setOpenKey(null)} />
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+/**
  * useAttachmentFile loads a file's metadata by key, for a chip that only knows
  * its content hash.
  */

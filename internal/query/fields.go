@@ -410,8 +410,30 @@ var Registry = []Field{
 		// whether its bytes are on disk, and whether it was sent as a document
 		// or embedded in the body.
 		Name: "is", Entity: EntityAttachment, Type: TypeEnum,
-		Enum:    []string{"stored", "missing", "inline", "attached", "shared"},
+		Enum: []string{
+			"stored", "missing", "inline", "attached", "shared",
+			"read", "unread", "scanned", "searchable",
+		},
 		Summary: "the state of the file itself", Example: "in:attachments is:shared",
+	},
+	{
+		// A file's own `has:`. Without this declaration the message enum
+		// applies, and `has:text` is rejected as not being one of the things
+		// a message can have.
+		Name: "has", Entity: EntityAttachment, Type: TypeEnum,
+		Enum:    []string{"text"},
+		Summary: "what the file carries", Example: "in:attachments has:text",
+	},
+	{
+		// Words inside the file, as opposed to words in the mail that carried
+		// it. Distinct from a bare word, which asks both plus the filename,
+		// because "the invoice that says 4815" and "the mail that mentions
+		// 4815" are different questions and only one of them is answerable any
+		// other way.
+		Name: "content", Entity: EntityAttachment, Type: TypeText,
+		Aliases: []string{"inside", "fulltext"},
+		Ops:     matchOps,
+		Summary: "words inside the file", Example: "in:attachments content:invoice",
 	},
 
 	{

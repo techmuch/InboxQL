@@ -538,8 +538,24 @@ func (c *compiler) attachmentTerm(t *Term, negated bool) (string, error) {
 		}
 		return wrap(occurrences("COUNT(DISTINCT occ.message_id)")+" "+op+" "+c.arg(n), negated), nil
 
+	case "content", "inside", "fulltext":
+		return c.attachmentContent(t, negated)
+
 	case "is":
 		switch strings.ToLower(strings.TrimSpace(t.Value)) {
+		case "read", "searchable":
+			// Read, and something was found. `searchable` is the same set said
+			// the way somebody thinking about search would say it.
+			return wrap(extractionStatus("ok"), negated), nil
+		case "unread":
+			// Nobody has looked at this file yet.
+			return wrap("NOT EXISTS (SELECT 1 FROM attachment_extractions e "+
+				"WHERE e.content_hash = a.content_hash)", negated), nil
+		case "scanned":
+			// Read, and found to hold no text: an image of a page. The set OCR
+			// exists for, and the reason `empty` is a recorded status rather
+			// than an absent row.
+			return wrap(extractionStatus("empty"), negated), nil
 		case "stored":
 			return wrap("COALESCE(a.storage_path, '') != ''", negated), nil
 		case "missing":
@@ -556,10 +572,16 @@ func (c *compiler) attachmentTerm(t *Term, negated bool) (string, error) {
 			// round, rather than a one-off.
 			return wrap(occurrences("COUNT(DISTINCT occ.message_id)")+" > 1", negated), nil
 		}
-		return "", fmt.Errorf("is: %q is not a file state (stored, missing, inline, attached, shared)", t.Value)
+		return "", fmt.Errorf(
+			"is: %q is not a file state (stored, missing, inline, attached, shared, "+
+				"read, unread, scanned, searchable)", t.Value)
 
 	case "has":
-		return "", fmt.Errorf("has: a file has no parts to have; try is:stored or is:shared")
+		switch strings.ToLower(strings.TrimSpace(t.Value)) {
+		case "text", "content":
+			return wrap(extractionStatus("ok"), negated), nil
+		}
+		return "", fmt.Errorf("has: %q is not something a file has (try text)", t.Value)
 	}
 
 	// Anything else is a question about the mail this file arrived on — "PDFs
@@ -570,19 +592,23 @@ func (c *compiler) attachmentTerm(t *Term, negated bool) (string, error) {
 	// Over every occurrence, not one, because the entity is the file. A
 	// document that arrived from two people is from both of them, and
 	// `from:alice` should find it.
-	// A bare word in a file query is nearly always the file's name. It is also
-	// sometimes a word in the mail that carried it, and nothing distinguishes
-	// which was meant — so it is both, and typing `invoice` finds invoice.pdf
-	// as well as a file attached to mail about one.
+	// A bare word in a file query is nearly always the file's name — or, now
+	// that files are read, a word inside one. It is also sometimes a word in
+	// the mail that carried it, and nothing distinguishes which was meant, so
+	// it is all three: typing `invoice` finds invoice.pdf, a PDF whose text
+	// says invoice, and a file attached to mail about one.
 	//
 	// Built before the mail half, and that ordering is load-bearing: arguments
-	// are bound in the order they are appended, so generating this predicate's
-	// placeholder after the mail compiler had already appended its own would
-	// bind the two the wrong way round — a query that runs, returns the wrong
+	// are bound in the order they are appended, so generating these
+	// placeholders after the mail compiler had already appended its own would
+	// bind them the wrong way round — a query that runs, returns the wrong
 	// rows, and looks like a bad search rather than a bug.
-	byName := ""
+	byName, byContent := "", ""
 	if t.Field == "" {
 		byName = anyOccurrence(c.stringPredicate("COALESCE(occ.filename, '')", &Term{Value: t.Value}))
+		if inside, err := c.attachmentContent(&Term{Value: t.Value, Op: t.Op}, false); err == nil {
+			byContent = inside
+		}
 	}
 
 	inner, args, err := CompileFilterFor(&Term{Field: t.Field, Value: t.Value, Op: t.Op}, c.opt, EntityMessage)
@@ -594,9 +620,52 @@ func (c *compiler) attachmentTerm(t *Term, negated bool) (string, error) {
 		"WHERE " + attachmentSameFile("occ", "a") + " AND (" + inner + "))"
 
 	if byName != "" {
-		return wrap("("+byName+" OR "+onMail+")", negated), nil
+		parts := byName
+		if byContent != "" {
+			parts += " OR " + byContent
+		}
+		return wrap("("+parts+" OR "+onMail+")", negated), nil
 	}
 	return wrap(onMail, negated), nil
+}
+
+// extractionStatus tests what a file's extraction recorded.
+func extractionStatus(status string) string {
+	return "EXISTS (SELECT 1 FROM attachment_extractions e " +
+		"WHERE e.content_hash = a.content_hash AND e.status = '" + status + "')"
+}
+
+// attachmentContent searches the words inside a file.
+//
+// # Why this is not the same as a bare word
+//
+// A bare word in a file query asks about the filename and the mail that
+// carried the file, because that is what somebody typing one word usually
+// means. `content:` asks only about what is inside — "the invoice that says
+// 4815", not "the mail that mentions 4815". Those are different questions, and
+// before extraction existed only one of them could be asked at all.
+//
+// Falls back to substring matching without the full-text index, exactly as the
+// message side does: correct, slower, and token-blind, which is what search was
+// before the index existed.
+func (c *compiler) attachmentContent(t *Term, negated bool) (string, error) {
+	value := strings.TrimSpace(t.Value)
+	if value == "" {
+		return "", fmt.Errorf("content: needs something to look for")
+	}
+
+	// Over every page of the file, because a file is one document to a person
+	// and several rows here.
+	inner := ""
+	if c.opt.FullText && t.Op == OpMatch {
+		inner = "at.rowid IN (SELECT rowid FROM attachment_text_fts WHERE attachment_text_fts MATCH " +
+			c.arg(ftsPhrase(value)) + ")"
+	} else {
+		inner = c.stringPredicate("at.text", t)
+	}
+
+	return wrap("EXISTS (SELECT 1 FROM attachment_text at "+
+		"WHERE at.content_hash = a.content_hash AND ("+inner+"))", negated), nil
 }
 
 // attachmentType matches a kind of file.

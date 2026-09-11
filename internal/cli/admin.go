@@ -92,7 +92,7 @@ model while every other one stays local:
 	register(&Command{
 		Name:    "maintenance",
 		Summary: "vacuum, analyze and check the database",
-		Usage: `iql maintenance <vacuum|analyze|integrity|checkpoint|reindex|attachments>
+		Usage: `iql maintenance <vacuum|analyze|integrity|checkpoint|reindex|attachments|text>
 
   vacuum       rebuild the database, reclaiming freed space
   analyze      refresh query planner statistics
@@ -100,9 +100,11 @@ model while every other one stays local:
   checkpoint   fold the write-ahead log back into the main file
   reindex      rebuild the derived search and threading indexes
   attachments  extract attachment parts from stored messages
+  text         read the words inside stored files, so they can be searched
 
 flags:
   --dry-run   report what attachments would recover, without writing
+  --redo      re-read files that have already been read once
 
 Stop the server before vacuum: it needs exclusive access.
 
@@ -116,7 +118,15 @@ blob store. Mail imported before attachment extraction existed has its parts
 recorded nowhere, which reads as "no attachments" everywhere in the app; the
 bytes are still in the stored message, so this recovers them without going back
 to the original mailbox. Idempotent, and separate from reindex because it is
-the one maintenance operation that writes outside the database.`,
+the one maintenance operation that writes outside the database.
+
+text reads what is inside those files — PDFs and plain text today — so that
+content: and a bare word can search them. It is separate from attachments, and
+a command rather than part of import, because reading a file costs orders of
+magnitude more than storing one and can be redone better later: a PDF that
+holds no text today is a picture of a page, and the input to an OCR pass
+tomorrow. Those files are recorded as such rather than as failures, so
+"in:attachments is:scanned" names them.`,
 		Run: runMaintenance,
 	})
 
@@ -479,6 +489,7 @@ func runMaintenance(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("maintenance", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	dryRun := fs.Bool("dry-run", false, "report what would change without writing")
+	redo := fs.Bool("redo", false, "redo work that has already been done once")
 	if err := parseArgs(fs, rest); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -534,9 +545,42 @@ func runMaintenance(ctx *Context, args []string) error {
 			return nil
 		}
 
+	case "text", "extract":
+		// Reading files is separate from recovering them because it is
+		// separately expensive and separately redoable: a PDF that extracts to
+		// nothing today is the input to an OCR pass tomorrow.
+		action = func() error {
+			out, err := store.ExtractAttachmentText(blobstore.New(ctx.DataDir), *redo, nil)
+			if err != nil {
+				return err
+			}
+			p := ctx.Printer()
+			ctx.Printf("%s readable, %s with no text layer",
+				count(out.WithText, "file", "files"),
+				count(out.NoText, "file", "files"))
+			if out.NoReader > 0 {
+				ctx.Printf(", %d with no reader", out.NoReader)
+			}
+			if out.Failed > 0 {
+				ctx.Printf(", %d could not be read", out.Failed)
+			}
+			ctx.Printf(".\n")
+			if out.NoText > 0 {
+				// Naming this set is the point of recording "empty" as a
+				// status: these files are not broken, they are pictures.
+				ctx.Printf("%s\n", p.Dim(
+					"Files with no text layer are scans. Find them with `iql query \"in:attachments is:scanned\"`."))
+			}
+			if out.Pending > 0 {
+				ctx.Printf("%s\n", p.Dim(sprintf("%d file(s) still unread.", out.Pending)))
+			}
+			return nil
+		}
+
 	case "":
 		return Fail(ExitUsage,
-			"usage: iql maintenance <vacuum|analyze|integrity|checkpoint|reindex|attachments> [--dry-run]")
+			"usage: iql maintenance <vacuum|analyze|integrity|checkpoint|reindex|attachments|text> "+
+				"[--dry-run] [--redo]")
 	default:
 		return Fail(ExitUsage, "unknown subcommand %q", sub)
 	}

@@ -19,7 +19,35 @@ export interface AttachmentFile {
   names: number;
   firstSeen?: string;
   lastSeen?: string;
+  /** What reading the file found: ok, empty, unsupported, failed, or absent. */
+  textStatus?: string;
+  textPages?: number;
 }
+
+/**
+ * What to say about a file's searchability, or "" when there is nothing worth
+ * saying.
+ *
+ * A scanned PDF is the case that needs words. Left unsaid, it looks like a
+ * file whose contents just did not match — when in fact nothing has ever read
+ * them, and no search ever will until something does.
+ */
+export const textStatusLabel = (file: AttachmentFile): string => {
+  switch (file.textStatus) {
+    case 'empty':
+      return 'scanned — no text to search';
+    case 'failed':
+      return 'could not be read';
+    case '':
+    case undefined:
+      return 'not read yet';
+    default:
+      // 'ok' says nothing: searchable is the unremarkable case, and a badge on
+      // every readable file would bury the ones that need a badge.
+      // 'unsupported' says nothing either: nobody expects to search a JPEG.
+      return '';
+  }
+};
 
 export interface AttachmentOccurrence {
   attachmentId: string;
@@ -302,6 +330,7 @@ export const AttachmentViewer = ({ file, currentMessageId, onClose }: {
         </span>
         <span className="text-xs text-muted-foreground shrink-0">
           {fileTypeLabel(file.mimeType)} · {formatBytes(file.size)}
+          {textStatusLabel(file) && <> · {textStatusLabel(file)}</>}
         </span>
         <a
           href={attachmentURL(file.key, false)}

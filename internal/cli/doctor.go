@@ -207,6 +207,38 @@ func runDoctor(ctx *Context, args []string) error {
 		rep.add("attachments", statusOK, "every stored message has been walked for attachments")
 	}
 
+	// Files nobody has read are invisible to search in the same way
+	// unextracted attachments are invisible everywhere: the query returns
+	// nothing and nothing says why.
+	if text, err := store.AttachmentTextProgress(); err != nil {
+		rep.add("attachment text", statusWarn, err.Error())
+	} else if text.Files == 0 {
+		rep.add("attachment text", statusOK, "no stored files to read")
+	} else if text.Pending > 0 {
+		rep.add("attachment text", statusWarn,
+			fmt.Sprintf("%d of %d file(s) have never been read, so their contents match nothing",
+				text.Pending, text.Files),
+			fmt.Sprintf("iql maintenance text --data %s", ctx.DataDir))
+	} else {
+		detail := fmt.Sprintf("%d searchable", text.WithText)
+		if text.NoText > 0 {
+			// Not a problem to fix. A scan is a picture of a page, and saying
+			// so is the difference between "nothing found it" and "there is
+			// nothing to find until something reads the picture".
+			detail += fmt.Sprintf(", %d scanned with no text layer", text.NoText)
+		}
+		if text.NoReader > 0 {
+			// Images, archives, spreadsheets. Ordinary contents of a mailbox,
+			// not damage — which is what one merged "unreadable" number made
+			// them look like.
+			detail += fmt.Sprintf(", %d with no reader (images and the like)", text.NoReader)
+		}
+		if text.Failed > 0 {
+			detail += fmt.Sprintf(", %d could not be read", text.Failed)
+		}
+		rep.add("attachment text", statusOK, detail)
+	}
+
 	if version, err := store.SchemaVersionOnDisk(); err != nil {
 		rep.add("schema version", statusFail, err.Error())
 	} else if version != store.SchemaVersion {

@@ -395,6 +395,11 @@ const AttachmentResult = ({ files, onDrillDown }: {
                 </>
               )}
               {!f.storagePath && <span className="italic">not stored</span>}
+              {f.storagePath && f.textStatus === 'empty' && (
+                // Worth a word: without it a scan looks like a file whose
+                // contents did not match, rather than one nothing has read.
+                <span className="italic">scanned</span>
+              )}
             </td>
             <td className="px-4 py-2 text-xs text-muted-foreground">
               {f.lastSeen ? new Date(f.lastSeen).toLocaleDateString() : ''}

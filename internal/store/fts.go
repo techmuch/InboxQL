@@ -54,6 +54,36 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_update AFTER UPDATE ON messages BEGIN
 	INSERT INTO messages_fts(rowid, subject, body, normalized_body, from_addr)
 	VALUES (new.rowid, new.subject, new.body, new.normalized_body, new.from_addr);
 END;
+
+-- The index over what is inside files.
+--
+-- A separate index rather than another column on messages_fts, because the
+-- unit is different: a message is one document, a file is one document per
+-- page, and the same file belongs to several messages. Folding file text into
+-- the message index would make a 90-page PDF's contents count as part of every
+-- message that carried it, and there would be no way to say which page a hit
+-- was on.
+CREATE VIRTUAL TABLE IF NOT EXISTS attachment_text_fts USING fts5(
+	text,
+	content='attachment_text',
+	content_rowid='rowid',
+	tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS attachment_text_fts_insert AFTER INSERT ON attachment_text BEGIN
+	INSERT INTO attachment_text_fts(rowid, text) VALUES (new.rowid, new.text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS attachment_text_fts_delete AFTER DELETE ON attachment_text BEGIN
+	INSERT INTO attachment_text_fts(attachment_text_fts, rowid, text)
+	VALUES ('delete', old.rowid, old.text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS attachment_text_fts_update AFTER UPDATE ON attachment_text BEGIN
+	INSERT INTO attachment_text_fts(attachment_text_fts, rowid, text)
+	VALUES ('delete', old.rowid, old.text);
+	INSERT INTO attachment_text_fts(rowid, text) VALUES (new.rowid, new.text);
+END;
 `
 
 // ensureFullTextIndex creates the index when the build supports it.
@@ -107,6 +137,34 @@ func rebuildFullTextIndex(db *sql.DB) error {
 	if total > 0 {
 		log.Printf("Built the full-text index over %d message(s).", total)
 	}
+	return rebuildAttachmentTextIndex(db)
+}
+
+// rebuildAttachmentTextIndex reindexes extracted file text.
+//
+// Same shape and same reasoning as the message index: the triggers keep it
+// current, but a database whose text was extracted by a build without FTS5
+// arrives with the rows and no index.
+func rebuildAttachmentTextIndex(db *sql.DB) error {
+	var total int64
+	if err := db.QueryRow("SELECT COUNT(*) FROM attachment_text").Scan(&total); err != nil {
+		return err
+	}
+	if total == 0 {
+		return nil
+	}
+
+	var indexed int64
+	if err := db.QueryRow("SELECT COUNT(*) FROM attachment_text_fts_docsize").Scan(&indexed); err == nil {
+		if indexed == total {
+			return nil
+		}
+	}
+
+	if _, err := db.Exec(`INSERT INTO attachment_text_fts(attachment_text_fts) VALUES('rebuild');`); err != nil {
+		return err
+	}
+	log.Printf("Built the full-text index over %d page(s) of attachment text.", total)
 	return nil
 }
 

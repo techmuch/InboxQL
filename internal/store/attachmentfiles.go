@@ -48,7 +48,22 @@ type AttachmentFile struct {
 	Names     int       `json:"names"`
 	FirstSeen time.Time `json:"firstSeen"`
 	LastSeen  time.Time `json:"lastSeen"`
+	// TextStatus is what reading the file found: ok, empty, unsupported,
+	// failed, or "" for a file nothing has read yet.
+	//
+	// Carried on the row because the distinction matters to whoever is looking
+	// at it: a scanned PDF that says nothing about itself looks like a file
+	// whose contents simply do not match, when in fact nothing has ever been
+	// able to read them.
+	TextStatus string `json:"textStatus,omitempty"`
+	TextPages  int    `json:"textPages,omitempty"`
 }
+
+// Searchable reports whether the file's contents can be searched.
+func (f *AttachmentFile) Searchable() bool { return f.TextStatus == "ok" }
+
+// Scanned reports whether the file was read and found to be images.
+func (f *AttachmentFile) Scanned() bool { return f.TextStatus == "empty" }
 
 // Stored reports whether the file's bytes are on disk and openable.
 func (f *AttachmentFile) Stored() bool { return f.StoragePath != "" }
@@ -83,6 +98,10 @@ const attachmentFileColumns = `
 	COUNT(DISTINCT a.filename) AS names,
 	(SELECT MIN(m2.date) FROM attachments a2 JOIN messages m2 ON m2.id = a2.message_id
 	 WHERE COALESCE(NULLIF(a2.content_hash, ''), a2.id) = COALESCE(NULLIF(a.content_hash, ''), a.id)) AS first_seen,
+	COALESCE((SELECT e.status FROM attachment_extractions e
+	          WHERE e.content_hash = a.content_hash), '') AS text_status,
+	COALESCE((SELECT e.pages FROM attachment_extractions e
+	          WHERE e.content_hash = a.content_hash), 0) AS text_pages,
 	MAX(m.date) AS last_seen`
 
 // AttachmentSelectList is the column list scanAttachmentFile expects.
@@ -171,7 +190,8 @@ func scanAttachmentFile(scan func(...any) error) (*AttachmentFile, error) {
 	var first, last sql.NullInt64
 	if err := scan(&f.Key, &f.ContentHash, &f.Filename, &f.MimeType, &f.Size,
 		&f.Inline, &f.StoragePath, &f.Skipped, &f.MessageID, &f.Subject, &f.From,
-		&f.Messages, &f.Threads, &f.Names, &first, &last); err != nil {
+		&f.Messages, &f.Threads, &f.Names, &first, &f.TextStatus, &f.TextPages,
+		&last); err != nil {
 		return nil, err
 	}
 	if first.Valid {

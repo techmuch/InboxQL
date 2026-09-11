@@ -54,6 +54,13 @@ Files
   is:stored is:missing        whether the bytes are on disk to open
   is:inline is:attached       embedded in the body, or sent as a document
   messages>2                  how many messages carried it
+  content:invoice             words inside the file, not in the mail
+  is:scanned                  read, and found to be a picture of a page —
+                              the set OCR would help with
+  is:unread                   never read; run "iql maintenance text"
+
+  A bare word searches the filename, the file's contents and the mail that
+  carried it, because there is no way to tell which was meant.
 
   Every mail term still works and asks about the messages it came on:
   "in:attachments from:acme after:2026-01 type:pdf" is the PDFs Acme sent

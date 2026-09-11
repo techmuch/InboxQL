@@ -57,7 +57,19 @@ type AttachmentFile struct {
 	// able to read them.
 	TextStatus string `json:"textStatus,omitempty"`
 	TextPages  int    `json:"textPages,omitempty"`
+	// TextExtractor names what read the file: "pdf" and "plain" copied the
+	// file's own text, "ocr" means a model looked at a picture of it.
+	//
+	// Carried alongside the status because the two are different claims. Text
+	// a document actually contains and text a model believes it can see in an
+	// image are not interchangeable, and a reader deciding whether to trust a
+	// match needs to know which one they have.
+	TextExtractor string `json:"textExtractor,omitempty"`
 }
+
+// TranscribedByModel reports whether the file's text came from OCR rather than
+// from the file itself.
+func (f *AttachmentFile) TranscribedByModel() bool { return f.TextExtractor == "ocr" }
 
 // Searchable reports whether the file's contents can be searched.
 func (f *AttachmentFile) Searchable() bool { return f.TextStatus == "ok" }
@@ -102,6 +114,8 @@ const attachmentFileColumns = `
 	          WHERE e.content_hash = a.content_hash), '') AS text_status,
 	COALESCE((SELECT e.pages FROM attachment_extractions e
 	          WHERE e.content_hash = a.content_hash), 0) AS text_pages,
+	COALESCE((SELECT e.extractor FROM attachment_extractions e
+	          WHERE e.content_hash = a.content_hash), '') AS text_extractor,
 	MAX(m.date) AS last_seen`
 
 // AttachmentSelectList is the column list scanAttachmentFile expects.
@@ -191,7 +205,7 @@ func scanAttachmentFile(scan func(...any) error) (*AttachmentFile, error) {
 	if err := scan(&f.Key, &f.ContentHash, &f.Filename, &f.MimeType, &f.Size,
 		&f.Inline, &f.StoragePath, &f.Skipped, &f.MessageID, &f.Subject, &f.From,
 		&f.Messages, &f.Threads, &f.Names, &first, &f.TextStatus, &f.TextPages,
-		&last); err != nil {
+		&f.TextExtractor, &last); err != nil {
 		return nil, err
 	}
 	if first.Valid {

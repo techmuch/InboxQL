@@ -257,9 +257,36 @@ func AttachmentTextProgress() (*TextProgress, error) {
 // The set an OCR pass exists for. Naming it is the whole reason `empty` is a
 // status rather than an absent row.
 func ScannedAttachments() ([]string, error) {
-	rows, err := db.Query(`
-		SELECT content_hash FROM attachment_extractions
-		WHERE status = ? ORDER BY content_hash`, string(filetext.StatusEmpty))
+	return scannedHashes("")
+}
+
+// ScansAwaitingOCR lists scans nothing has tried to read yet.
+//
+// # Why this is not the same list
+//
+// A scan stays a scan after OCR has looked at it. One whose pages are in a
+// codec this cannot decode is still a scan with no text layer, and
+// `is:scanned` must keep naming it — otherwise "which of my files are pictures
+// of pages" stops returning exactly the ones furthest out of reach.
+//
+// So the status describes the file and never changes to accommodate the
+// process. What stops a pass retrying the same unreadable files forever is the
+// recorded extractor: "ocr has been here" is a separate fact from "there is no
+// text layer", and conflating them loses one of them.
+func ScansAwaitingOCR() ([]string, error) {
+	return scannedHashes("ocr")
+}
+
+func scannedHashes(excludeExtractor string) ([]string, error) {
+	query := `SELECT content_hash FROM attachment_extractions WHERE status = ?`
+	args := []any{string(filetext.StatusEmpty)}
+	if excludeExtractor != "" {
+		query += ` AND extractor != ?`
+		args = append(args, excludeExtractor)
+	}
+	query += ` ORDER BY content_hash`
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

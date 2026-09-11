@@ -22,6 +22,8 @@ export interface AttachmentFile {
   /** What reading the file found: ok, empty, unsupported, failed, or absent. */
   textStatus?: string;
   textPages?: number;
+  /** What read it: "pdf" and "plain" copied the file's text, "ocr" guessed it. */
+  textExtractor?: string;
 }
 
 /**
@@ -33,6 +35,16 @@ export interface AttachmentFile {
  * them, and no search ever will until something does.
  */
 export const textStatusLabel = (file: AttachmentFile): string => {
+  // OCR first, because it qualifies a success rather than describing a gap.
+  // Text a document contains and text a model believes it can see in a picture
+  // of one are different claims, and somebody deciding whether to trust a
+  // match needs to know which they have — this model read "POWERS FERRY ROAD"
+  // as "FOULERS" and invented a line of loyalty-scheme text that was not on
+  // the paper.
+  if (file.textStatus === 'ok' && file.textExtractor === 'ocr') {
+    return 'text read by OCR — may contain errors';
+  }
+
   switch (file.textStatus) {
     case 'empty':
       return 'scanned — no text to search';

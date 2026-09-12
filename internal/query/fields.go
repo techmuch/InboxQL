@@ -406,6 +406,14 @@ var Registry = []Field{
 		Summary: "this exact file, by content hash", Example: "in:attachments id:a2a0fc5a…",
 	},
 	{
+		// The file version of `similar:`. Over the words inside the file, so
+		// it reaches the second copy of a contract filed under another name —
+		// which is exactly what a filename search cannot do.
+		Name: "similar", Entity: EntityAttachment, Type: TypeIdent,
+		Summary: "files near this one in meaning; needs embeddings",
+		Example: "in:attachments similar:a2a0fc5a…>0.8",
+	},
+	{
 		// Not the message's `is:`. A file has no read state; what it has is
 		// whether its bytes are on disk, and whether it was sent as a document
 		// or embedded in the body.

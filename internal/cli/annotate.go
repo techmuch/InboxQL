@@ -746,6 +746,7 @@ func annotateEmbed(ctx *Context, args []string) error {
 	limit := fs.Int("limit", 0, "stop after n messages")
 	dryRun := fs.Bool("dry-run", false, "report what would be sent and write nothing")
 	allowRemote := fs.Bool("allow-remote", false, "consent to sending bodies to a remote profile")
+	attachments := fs.Bool("attachments", false, "embed file contents instead of messages")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -754,6 +755,10 @@ func annotateEmbed(ctx *Context, args []string) error {
 		return err
 	}
 	defer store.CloseDB()
+
+	if *attachments {
+		return embedAttachments(ctx, *profile, *limit, *dryRun, *allowRemote)
+	}
 
 	var out *annotate.EmbedOutcome
 	var err error
@@ -789,6 +794,58 @@ func annotateEmbed(ctx *Context, args []string) error {
 			ctx.Printf("%s\n", p.Dim(sprintf("%s: %d of %d messages (%d dimensions).",
 				c.Model, c.Embedded, c.Total, c.Dimensions)))
 		}
+	}
+	return nil
+}
+
+// embedAttachments is the file half of `annotate embed`.
+//
+// Same command because it is the same operation with the same consent
+// question, and a separate one would invite the two to drift apart on which
+// profiles are acceptable. Only the thing being read differs: the text
+// extraction and OCR recovered from inside files, rather than message bodies.
+func embedAttachments(ctx *Context, profile string, limit int, dryRun, allowRemote bool) error {
+	var out *annotate.EmbedOutcome
+	var err error
+	if allowRemote && !dryRun {
+		out, err = annotate.EmbedAttachmentsRemote(context.Background(), profile, limit)
+	} else {
+		out, err = annotate.EmbedAttachments(context.Background(), profile, limit, dryRun)
+	}
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+
+	if ctx.JSON {
+		return ctx.EmitJSON(out)
+	}
+
+	p := ctx.Printer()
+	if dryRun {
+		ctx.Printf("%s would embed %s with %s.\n",
+			p.Bold(out.Profile), count(out.Pending, "file", "files"), out.Model)
+		ctx.Printf("%s\n", p.Dim(sprintf("Roughly %d characters of extracted text.", out.Chars)))
+		return nil
+	}
+
+	ctx.Printf("Embedded %s with %s.\n", count(out.Embedded, "file", "files"), out.Model)
+	if out.Skipped > 0 {
+		ctx.Printf("%s\n", p.Dim(sprintf("%d skipped for having no text to embed.", out.Skipped)))
+	}
+
+	coverage, err := store.AttachmentCoverage()
+	if err == nil {
+		for _, c := range coverage {
+			ctx.Printf("%s\n", p.Dim(sprintf("%s: %d of %d readable files (%d dimensions).",
+				c.Model, c.Embedded, c.Readable, c.Dimensions)))
+		}
+	}
+	// A file nothing has read cannot be embedded, and saying so here is the
+	// difference between "there is nothing similar" and "nothing has looked".
+	if progress, err := store.AttachmentTextProgress(); err == nil && progress.Pending > 0 {
+		ctx.Printf("%s\n", p.Dim(sprintf(
+			"%d file(s) have not been read yet and cannot be embedded; run `iql maintenance text`.",
+			progress.Pending)))
 	}
 	return nil
 }

@@ -58,6 +58,10 @@ Files
   is:scanned                  read, and found to be a picture of a page —
                               the set OCR would help with
   is:unread                   never read; run "iql maintenance text"
+  similar:<hash>>0.72         files near this one in meaning, over the words
+                              inside them; finds the second copy of a document
+                              filed under a different name. Needs
+                              "iql annotate embed --attachments".
 
   A bare word searches the filename, the file's contents and the mail that
   carried it, because there is no way to tell which was meant.

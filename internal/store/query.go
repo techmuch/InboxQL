@@ -74,16 +74,17 @@ func queryOptions(limit, offset int) query.Options {
 			}
 			return folderClause(folder), true
 		},
-		IgnoredTopicWords: ignoredTopicWords,
-		SimilarIDs:        similarMessageIDs,
-		ThreadIDs:         ThreadMessageIDs,
-		SavedQuery:        savedQueryText,
-		SelfAddresses:     selfAddresses,
-		TimeField:         annotatorTimeField,
-		KnownAnnotator:    annotatorExists,
-		FullText:          ftsEnabled.Load(),
-		DefaultLimit:      limit,
-		Offset:            offset,
+		IgnoredTopicWords:  ignoredTopicWords,
+		SimilarIDs:         similarMessageIDs,
+		SimilarAttachments: similarAttachmentKeys,
+		ThreadIDs:          ThreadMessageIDs,
+		SavedQuery:         savedQueryText,
+		SelfAddresses:      selfAddresses,
+		TimeField:          annotatorTimeField,
+		KnownAnnotator:     annotatorExists,
+		FullText:           ftsEnabled.Load(),
+		DefaultLimit:       limit,
+		Offset:             offset,
 	}
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Paperclip, Download, X, FileText, Image as ImageIcon, Mail, MessagesSquare } from 'lucide-react';
-import { openMessageByID } from '../lib/tabs';
+import { Paperclip, Download, X, FileText, Image as ImageIcon, Mail, MessagesSquare, Sparkles } from 'lucide-react';
+import { openMessageByID, openQuery } from '../lib/tabs';
 
 export interface AttachmentFile {
   key: string;
@@ -344,6 +344,19 @@ export const AttachmentViewer = ({ file, currentMessageId, onClose }: {
           {fileTypeLabel(file.mimeType)} · {formatBytes(file.size)}
           {textStatusLabel(file) && <> · {textStatusLabel(file)}</>}
         </span>
+        {/* Only when the file has been read: similarity is over its text, so
+            offering it on a scan nobody has OCR'd would open a query that
+            errors. A button that cannot work is worse than no button. */}
+        {file.textStatus === 'ok' && (
+          <button
+            type="button"
+            onClick={() => openQuery(`in:attachments similar:${file.key}`)}
+            className="p-1.5 hover:bg-accent transition-colors shrink-0"
+            title="Find files like this one"
+          >
+            <Sparkles className="w-4 h-4" />
+          </button>
+        )}
         <a
           href={attachmentURL(file.key, false)}
           download={file.filename}

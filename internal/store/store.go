@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 29
+	SchemaVersion = 30
 )
 
 var (
@@ -1266,6 +1266,39 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 29
+	}
+
+	if currentVersion < 30 {
+		log.Println("Migrating database schema to version 30 (attachment embeddings)...")
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS attachment_embeddings (
+				-- Keyed on the file, like every other derived fact about one.
+				-- Embedding an arrival rather than a file would produce five
+				-- identical vectors for a document sent to five people, and
+				-- then rank it five times in its own results.
+				content_hash TEXT PRIMARY KEY,
+				profile      TEXT NOT NULL,
+				model        TEXT NOT NULL,
+				dimensions   INTEGER NOT NULL,
+				vector       BLOB NOT NULL,
+				-- How much text went in. A vector over the first page of a
+				-- ninety-page contract is a vector about that page, and a
+				-- caller comparing two files deserves to know when one of them
+				-- was only partly read.
+				characters   INTEGER NOT NULL DEFAULT 0,
+				created_at   INTEGER NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_attachment_embeddings_model
+				ON attachment_embeddings(model, dimensions);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v30: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 30;"); err != nil {
+			return err
+		}
+		currentVersion = 30
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

@@ -31,6 +31,11 @@ type Options struct {
 	// the data rather than in this package.
 	SimilarIDs func(messageID string, threshold float64) ([]string, error)
 
+	// SimilarAttachments does the same for files, over the text extraction and
+	// OCR produced. Separate from SimilarIDs because the two are indexed over
+	// different things and a file's neighbours are files.
+	SimilarAttachments func(key string, threshold float64) ([]string, error)
+
 	// ThreadIDs resolves a message id to every message in its thread.
 	//
 	// Resolved in Go rather than compiled to a recursive CTE because the CTE
@@ -540,6 +545,9 @@ func (c *compiler) attachmentTerm(t *Term, negated bool) (string, error) {
 
 	case "content", "inside", "fulltext":
 		return c.attachmentContent(t, negated)
+
+	case "similar":
+		return c.similarAttachmentTerm(t, negated)
 
 	case "is":
 		switch strings.ToLower(strings.TrimSpace(t.Value)) {
@@ -1469,27 +1477,9 @@ func (c *compiler) similarTerm(t *Term, negated bool) (string, error) {
 		return "", fmt.Errorf("similar: needs embeddings; run `iql annotate embed --profile <name>`")
 	}
 
-	spec := t.Value
-	threshold := -1.0
-
-	// The comparison rides inside the value: `similar:abc>0.85` splits after
-	// the id, because the id is the value and the threshold qualifies it.
-	for _, sym := range []string{">=", ">"} {
-		if i := strings.Index(spec, sym); i > 0 {
-			raw := strings.TrimSpace(spec[i+len(sym):])
-			n, err := strconv.ParseFloat(raw, 64)
-			if err != nil {
-				return "", fmt.Errorf("similar: %q is not a similarity between 0 and 1", raw)
-			}
-			if n < 0 || n > 1 {
-				return "", fmt.Errorf("similar: %v is outside 0..1; cosine similarity cannot exceed 1", n)
-			}
-			threshold, spec = n, strings.TrimSpace(spec[:i])
-			break
-		}
-	}
-	if spec == "" {
-		return "", fmt.Errorf("similar: needs a message id")
+	spec, threshold, err := parseSimilarValue(t.Value, "a message id")
+	if err != nil {
+		return "", err
 	}
 
 	ids, err := c.opt.SimilarIDs(spec, threshold)
@@ -1507,4 +1497,72 @@ func (c *compiler) similarTerm(t *Term, negated bool) (string, error) {
 		placeholders = append(placeholders, c.arg(id))
 	}
 	return wrap("m.id IN ("+strings.Join(placeholders, ", ")+")", negated), nil
+}
+
+// parseSimilarValue splits an id from an optional threshold.
+//
+// The comparison rides inside the value: `similar:abc>0.85` splits after the
+// id, because the id is the value and the threshold qualifies it. Shared
+// between the message and file forms so the two cannot come to disagree about
+// what `>0.85` means.
+func parseSimilarValue(value, what string) (spec string, threshold float64, err error) {
+	spec, threshold = value, -1.0
+
+	for _, sym := range []string{">=", ">"} {
+		if i := strings.Index(spec, sym); i > 0 {
+			raw := strings.TrimSpace(spec[i+len(sym):])
+			n, parseErr := strconv.ParseFloat(raw, 64)
+			if parseErr != nil {
+				return "", 0, fmt.Errorf("similar: %q is not a similarity between 0 and 1", raw)
+			}
+			if n < 0 || n > 1 {
+				return "", 0, fmt.Errorf("similar: %v is outside 0..1; cosine similarity cannot exceed 1", n)
+			}
+			threshold, spec = n, strings.TrimSpace(spec[:i])
+			break
+		}
+	}
+	if spec == "" {
+		return "", 0, fmt.Errorf("similar: needs %s", what)
+	}
+	return spec, threshold, nil
+}
+
+// similarAttachmentTerm resolves a file to the files nearest it in meaning.
+//
+// # What "similar" means for a file
+//
+// The words inside it, as extraction or OCR read them, with the filename
+// leading. So it finds the other copy of a contract filed under a different
+// name, the rest of a supplier's invoices, the blank version of a form that
+// was filled in — the things a filename search cannot reach and a word search
+// only reaches if you already know the word.
+//
+// A file nothing has read cannot take part, and that is worth an error rather
+// than an empty result: "no similar files" and "this file has never been read"
+// are indistinguishable from the outside, and only one of them is fixable.
+func (c *compiler) similarAttachmentTerm(t *Term, negated bool) (string, error) {
+	if c.opt.SimilarAttachments == nil {
+		return "", fmt.Errorf(
+			"similar: needs embeddings over file text; run `iql annotate embed --attachments`")
+	}
+
+	spec, threshold, err := parseSimilarValue(t.Value, "a file's content hash")
+	if err != nil {
+		return "", err
+	}
+
+	keys, err := c.opt.SimilarAttachments(spec, threshold)
+	if err != nil {
+		return "", err
+	}
+	if len(keys) == 0 {
+		return wrap("1=0", negated), nil
+	}
+
+	placeholders := make([]string, 0, len(keys))
+	for _, key := range keys {
+		placeholders = append(placeholders, c.arg(key))
+	}
+	return wrap(attachmentKey+" IN ("+strings.Join(placeholders, ", ")+")", negated), nil
 }

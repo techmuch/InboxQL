@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Layout, Mail, MoreVertical,
-  Bot, HelpCircle, MessagesSquare, Plus, RefreshCw, Send, Sparkles, Star, Trash2, Users,
+  Bot, HelpCircle, MessagesSquare, Paperclip, Plus, RefreshCw, Send, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { openMessage, previewMessage, useViewerStore } from '../../lib/tabs';
 import { navRow, useRovingFocus } from '../../lib/rovingFocus';
@@ -369,6 +369,10 @@ export const Desk = () => {
           {[
             { label: 'Tickets', icon: Layout, q: 'in:tickets -status:done -status:rejected' },
             { label: 'Proposed', icon: Layout, q: 'in:tickets status:proposed' },
+            // Files are an entity like the rest, and were reachable only by
+            // knowing to type `in:attachments` — the same gap this block was
+            // written to close for contacts.
+            { label: 'Files', icon: Paperclip, q: 'in:attachments' },
             { label: 'People', icon: Users, q: 'in:contacts kind:person' },
             { label: 'Systems', icon: Bot, q: 'in:contacts kind:system' },
             // The queue the enrichment annotator exists to work through: most

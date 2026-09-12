@@ -958,7 +958,7 @@ componentRegistry.register('desk', Desk);
 // "Unknown Component" and the mailbox looks deleted rather than renamed.
 componentRegistry.register('mail', Desk);
 componentRegistry.register('query', Desk);
-componentRegistry.register('search', () => <div className="p-8 text-muted-foreground italic text-center mt-20 font-medium">Search functionality coming soon...</div>);
+componentRegistry.register('search', Desk);
 componentRegistry.register('settings', SettingsView);
 componentRegistry.register('agents', AgentManager);
 componentRegistry.register('viewer', MessageViewer);
@@ -1066,9 +1066,16 @@ function App() {
     });
     commandRegistry.registerCommand({
       id: 'iql.open-search',
-      label: 'Search Email',
+      label: 'Search',
       keybinding: 'Control+Shift+F',
-      execute: () => openToolCb('search', 'Search'),
+      execute: () => {
+        openToolCb('desk', 'Desk');
+        setTimeout(() => {
+          const el = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Query"]');
+          el?.focus();
+          el?.select();
+        }, 50);
+      },
     });
     commandRegistry.registerCommand({
       id: 'iql.open-board',
@@ -1128,7 +1135,6 @@ function App() {
         { id: 'tools.dashboard', label: 'Analytics Dashboard', commandId: 'iql.open-dashboard' },
         { id: 'tools.desk', label: 'Desk', commandId: 'iql.open-desk' },
         { id: 'tools.board', label: 'Ticket Board', commandId: 'iql.open-board' },
-        { id: 'tools.search', label: 'Search Email', commandId: 'iql.open-search' },
         { id: 'tools.contacts', label: 'Contacts', commandId: 'iql.open-contacts' },
         { id: 'tools.annotators', label: 'Annotators', commandId: 'iql.open-annotators' },
         { id: 'tools.agents', label: 'AI Agents', commandId: 'iql.open-agents' },

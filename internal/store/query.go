@@ -28,17 +28,19 @@ type QueryGroup struct {
 // field to read.
 type QueryResult struct {
 	Query string `json:"query"`
-	// Kind is "messages", "groups", "count", "tickets", "drafts" or "threads".
-	Kind     string             `json:"kind"`
-	Count    int                `json:"count"`
-	Messages []*message.Message `json:"messages,omitempty"`
-	Tickets  []*Ticket          `json:"tickets,omitempty"`
-	Drafts   []*Draft           `json:"drafts,omitempty"`
-	Contacts []*Contact         `json:"contacts,omitempty"`
-	Topics   []ContactTopic     `json:"topics,omitempty"`
-	Threads  []*Thread          `json:"threads,omitempty"`
-	Groups   []QueryGroup       `json:"groups,omitempty"`
-	Total    int64              `json:"total,omitempty"`
+	// Kind is "messages", "groups", "count", "tickets", "drafts", "contacts",
+	// "attachments" or "threads".
+	Kind        string             `json:"kind"`
+	Count       int                `json:"count"`
+	Messages    []*message.Message `json:"messages,omitempty"`
+	Tickets     []*Ticket          `json:"tickets,omitempty"`
+	Drafts      []*Draft           `json:"drafts,omitempty"`
+	Contacts    []*Contact         `json:"contacts,omitempty"`
+	Attachments []*AttachmentFile  `json:"attachments,omitempty"`
+	Topics      []ContactTopic     `json:"topics,omitempty"`
+	Threads     []*Thread          `json:"threads,omitempty"`
+	Groups      []QueryGroup       `json:"groups,omitempty"`
+	Total       int64              `json:"total,omitempty"`
 	// GroupField and Bucket describe an aggregate result, so a chart can turn
 	// a clicked mark back into a query term.
 	GroupField string `json:"groupField,omitempty"`
@@ -72,16 +74,17 @@ func queryOptions(limit, offset int) query.Options {
 			}
 			return folderClause(folder), true
 		},
-		IgnoredTopicWords: ignoredTopicWords,
-		SimilarIDs:        similarMessageIDs,
-		ThreadIDs:         ThreadMessageIDs,
-		SavedQuery:        savedQueryText,
-		SelfAddresses:     selfAddresses,
-		TimeField:         annotatorTimeField,
-		KnownAnnotator:    annotatorExists,
-		FullText:          ftsEnabled.Load(),
-		DefaultLimit:      limit,
-		Offset:            offset,
+		IgnoredTopicWords:  ignoredTopicWords,
+		SimilarIDs:         similarMessageIDs,
+		SimilarAttachments: similarAttachmentKeys,
+		ThreadIDs:          ThreadMessageIDs,
+		SavedQuery:         savedQueryText,
+		SelfAddresses:      selfAddresses,
+		TimeField:          annotatorTimeField,
+		KnownAnnotator:     annotatorExists,
+		FullText:           ftsEnabled.Load(),
+		DefaultLimit:       limit,
+		Offset:             offset,
 	}
 }
 
@@ -172,6 +175,14 @@ func RunQuery(src string, limit, offset int) (*QueryResult, error) {
 			return nil, err
 		}
 		res.Kind, res.Contacts, res.Count = "contacts", contacts, len(contacts)
+		return res, nil
+
+	case query.PlanAttachments:
+		files, err := scanAttachmentFiles(plan)
+		if err != nil {
+			return nil, err
+		}
+		res.Kind, res.Attachments, res.Count = "attachments", files, len(files)
 		return res, nil
 
 	case query.PlanThreads:
@@ -300,6 +311,24 @@ func scanContactTopics(plan *query.Plan) ([]ContactTopic, error) {
 			ct.Lift = ct.Share / (float64(corpusHits) / float64(corpus))
 		}
 		out = append(out, ct)
+	}
+	return out, rows.Err()
+}
+
+func scanAttachmentFiles(plan *query.Plan) ([]*AttachmentFile, error) {
+	rows, err := db.Query(plan.SQL, plan.Args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*AttachmentFile{}
+	for rows.Next() {
+		f, err := scanAttachmentFile(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, f)
 	}
 	return out, rows.Err()
 }

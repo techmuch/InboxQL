@@ -137,3 +137,35 @@ func extensionFor(contentType string) string {
 		return ".bin"
 	}
 }
+
+// MayHaveAttachments is a cheap test for whether a raw message is worth walking.
+//
+// Parsing MIME is the expensive half of any attachment scan, and most mail has
+// no parts at all. A substring test over the raw bytes errs in the permissive
+// direction only: it can say "maybe" about a message that turns out to carry
+// nothing, and never says "no" about one that does, because a part cannot be an
+// attachment without one of these markers.
+func MayHaveAttachments(raw []byte) bool {
+	for _, marker := range AttachmentMarkers {
+		if bytes.Contains(raw, []byte(marker)) {
+			return true
+		}
+	}
+	return false
+}
+
+// AttachmentMarkers are the substrings [MayHaveAttachments] looks for.
+//
+// Exported because the same test is worth running inside SQLite, where a
+// mailbox's raw messages can be filtered without copying them across the
+// driver first. Callers that do that must build their predicate from this
+// list: a second, hand-written copy that drifts would make the two disagree
+// about which mail is worth walking, and the disagreement would show up as
+// attachments that exist but are never counted.
+var AttachmentMarkers = []string{
+	"Content-Disposition: attachment",
+	"Content-Disposition:attachment",
+	"Content-Disposition: inline",
+	"multipart/mixed",
+	"multipart/related",
+}

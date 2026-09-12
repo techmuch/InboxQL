@@ -35,6 +35,21 @@ import { useQueryStore, compose, queryStages } from '../../lib/filters';
  * rebuilding a mail client, so the message list below is the original one,
  * wrapped rather than rewritten.
  */
+/**
+ * What to call a row of each result kind.
+ *
+ * The entity's own name is right for most of them, but two read badly out
+ * loud: "12 threads" is a data structure where the user sees conversations,
+ * and "12 attachments" counts arrivals where the rows are files.
+ */
+const resultNoun = (kind: string): string => {
+  switch (kind) {
+    case 'threads': return 'conversations';
+    case 'attachments': return 'files';
+    default: return kind;
+  }
+};
+
 export const Desk = () => {
   const [messages, setMessages] = useState<any[]>([]);
   const openMessageId = useViewerStore(s => s.messageId);
@@ -458,7 +473,7 @@ export const Desk = () => {
               <span className="ml-auto text-muted-foreground font-mono">
                 {result.kind === 'count'
                   ? `${(result.total ?? 0).toLocaleString()} matching`
-                  : `${result.count} ${result.kind === 'threads' ? 'conversations' : result.kind}`}
+                  : `${result.count} ${resultNoun(result.kind)}`}
               </span>
             )}
           </div>

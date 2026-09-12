@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Mail, RefreshCw } from 'lucide-react';
+import { Loader2, Mail, Paperclip, RefreshCw } from 'lucide-react';
 import { openQuery } from '../../lib/tabs';
 
 interface TicketSource {
@@ -7,6 +7,8 @@ interface TicketSource {
   subject?: string;
   from?: string;
   date?: string;
+  /** How many distinct files this evidence carried. */
+  attachments?: number;
 }
 
 interface Ticket {
@@ -189,6 +191,9 @@ const TicketCard = ({
 }) => {
   const source = ticket.sources?.[0];
   const overdue = ticket.dueAt ? new Date(ticket.dueAt) < new Date() : false;
+  // Across every source, not just the one shown: a ticket raised from three
+  // messages carries the files from all three.
+  const attachments = (ticket.sources ?? []).reduce((n, s) => n + (s.attachments ?? 0), 0);
 
   return (
     <article
@@ -219,15 +224,34 @@ const TicketCard = ({
       {/* Provenance, on the card itself. A ticket that cannot be traced back to
           the mail that made it is a task in a worse task manager. */}
       {source && (
-        <button
-          type="button"
-          onClick={() => openQuery(`thread:${source.messageId}`)}
-          title={source.subject}
-          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary text-left"
-        >
-          <Mail size={10} className="shrink-0" />
-          <span className="truncate">{source.from || source.subject}</span>
-        </button>
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={() => openQuery(`thread:${source.messageId}`)}
+            title={source.subject}
+            className="flex items-center gap-1 min-w-0 flex-1 text-[11px] text-muted-foreground hover:text-primary text-left"
+          >
+            <Mail size={10} className="shrink-0" />
+            <span className="truncate">{source.from || source.subject}</span>
+          </button>
+
+          {/* A count rather than the files themselves: a board shows dozens of
+              cards at once, and chips on each would bury the board under
+              them. The click opens the same files as a query, which is the
+              whole point of attachments being an entity — the panel does not
+              have to exist for the files to be reachable. */}
+          {attachments > 0 && (
+            <button
+              type="button"
+              onClick={() => openQuery(`in:attachments thread:${source.messageId}`)}
+              title={`${attachments} file${attachments === 1 ? '' : 's'} on this ticket's mail`}
+              className="flex items-center gap-0.5 shrink-0 text-[11px] text-muted-foreground hover:text-primary"
+            >
+              <Paperclip size={10} />
+              {attachments}
+            </button>
+          )}
+        </div>
       )}
     </article>
   );

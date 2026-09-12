@@ -118,11 +118,22 @@ interface ViewerState {
    * make about which.
    */
   contact: string | null;
+  /**
+   * The file currently shown, if any.
+   *
+   * A third subject alongside a message and a contact, because a file is an
+   * entity in its own right now: it can be arrived at from a search that
+   * returned files rather than mail, where there is no one message to open
+   * instead — the whole point of the file being the row is that it belongs to
+   * several.
+   */
+  file: any | null;
   /** The message viewed before navigating to a contact, if any. */
   previousMessage: any | null;
   selectedCount: number;
   setMessage: (message: any) => void;
   setContact: (address: string) => void;
+  setFile: (file: any) => void;
   setSelectedCount: (count: number) => void;
   clear: () => void;
 }
@@ -137,20 +148,37 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   messageId: null,
   message: null,
   contact: null,
+  file: null,
   previousMessage: null,
   selectedCount: 0,
-  setMessage: (message) => set({ message, messageId: message?.id ?? null, contact: null, previousMessage: null }),
+  setMessage: (message) => set({
+    message, messageId: message?.id ?? null, contact: null, file: null, previousMessage: null,
+  }),
   setContact: (contact) => {
     const currentMsg = get().message;
     set((s) => ({
       contact,
       message: null,
       messageId: null,
+      file: null,
+      previousMessage: currentMsg ?? s.previousMessage,
+    }));
+  },
+  setFile: (file) => {
+    const currentMsg = get().message;
+    set((s) => ({
+      file,
+      message: null,
+      messageId: null,
+      contact: null,
       previousMessage: currentMsg ?? s.previousMessage,
     }));
   },
   setSelectedCount: (selectedCount) => set({ selectedCount }),
-  clear: () => set({ message: null, messageId: null, contact: null, previousMessage: null, selectedCount: 0 }),
+  clear: () => set({
+    message: null, messageId: null, contact: null, file: null,
+    previousMessage: null, selectedCount: 0,
+  }),
 }));
 
 /**
@@ -188,6 +216,32 @@ export const openMessage = (message: any): void => {
 };
 
 /**
+ * Show a message the caller only knows the id of.
+ *
+ * # Why this is separate from openMessage
+ *
+ * Every existing caller is a list that already holds the whole message, and
+ * making them all fetch again to open a row they are looking at would be
+ * absurd. But a link out of something that is not a message list — a file's
+ * occurrences, a ticket's evidence — has an id and nothing else. Fetching here
+ * keeps that one case from either duplicating the fetch at each call site or
+ * pushing an id-shaped message into a viewer that expects a real one.
+ *
+ * The viewer is opened only once the message is in hand, so a failed fetch
+ * leaves the user where they were rather than on an empty viewer.
+ */
+export const openMessageByID = async (id: string): Promise<void> => {
+  try {
+    const response = await fetch(`/api/message?id=${encodeURIComponent(id)}`);
+    if (!response.ok) return;
+    openMessage(await response.json());
+  } catch {
+    // A message that will not load is not worth an error state here: the user
+    // asked to follow a link, and the link simply goes nowhere.
+  }
+};
+
+/**
  * Point the viewer at a message without bringing it forward.
  *
  * # Why this exists
@@ -208,6 +262,12 @@ export const previewMessage = (message: any): void => {
 /** Show a contact in the viewer, opening the tab when it is not already there. */
 export const openContact = (address: string): void => {
   useViewerStore.getState().setContact(address);
+  openTool(MESSAGE_VIEWER_TAB, 'Viewer');
+};
+
+/** Show a file in the viewer, opening the tab when it is not already there. */
+export const openAttachment = (file: any): void => {
+  useViewerStore.getState().setFile(file);
   openTool(MESSAGE_VIEWER_TAB, 'Viewer');
 };
 

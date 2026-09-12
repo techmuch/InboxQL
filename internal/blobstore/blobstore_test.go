@@ -3,6 +3,7 @@ package blobstore
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -94,11 +95,60 @@ func TestNoTemporaryFilesRemain(t *testing.T) {
 
 func TestMissingBlob(t *testing.T) {
 	s := New(t.TempDir())
-	if s.Exists("deadbeef") {
+	// A real content address that nothing was ever stored under. It used to be
+	// "deadbeef" here, which is now rejected as malformed before the store ever
+	// looks — a different answer to a different question, so the fixture has to
+	// be a well-formed address for this to still be testing absence.
+	absent := strings.Repeat("a", 64)
+	if s.Exists(absent) {
 		t.Error("Exists reported an absent blob as present")
 	}
-	if _, err := s.Open("deadbeef"); err != ErrNotFound {
+	if _, err := s.Open(absent); err != ErrNotFound {
 		t.Errorf("Open on a missing blob = %v, want ErrNotFound", err)
+	}
+}
+
+// A key is a path component, so a key that is not a content address is a
+// directory traversal waiting for the first caller who takes one from a URL.
+func TestKeysThatAreNotContentAddresses(t *testing.T) {
+	s := New(t.TempDir())
+
+	for _, key := range []string{
+		"../../../etc/passwd",
+		"..",
+		"/etc/passwd",
+		"ab/../../../etc/passwd",
+		"deadbeef",              // too short
+		strings.Repeat("a", 63), // one short of an address
+		strings.Repeat("a", 65), // one over
+		strings.Repeat("A", 64), // hex, but not the lowercase we emit
+		strings.Repeat("g", 64), // right length, not hex
+		"",
+	} {
+		if ValidHash(key) {
+			t.Errorf("ValidHash accepted %q", key)
+		}
+		if got := s.Path(key); got != "" {
+			t.Errorf("Path(%q) built %q; a non-address must yield no path at all", key, got)
+		}
+		if s.Exists(key) {
+			t.Errorf("Exists(%q) reported present", key)
+		}
+		if _, err := s.Open(key); err != ErrBadHash {
+			t.Errorf("Open(%q) = %v, want ErrBadHash", key, err)
+		}
+		if err := s.Delete(key); err != ErrBadHash {
+			t.Errorf("Delete(%q) = %v, want ErrBadHash", key, err)
+		}
+	}
+
+	// And the hashes this package itself produces are still accepted.
+	hash, err := s.Put([]byte("hello"))
+	if err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if !ValidHash(hash) {
+		t.Errorf("ValidHash rejected a hash this store produced: %q", hash)
 	}
 }
 

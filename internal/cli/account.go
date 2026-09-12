@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/blobstore"
 	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/store"
 	"github.com/user/inboxql/internal/sync"
@@ -338,6 +339,7 @@ func accountSync(ctx *Context, args []string) error {
 	// Run inline rather than in a goroutine: a CLI invocation that returned
 	// before the work finished would be useless in a cron job.
 	manager := sync.NewSyncManager(1)
+	manager.Blobs = blobstore.New(ctx.DataDir)
 	manager.StartSync(acc)
 
 	updated, err := store.GetAccount(acc.ID)

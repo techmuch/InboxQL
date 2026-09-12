@@ -1,8 +1,9 @@
 import { Inbox } from 'lucide-react';
-import { openContact, openMessage, previewMessage } from '../../lib/tabs';
+import { openAttachment, openContact, openMessage, previewMessage } from '../../lib/tabs';
 import { navRow } from '../../lib/rovingFocus';
 import { refKey, useSelectionStore } from '../../lib/selection';
-import { contactName, drillDownTerm, type Contact, type QueryResult } from './api';
+import { contactName, drillDownTerm, type AttachmentFile, type Contact, type QueryResult } from './api';
+import { fileTypeLabel, formatBytes } from '../AttachmentPreview';
 import { ThreadResult } from './Timeline';
 
 interface ResultsProps {
@@ -45,6 +46,11 @@ export const Results = ({ result, onDrillDown }: ResultsProps) => {
       const threads = result.threads ?? [];
       if (threads.length === 0) return <Empty label="No conversations matched" />;
       return <ThreadResult threads={threads} onDrillDown={onDrillDown} />;
+    }
+    case 'attachments': {
+      const files = result.attachments ?? [];
+      if (files.length === 0) return <Empty label="No files matched" />;
+      return <AttachmentResult files={files} onDrillDown={onDrillDown} />;
     }
     default:
       return <MessageResult result={result} />;
@@ -321,6 +327,90 @@ const Empty = ({ label }: { label: string }) => (
  * Activating a contact narrows the query to their mail, which is what a
  * contact is *for*: the address is the least interesting thing about them.
  */
+/**
+ * Files, one row per file rather than per arrival.
+ *
+ * # Why the reach column is mostly blank
+ *
+ * Most files arrived once, and "1 message" on every row would be a column of
+ * noise that hides the handful of rows where the number is the point. A blank
+ * says "once", which is the unremarkable case, and anything written there is
+ * worth reading.
+ *
+ * Clicking a row opens the preview in the viewer, the way clicking a message
+ * opens the message. Clicking the type narrows to that kind of file, which is
+ * the same drill-down an aggregate row offers.
+ */
+const AttachmentResult = ({ files, onDrillDown }: {
+  files: AttachmentFile[];
+  onDrillDown?: (term: string) => void;
+}) => (
+  <div className="overflow-auto h-full">
+    <table className="w-full text-sm">
+      <thead className="sticky top-0 bg-background border-b border-border">
+        <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <th className="px-4 py-2 font-medium">Name</th>
+          <th className="px-4 py-2 font-medium w-24">Type</th>
+          <th className="px-4 py-2 font-medium w-24 text-right">Size</th>
+          <th className="px-4 py-2 font-medium w-40">Reach</th>
+          <th className="px-4 py-2 font-medium w-28">Last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {files.map(f => (
+          <tr
+            key={f.key}
+            {...navRow}
+            onClick={() => openAttachment(f)}
+            title={f.storagePath ? `Open ${f.filename}` : f.skipped || 'The bytes were not kept'}
+            className="border-b border-border/50 hover:bg-accent/40 cursor-pointer"
+          >
+            <td className="px-4 py-2">
+              <span className={`truncate block ${f.storagePath ? '' : 'text-muted-foreground italic'}`}>
+                {f.filename}
+              </span>
+              {/* The mail it last came on, so a filename like "scan.pdf" is
+                  identifiable without opening it. */}
+              {f.subject && (
+                <span className="truncate block text-xs text-muted-foreground">{f.subject}</span>
+              )}
+            </td>
+            <td className="px-4 py-2">
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); onDrillDown?.(`type:${fileTypeLabel(f.mimeType)}`); }}
+                className="text-muted-foreground hover:text-primary"
+              >
+                {fileTypeLabel(f.mimeType)}
+              </button>
+            </td>
+            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
+              {formatBytes(f.size)}
+            </td>
+            <td className="px-4 py-2 text-xs text-muted-foreground">
+              {f.messages > 1 && (
+                <>
+                  {f.messages} messages
+                  {f.threads > 1 && <> · {f.threads} threads</>}
+                </>
+              )}
+              {!f.storagePath && <span className="italic">not stored</span>}
+              {f.storagePath && f.textStatus === 'empty' && (
+                // Worth a word: without it a scan looks like a file whose
+                // contents did not match, rather than one nothing has read.
+                <span className="italic">scanned</span>
+              )}
+            </td>
+            <td className="px-4 py-2 text-xs text-muted-foreground">
+              {f.lastSeen ? new Date(f.lastSeen).toLocaleDateString() : ''}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
 const ContactResult = ({ contacts }: { contacts: Contact[] }) => {
   const selection = useSelectionStore(s => s.refs);
   return (

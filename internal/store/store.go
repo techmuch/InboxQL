@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 28
+	SchemaVersion = 30
 )
 
 var (
@@ -1211,6 +1211,94 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 28
+	}
+
+	if currentVersion < 29 {
+		log.Println("Migrating database schema to version 29 (attachment text)...")
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS attachment_text (
+				-- Keyed on the file's content hash, not on an attachment row.
+				-- The same document sent to five people is one extraction, and
+				-- keying on the arrival would redo the work five times and then
+				-- disagree with itself if the extractor ever changed.
+				content_hash TEXT NOT NULL,
+				-- Page number for paginated formats, 1-based; 0 for a document
+				-- with no pages. Per page rather than per file so a hit can say
+				-- where it is, and so a 400-page scan is not one row that
+				-- matches everything.
+				page         INTEGER NOT NULL,
+				text         TEXT NOT NULL,
+				-- Which extractor produced this, so the day OCR joins plain
+				-- text extraction it is possible to tell what came from where
+				-- and to re-run one without discarding the other.
+				extractor    TEXT NOT NULL,
+				extracted_at INTEGER NOT NULL,
+				PRIMARY KEY (content_hash, page)
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_attachment_text_hash ON attachment_text(content_hash);
+
+			-- Why a row per file rather than a column on attachments:
+			-- extraction can fail, and "we tried and there was nothing" has to
+			-- be distinguishable from "nobody has looked yet". Without that
+			-- distinction every pass re-attempts every scanned image forever.
+			CREATE TABLE IF NOT EXISTS attachment_extractions (
+				content_hash TEXT PRIMARY KEY,
+				extractor    TEXT NOT NULL,
+				-- ok, empty, unsupported, or failed. The empty case is the
+				-- important one: a PDF that is a photograph of paper extracts
+				-- cleanly to nothing, and that is a fact about the file rather
+				-- than an error.
+				status       TEXT NOT NULL,
+				detail       TEXT NOT NULL DEFAULT '',
+				pages        INTEGER NOT NULL DEFAULT 0,
+				characters   INTEGER NOT NULL DEFAULT 0,
+				extracted_at INTEGER NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_attachment_extractions_status
+				ON attachment_extractions(status);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v29: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 29;"); err != nil {
+			return err
+		}
+		currentVersion = 29
+	}
+
+	if currentVersion < 30 {
+		log.Println("Migrating database schema to version 30 (attachment embeddings)...")
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS attachment_embeddings (
+				-- Keyed on the file, like every other derived fact about one.
+				-- Embedding an arrival rather than a file would produce five
+				-- identical vectors for a document sent to five people, and
+				-- then rank it five times in its own results.
+				content_hash TEXT PRIMARY KEY,
+				profile      TEXT NOT NULL,
+				model        TEXT NOT NULL,
+				dimensions   INTEGER NOT NULL,
+				vector       BLOB NOT NULL,
+				-- How much text went in. A vector over the first page of a
+				-- ninety-page contract is a vector about that page, and a
+				-- caller comparing two files deserves to know when one of them
+				-- was only partly read.
+				characters   INTEGER NOT NULL DEFAULT 0,
+				created_at   INTEGER NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_attachment_embeddings_model
+				ON attachment_embeddings(model, dimensions);
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to apply schema v30: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 30;"); err != nil {
+			return err
+		}
+		currentVersion = 30
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

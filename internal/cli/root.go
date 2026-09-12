@@ -133,7 +133,7 @@ const (
 // order someone meets them rather than the alphabet.
 var commandOrder = []string{
 	"init", "start", "version", "doctor",
-	"account", "user", "vault", "llm", "maintenance", "backup", "restore",
+	"account", "user", "vault", "llm", "maintenance", "ocr", "backup", "restore",
 	"import", "export", "errors", "annotate", "ticket", "contact",
 	"query", "saved", "sql", "search", "read", "analyze", "draft", "send", "outbox",
 }
@@ -150,7 +150,7 @@ func listedInOrder(name string) bool {
 var commandGroup = map[string]string{
 	"init": groupStart, "start": groupStart, "version": groupStart, "doctor": groupStart,
 	"account": groupAdmin, "user": groupAdmin, "vault": groupAdmin, "llm": groupAdmin,
-	"maintenance": groupAdmin, "backup": groupAdmin, "restore": groupAdmin,
+	"maintenance": groupAdmin, "ocr": groupAdmin, "backup": groupAdmin, "restore": groupAdmin,
 	"import": groupAdmin, "export": groupAdmin, "errors": groupAdmin,
 	"annotate": groupAdmin, "ticket": groupAdmin, "contact": groupAdmin,
 	// query and sql lead the agent group: they are the general tools, and

@@ -70,6 +70,13 @@ func Router() (http.Handler, error) {
 	registerErrorRoutes(errorMux)
 	mux.Handle("/api/errors", auth.Middleware(errorMux))
 
+	// Attachments, including the one route that returns bytes rather than
+	// JSON. Authenticated as a group like the rest; see attachmentapi.go for
+	// what else stands between a mailed file and this origin.
+	attachmentMux := http.NewServeMux()
+	registerAttachmentRoutes(attachmentMux)
+	mux.Handle("/api/attachments/", auth.Middleware(attachmentMux))
+
 	llmMux := http.NewServeMux()
 	registerLLMRoutes(llmMux)
 	mux.Handle("/api/llm/", auth.Middleware(llmMux))

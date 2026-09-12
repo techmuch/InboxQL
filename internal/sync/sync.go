@@ -13,6 +13,7 @@ import (
 	"github.com/emersion/go-imap/client"
 	"github.com/google/uuid"
 	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/blobstore"
 	"github.com/user/inboxql/internal/message"
 	"github.com/user/inboxql/internal/store"
 )
@@ -24,6 +25,14 @@ type SyncManager struct {
 	mu                 sync.Mutex
 	hostConnections    map[string]chan struct{}
 	MaxHostConnections int
+
+	// Blobs receives attachment bytes. Nil means the caller never told the
+	// manager where the data directory is, and sync stores no attachments —
+	// which is what it did unconditionally until this field existed.
+	Blobs *blobstore.Store
+
+	// MaxAttachmentBytes caps a single part; zero takes the extractor's default.
+	MaxAttachmentBytes int64
 }
 
 // NewSyncManager creates a new SyncManager.
@@ -150,13 +159,13 @@ func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailb
 		done <- c.Fetch(seqset, items, messages)
 	}()
 
-	count := 0
+	count, attachments := 0, 0
 	for imapMsg := range messages {
 		if imapMsg.Uid > syncState.LastUID {
 			syncState.LastUID = imapMsg.Uid
 		}
 
-		parsed, err := parseIMAPMessage(acc.ID, imapMsg)
+		parsed, raw, err := parseIMAPMessage(acc.ID, imapMsg)
 		if err != nil {
 			log.Printf("Error parsing msg %d: %v", imapMsg.Uid, err)
 			continue
@@ -169,10 +178,20 @@ func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailb
 			continue
 		}
 
-		if err := store.SaveMessage(parsed); err == nil {
-			count++
-		} else {
+		if err := store.SaveMessage(parsed); err != nil {
 			log.Printf("ERROR saving message %d: %v", imapMsg.Uid, err)
+			continue
+		}
+		count++
+
+		// Attachments come after the message row exists — they are foreign-keyed
+		// to it — and a failure here costs the attachments, not the message.
+		if sm.Blobs != nil {
+			counts, err := store.StoreAttachments(parsed.ID, raw, sm.Blobs, sm.MaxAttachmentBytes)
+			if err != nil {
+				log.Printf("ERROR storing attachments for msg %d: %v", imapMsg.Uid, err)
+			}
+			attachments += counts.Stored
 		}
 	}
 
@@ -181,6 +200,9 @@ func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailb
 	}
 
 	store.SaveMailboxSyncState(syncState)
+	if attachments > 0 {
+		log.Printf("Mailbox %s: stored %d messages, %d attachments", mailboxName, count, attachments)
+	}
 	return count, nil
 }
 
@@ -190,14 +212,21 @@ func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailb
 // function's job is only the part unique to IMAP: overlaying the transport
 // fields, and preferring the server's parsed envelope over our own header
 // parsing where the server supplied one.
-func parseIMAPMessage(accountID string, imapMsg *imap.Message) (*message.Message, error) {
+//
+// The raw bytes are returned alongside because the caller needs them for
+// attachment extraction. Reading them back off the returned message would
+// happen to work — Header currently holds the whole raw message — but that is
+// an accident of storage no caller should be invited to depend on.
+func parseIMAPMessage(accountID string, imapMsg *imap.Message) (*message.Message, []byte, error) {
 	var msg *message.Message
+	var raw []byte
 
 	section, _ := imap.ParseBodySectionName("BODY[]")
 	if body := imapMsg.GetBody(section); body != nil {
-		raw, err := io.ReadAll(body)
+		var err error
+		raw, err = io.ReadAll(body)
 		if err != nil {
-			return nil, fmt.Errorf("cannot read message body: %w", err)
+			return nil, nil, fmt.Errorf("cannot read message body: %w", err)
 		}
 		// A parse error still yields a usable message carrying the raw bytes,
 		// so malformed mail is stored rather than dropped.
@@ -274,7 +303,7 @@ func parseIMAPMessage(accountID string, imapMsg *imap.Message) (*message.Message
 
 	// The envelope may have replaced fields the hash covers, so recompute.
 	msg.Rehash()
-	return msg, nil
+	return msg, raw, nil
 }
 
 func ConnectIMAP(acc *account.Account) (*client.Client, error) {

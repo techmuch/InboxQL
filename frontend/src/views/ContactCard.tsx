@@ -26,6 +26,7 @@ import {
   type Contact,
   type ContactResponsiveness,
 } from './Desk/api';
+import { AttachmentSection } from './AttachmentPreview';
 
 interface ContactTopic {
   topic: string;
@@ -546,6 +547,30 @@ export const ContactCard = ({ address }: { address: string }) => {
             )}
           </section>
         )}
+
+        <section className="space-y-3 border border-border bg-card p-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Files
+          </h3>
+          {/* Sent first, because "files from Alice" means files Alice sent —
+              not every file on a thread she happened to be copied on. The
+              wider reading is one click away rather than the default. */}
+          <AttachmentSection
+            scopes={[
+              {
+                label: 'They sent',
+                query: `in:attachments from:${quoted}`,
+                hint: 'Files that arrived on a message they sent',
+              },
+              {
+                label: 'Any message with them',
+                query: `in:attachments anyone:${quoted}`,
+                hint: 'Files on any message they appear on, however they appear',
+              },
+            ]}
+            emptyLabel="No files."
+          />
+        </section>
 
         <section className="space-y-2 border border-border bg-card p-4">
           <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">

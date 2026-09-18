@@ -10,7 +10,7 @@ import {
   AttachmentChip, AttachmentViewer, useAttachmentFile,
   type MessageAttachment,
 } from './AttachmentPreview';
-import { useViewerStore, openContact } from '../lib/tabs';
+import { useViewerStore, openContact, type ViewerKind } from '../lib/tabs';
 
 /**
  * Extract a clean email address from an address header string.
@@ -97,10 +97,19 @@ const RecipientList = ({
  * The message comes from a store rather than props because the tab is mounted
  * by the layout engine, which knows nothing about what the list has selected.
  */
-export const MessageViewer = () => {
-  const message = useViewerStore(s => s.message);
-  const contact = useViewerStore(s => s.contact);
-  const file = useViewerStore(s => s.file);
+export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
+  const mode = useViewerStore(s => s.mode);
+  // Which slots this instance is willing to render.
+  //
+  // In reuse mode one tab shows whichever subject was set last, so it renders
+  // all three. In split mode each tab is registered for one kind and renders
+  // only that, which is what stops three tabs all showing the same thing —
+  // they share a store, and the store no longer clears between kinds.
+  const shows = (kind: ViewerKind) => (mode === 'split' && only ? only === kind : true);
+
+  const message = useViewerStore(s => (shows('message') ? s.message : null));
+  const contact = useViewerStore(s => (shows('contact') ? s.contact : null));
+  const file = useViewerStore(s => (shows('file') ? s.file : null));
   const selectedCount = useViewerStore(s => s.selectedCount);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [openFileKey, setOpenFileKey] = useState<string | null>(null);
@@ -193,8 +202,10 @@ export const MessageViewer = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // The tab holds one subject at a time — a message, a contact or a file —
-  // which is why it is called Viewer rather than Message.
+  // In reuse mode the tab holds one subject at a time — a message, a contact
+  // or a file — which is why it is called Viewer rather than Message. In split
+  // mode `only` has already narrowed the slots above, so at most one of these
+  // can be set and the order between them stops mattering.
   if (contact) {
     return <ContactCard address={contact} />;
   }
@@ -213,11 +224,16 @@ export const MessageViewer = () => {
   }
 
   if (!message) {
+    // A split-mode tab says what it is for. "Pick a message or a contact"
+    // under a tab called File would be advice that does nothing to it.
+    const waitingFor = mode === 'split' && only
+      ? { message: 'a message', contact: 'a contact', file: 'a file' }[only]
+      : 'a message, a contact or a file';
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
         <Inbox className="w-8 h-8 opacity-40" />
         <p className="text-sm italic">Nothing selected.</p>
-        <p className="text-xs">Pick a message or a contact in Desk to see it here.</p>
+        <p className="text-xs">Pick {waitingFor} in Desk to see it here.</p>
       </div>
     );
   }

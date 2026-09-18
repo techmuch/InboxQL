@@ -64,7 +64,11 @@ function formatDurationSecs(secs?: number | null): string {
  * reads and does not write.
  */
 export const ContactCard = ({ address }: { address: string }) => {
-  const previousMessage = useViewerStore(s => s.previousMessage);
+  // "Back to message" exists because opening a contact *replaced* the message
+  // in the one shared tab. In split mode it did not — the message is still in
+  // its own tab, a click away in the tab bar — so the button would offer to
+  // return you somewhere you never left.
+  const previousMessage = useViewerStore(s => (s.mode === 'split' ? null : s.previousMessage));
   const [contact, setContact] = useState<Contact | null>(null);
   const [topics, setTopics] = useState<ContactTopic[]>([]);
   const [network, setNetwork] = useState<{ label: string; value: number }[]>([]);

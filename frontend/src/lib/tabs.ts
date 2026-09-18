@@ -30,9 +30,12 @@ export const openTool = (id: string, label: string): void => {
     id = 'desk';
     label = 'Desk';
   }
+  // The id is normalised and the label is not. A layout persisted under the
+  // old 'message' component must still resolve, but the caller's label is a
+  // real choice now: the same tab is "Viewer" when it holds all three kinds
+  // and "Message" when split mode gives contacts and files their own.
   if (VIEWER_ALIASES.has(id)) {
     id = 'viewer';
-    label = 'Viewer';
   }
 
   const layout = useLayoutStore.getState();
@@ -105,6 +108,51 @@ export const openTool = (id: string, label: string): void => {
   }
 };
 
+/**
+ * How the viewer behaves when you open a second kind of thing.
+ *
+ * `reuse` — one Viewer tab holds whichever of a message, a contact or a file
+ * you looked at last. `split` — each kind gets its own tab, so opening a file
+ * leaves the message you were reading where it was.
+ *
+ * A browser-local preference, deliberately, and the same class of thing as the
+ * theme and the saved layout: it describes how this window arranges itself.
+ * Storing it on the server would make a laptop and a desktop have to agree
+ * about tab behaviour, which is not a thing they have any reason to agree on.
+ */
+export type ViewerMode = 'reuse' | 'split';
+
+const VIEWER_MODE_KEY = 'inboxql.viewerMode';
+
+/** The kinds of subject the viewer can hold. Each is a tab in split mode. */
+export type ViewerKind = 'message' | 'contact' | 'file';
+
+/**
+ * Component ids for the per-kind viewer tabs.
+ *
+ * # Why these can never be unregistered
+ *
+ * Layouts are persisted. Once somebody has used split mode, their saved layout
+ * names `viewer-contact` and `viewer-file` — and a layout naming a component
+ * that no longer exists renders "Unknown Component", which is what the
+ * `register('message', MessageViewer)` alias already exists to prevent. They
+ * stay registered whatever the preference says.
+ */
+export const VIEWER_TABS: Record<ViewerKind, { id: string; label: string }> = {
+  message: { id: 'viewer', label: 'Message' },
+  contact: { id: 'viewer-contact', label: 'Contact' },
+  file: { id: 'viewer-file', label: 'File' },
+};
+
+function readViewerMode(): ViewerMode {
+  try {
+    return localStorage.getItem(VIEWER_MODE_KEY) === 'split' ? 'split' : 'reuse';
+  } catch {
+    // A browser with storage blocked still gets a working app on the default.
+    return 'reuse';
+  }
+}
+
 interface ViewerState {
   /** The message currently shown in the viewer tab, if any. */
   messageId: string | null;
@@ -112,10 +160,13 @@ interface ViewerState {
   /**
    * The contact currently shown, if any.
    *
-   * The tab holds one subject at a time and its name says which — it was
-   * called "Message" when a message was all it could show. Setting either one
-   * clears the other, so the tab never has two things to render and a guess to
-   * make about which.
+   * In reuse mode the tab holds one subject at a time and its name says which
+   * — it was called "Message" when a message was all it could show. Setting
+   * one clears the others, so the tab never has two things to render and a
+   * guess to make about which.
+   *
+   * In split mode the slots are independent, because each has its own tab and
+   * clearing one would blank a tab the user is still looking at.
    */
   contact: string | null;
   /**
@@ -131,12 +182,24 @@ interface ViewerState {
   /** The message viewed before navigating to a contact, if any. */
   previousMessage: any | null;
   selectedCount: number;
+  /** How opening a second kind of subject behaves. */
+  mode: ViewerMode;
   setMessage: (message: any) => void;
   setContact: (address: string) => void;
   setFile: (file: any) => void;
   setSelectedCount: (count: number) => void;
+  setMode: (mode: ViewerMode) => void;
   clear: () => void;
 }
+
+/**
+ * clearsOthers decides whether setting one subject blanks the rest.
+ *
+ * The whole behavioural difference between the two modes lives in this one
+ * question, which is why it is a function rather than a condition repeated in
+ * each setter.
+ */
+const clearsOthers = (mode: ViewerMode) => mode === 'reuse';
 
 /**
  * The message the viewer tab is showing.
@@ -151,30 +214,44 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   file: null,
   previousMessage: null,
   selectedCount: 0,
-  setMessage: (message) => set({
-    message, messageId: message?.id ?? null, contact: null, file: null, previousMessage: null,
-  }),
+  mode: readViewerMode(),
+  setMessage: (message) => set((s) => ({
+    message,
+    messageId: message?.id ?? null,
+    ...(clearsOthers(s.mode) ? { contact: null, file: null } : {}),
+    previousMessage: null,
+  })),
   setContact: (contact) => {
-    const currentMsg = get().message;
+    const { message: currentMsg, mode } = get();
     set((s) => ({
       contact,
-      message: null,
-      messageId: null,
-      file: null,
+      ...(clearsOthers(mode) ? { message: null, messageId: null, file: null } : {}),
+      // Only meaningful in reuse mode, where the contact replaced the message.
+      // In split mode the message is still in its own tab, so there is nothing
+      // to go back to and ContactCard hides the button.
       previousMessage: currentMsg ?? s.previousMessage,
     }));
   },
   setFile: (file) => {
-    const currentMsg = get().message;
+    const { message: currentMsg, mode } = get();
     set((s) => ({
       file,
-      message: null,
-      messageId: null,
-      contact: null,
+      ...(clearsOthers(mode) ? { message: null, messageId: null, contact: null } : {}),
       previousMessage: currentMsg ?? s.previousMessage,
     }));
   },
   setSelectedCount: (selectedCount) => set({ selectedCount }),
+  setMode: (mode) => {
+    if (get().mode === mode) return;
+    try {
+      localStorage.setItem(VIEWER_MODE_KEY, mode);
+    } catch {
+      // An unwritable store costs the preference its persistence, not the
+      // switch its effect.
+    }
+    set({ mode });
+    applyViewerMode(mode);
+  },
   clear: () => set({
     message: null, messageId: null, contact: null, file: null,
     previousMessage: null, selectedCount: 0,
@@ -205,6 +282,95 @@ export const isToolOpen = (id: string): boolean => {
 };
 
 /**
+ * Where a subject of this kind should open.
+ *
+ * In reuse mode every kind routes to the one Viewer tab, which is why the
+ * label changes too: three kinds sharing a tab cannot call it "Message".
+ */
+const viewerTarget = (kind: ViewerKind): { id: string; label: string } =>
+  useViewerStore.getState().mode === 'split'
+    ? VIEWER_TABS[kind]
+    : { id: VIEWER_TABS.message.id, label: 'Viewer' };
+
+/** Find the tab node id for a component, or null. */
+const tabNodeFor = (component: string): string | null => {
+  const model = useLayoutStore.getState().model;
+  if (!model) return null;
+  let found: string | null = null;
+  model.visitNodes((node: any) => {
+    if (!found && node.getType() === 'tab' && node.getComponent() === component) {
+      found = node.getId();
+    }
+  });
+  return found;
+};
+
+/**
+ * applyViewerMode brings the open tabs into line with the mode.
+ *
+ * # Why closing and re-creating, rather than hiding
+ *
+ * FlexLayout has no hidden state for a tab: its vocabulary is add, delete,
+ * rename, select. So "hide the extra viewers" is a delete and "bring them
+ * back" is an add.
+ *
+ * That is not a compromise, because the subject was never in the tab. A tab is
+ * a frame around a slot in this store, so deleting it loses nothing and
+ * re-creating it shows the same contact or file as before. What it does mean
+ * is that the restore is session-scoped: this store has no persistence, so
+ * after a reload there is nothing to bring back — which is the right answer
+ * anyway, since there is also nothing to show.
+ *
+ * Only kinds that actually hold something are restored. Switching to split
+ * mode having never opened a contact should not conjure an empty Contact tab;
+ * one appears the next time a contact is opened, which is what every other tab
+ * in this app does.
+ */
+function applyViewerMode(mode: ViewerMode): void {
+  const model = useLayoutStore.getState().model;
+  if (!model) return;
+
+  if (mode === 'reuse') {
+    // The message tab is the one that survives, because its component id is
+    // the one reuse mode routes everything to.
+    for (const kind of ['contact', 'file'] as const) {
+      const tabId = tabNodeFor(VIEWER_TABS[kind].id);
+      if (!tabId) continue;
+      try {
+        model.doAction({ type: 'FlexLayout_DeleteTab', data: { node: tabId } } as any);
+      } catch {
+        // A tab that will not close is a stale view, not a broken app.
+      }
+    }
+    renameViewerTab('Viewer');
+    return;
+  }
+
+  renameViewerTab(VIEWER_TABS.message.label);
+
+  const { contact, file } = useViewerStore.getState();
+  if (contact) openTool(VIEWER_TABS.contact.id, VIEWER_TABS.contact.label);
+  if (file) openTool(VIEWER_TABS.file.id, VIEWER_TABS.file.label);
+}
+
+/**
+ * renameViewerTab retitles the shared viewer as the mode changes.
+ *
+ * "Viewer" is right when one tab holds all three kinds and wrong when it holds
+ * only messages, so the three read as a set either way.
+ */
+function renameViewerTab(label: string): void {
+  const model = useLayoutStore.getState().model;
+  const tabId = tabNodeFor(VIEWER_TABS.message.id);
+  if (!model || !tabId) return;
+  try {
+    model.doAction({ type: 'FlexLayout_RenameTab', data: { node: tabId, text: label } } as any);
+  } catch {
+    // Cosmetic. A tab called the wrong thing still shows the right thing.
+  }
+}
+
+/**
  * Show a message in the viewer, opening the tab when it is not already there.
  *
  * This is explicit activation — a click, or Enter on a focused row — so
@@ -212,7 +378,8 @@ export const isToolOpen = (id: string): boolean => {
  */
 export const openMessage = (message: any): void => {
   useViewerStore.getState().setMessage(message);
-  openTool(MESSAGE_VIEWER_TAB, 'Viewer');
+  const target = viewerTarget('message');
+  openTool(target.id, target.label);
 };
 
 /**
@@ -262,13 +429,15 @@ export const previewMessage = (message: any): void => {
 /** Show a contact in the viewer, opening the tab when it is not already there. */
 export const openContact = (address: string): void => {
   useViewerStore.getState().setContact(address);
-  openTool(MESSAGE_VIEWER_TAB, 'Viewer');
+  const target = viewerTarget('contact');
+  openTool(target.id, target.label);
 };
 
 /** Show a file in the viewer, opening the tab when it is not already there. */
 export const openAttachment = (file: any): void => {
   useViewerStore.getState().setFile(file);
-  openTool(MESSAGE_VIEWER_TAB, 'Viewer');
+  const target = viewerTarget('file');
+  openTool(target.id, target.label);
 };
 
 interface ErrorLogState {

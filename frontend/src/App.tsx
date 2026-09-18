@@ -11,7 +11,7 @@ import { MessageViewer } from './views/MessageViewer';
 import { ErrorLog } from './views/ErrorLog';
 import { Desk } from './views/Desk';
 import { Board } from './views/Board';
-import { openTool, openErrorLog, openQuery } from './lib/tabs';
+import { openTool, openErrorLog, openQuery, useViewerStore, type ViewerMode } from './lib/tabs';
 import { useQueryStore, queryTerms, compose, asTerm, type QueryTerm } from './lib/filters';
 import { useDevReload } from './lib/devReload';
 import { version as appVersion } from '../package.json';
@@ -325,6 +325,60 @@ const Dashboard = () => {
 
 // --- Gmail-like Mail Client Tool ---
 // --- Unified Settings View ---
+/**
+ * The viewer reuse preference.
+ *
+ * Two options spelled out rather than a checkbox, because "Reuse viewer tab ☐"
+ * tells you what is being turned off and not what happens instead — and the
+ * alternative here is a different arrangement of the workspace, which is worth
+ * a sentence.
+ */
+const ViewerModeSetting = () => {
+  const mode = useViewerStore(s => s.mode);
+  const setMode = useViewerStore(s => s.setMode);
+
+  const options: { id: ViewerMode; label: string; detail: string }[] = [
+    {
+      id: 'reuse',
+      label: 'Reuse one Viewer tab',
+      detail: 'Messages, contacts and files share a single tab. Opening one replaces the last.',
+    },
+    {
+      id: 'split',
+      label: 'A tab for each kind',
+      detail: 'Message, Contact and File get their own tabs, so opening a file leaves the message you were reading where it was.',
+    },
+  ];
+
+  return (
+    <section>
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Viewer Tabs</h3>
+      <div className="grid grid-cols-2 gap-4">
+        {options.map(o => (
+          <button
+            key={o.id}
+            onClick={() => setMode(o.id)}
+            aria-pressed={mode === o.id}
+            className={`relative p-4 border text-left flex flex-col gap-1.5 transition-all ${
+              mode === o.id
+                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                : 'border-border hover:bg-accent'
+            }`}
+          >
+            <span className="text-sm font-medium">{o.label}</span>
+            <span className="text-xs text-muted-foreground leading-snug">{o.detail}</span>
+            {mode === o.id && <Check className="w-3 h-3 text-primary absolute top-2 right-2" />}
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground mt-3">
+        Switching to a single tab closes the Contact and File tabs; switching back reopens
+        the ones that still have something in them.
+      </p>
+    </section>
+  );
+};
+
 const SettingsView = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('profile');
@@ -500,7 +554,10 @@ const SettingsView = () => {
 
   const categories = [
     { id: 'profile', label: 'User Profile', icon: User },
-    { id: 'appearance', label: 'Appearance', icon: Eye },
+    // General absorbed Appearance rather than sitting beside it. Appearance
+    // held one thing — the theme — and a category per preference is how a
+    // settings page ends up with eight sections nobody can find anything in.
+    { id: 'general', label: 'General', icon: Eye },
     { id: 'accounts', label: 'Mail Accounts', icon: Mail },
     { id: 'import', label: 'Import Mail', icon: Download },
     { id: 'ai', label: 'AI Configuration', icon: Cpu },
@@ -871,10 +928,13 @@ const SettingsView = () => {
             <ImportPanel accounts={accounts} />
           )}
 
-          {activeCategory === 'appearance' && (
+          {activeCategory === 'general' && (
             <div className="animate-in fade-in duration-300">
-              <h2 className="text-2xl font-bold text-foreground mb-2">Appearance</h2>
-              <p className="text-muted-foreground text-sm mb-8">Customize how InboxQL looks on your screen.</p>
+              <h2 className="text-2xl font-bold text-foreground mb-2">General</h2>
+              <p className="text-muted-foreground text-sm mb-8">
+                How InboxQL looks and behaves in this browser. These settings are stored
+                here rather than on the server, so each machine you use can differ.
+              </p>
               <div className="space-y-8">
                 <section>
                   <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Color Theme</h3>
@@ -882,7 +942,7 @@ const SettingsView = () => {
                     {[
                       { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }, { id: 'gt', label: 'Georgia Tech' },
                     ].map(t => (
-                      <button 
+                      <button
                         key={t.id}
                         onClick={() => setTheme(t.id as any)}
                         className={`p-4 border  flex flex-col items-center gap-2 transition-all ${theme === t.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-accent'}`}
@@ -894,6 +954,8 @@ const SettingsView = () => {
                     ))}
                   </div>
                 </section>
+
+                <ViewerModeSetting />
               </div>
             </div>
           )}
@@ -961,9 +1023,15 @@ componentRegistry.register('query', Desk);
 componentRegistry.register('search', () => <div className="p-8 text-muted-foreground italic text-center mt-20 font-medium">Search functionality coming soon...</div>);
 componentRegistry.register('settings', SettingsView);
 componentRegistry.register('agents', AgentManager);
-componentRegistry.register('viewer', MessageViewer);
+componentRegistry.register('viewer', () => <MessageViewer only="message" />);
 // The old id, so a layout persisted before the rename still resolves.
-componentRegistry.register('message', MessageViewer);
+componentRegistry.register('message', () => <MessageViewer only="message" />);
+// The per-kind viewers split mode opens. Registered unconditionally and
+// permanently: layouts are persisted, so somebody who used split mode once has
+// these in their saved layout forever, and an unregistered component renders
+// "Unknown Component" — which is what the alias above already exists to avoid.
+componentRegistry.register('viewer-contact', () => <MessageViewer only="contact" />);
+componentRegistry.register('viewer-file', () => <MessageViewer only="file" />);
 componentRegistry.register('errors', ErrorLog);
 
 componentRegistry.register('board', Board);

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/user/inboxql/internal/annotate"
+	"github.com/user/inboxql/internal/gliner"
 	"github.com/user/inboxql/internal/query"
 	"github.com/user/inboxql/internal/store"
 )
@@ -525,6 +526,35 @@ func saveAnnotator(w http.ResponseWriter, r *http.Request) {
 			"instructions are required: a rule is a query expression, an LLM annotator is a prompt")
 		return
 	}
+	switch req.Engine {
+	case "", store.EngineRule, store.EngineLLM, store.EngineGLiNER:
+	default:
+		writeError(w, http.StatusBadRequest,
+			"unknown engine %q: use rule, llm or gliner", req.Engine)
+		return
+	}
+	// A span extractor finds values in the text, so it has no way to answer a
+	// yes-or-no question about a message, and its labels are its schema's
+	// field names — a schema with no fields asks for nothing.
+	if req.Engine == store.EngineGLiNER {
+		if req.Kind == store.KindLabel {
+			writeError(w, http.StatusBadRequest,
+				"a span extractor pulls values out of a message; it cannot label one")
+			return
+		}
+		probe := &store.Annotator{SchemaJSON: req.SchemaJSON}
+		switch n := len(probe.Labels()); {
+		case n == 0:
+			writeError(w, http.StatusBadRequest,
+				"a span extractor looks for its schema's field names, and this schema has none")
+			return
+		case n > gliner.MaxLabels:
+			writeError(w, http.StatusBadRequest,
+				"a span extractor scores at most %d fields at once, and this schema has %d",
+				gliner.MaxLabels, n)
+			return
+		}
+	}
 	// Rejected here so a typo is a 400 rather than an annotator that exists
 	// and fails at run time.
 	if req.Profile != "" {
@@ -634,7 +664,7 @@ func handleAnnotatorRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out, err := annotate.Run(r.Context(), req.Name, annotate.Options{
-		Scope: req.Scope, Limit: req.Limit,
+		Scope: req.Scope, Limit: req.Limit, DataDir: importDataDir,
 	})
 	if err != nil {
 		// A refused remote run is the caller's decision to make, not a server

@@ -39,10 +39,11 @@ const (
 	JobOCR         = "ocr"
 	JobEmbed       = "embed-attachments"
 	JobReindex     = "reindex"
+	JobGLiNER      = "gliner-install"
 )
 
 // Jobs lists every kind, for validating a request.
-var Jobs = []string{JobAttachments, JobText, JobOCR, JobEmbed, JobReindex}
+var Jobs = []string{JobAttachments, JobText, JobOCR, JobEmbed, JobReindex, JobGLiNER}
 
 // Status is the outcome of a single check.
 type Status string
@@ -149,6 +150,7 @@ func Run(opts Options) *Report {
 	checkFullText(rep)
 	checkOwnership(rep)
 	checkAttachments(rep, opts.DataDir)
+	checkGLiNER(rep, opts.DataDir)
 	checkSchema(rep)
 	checkVault(rep, opts.DataDir)
 	accounts := checkAccounts(rep)

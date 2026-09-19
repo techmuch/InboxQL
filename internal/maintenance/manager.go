@@ -345,6 +345,8 @@ func (m *Manager) workerFor(kind string) (worker, error) {
 		return runOCR, nil
 	case health.JobEmbed:
 		return runEmbed, nil
+	case health.JobGLiNER:
+		return runGLiNERInstall, nil
 	case health.JobReindex:
 		return runReindex, nil
 	}

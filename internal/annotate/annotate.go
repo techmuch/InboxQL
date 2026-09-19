@@ -73,6 +73,10 @@ type Plan struct {
 	ConsentMissing bool `json:"consentMissing,omitempty"`
 	// EstimatedChars is a rough size of what would be sent.
 	EstimatedChars int64 `json:"estimatedChars,omitempty"`
+	// Labels are what a span extractor will look for. Reported because they
+	// come from the schema rather than being typed out, so a plan is the
+	// first chance to see what the annotator actually asks for.
+	Labels []string `json:"labels,omitempty"`
 }
 
 // Outcome is what a run did.
@@ -138,6 +142,17 @@ func Describe(name, scope string) (*Plan, error) {
 		p.Pending = 0
 	}
 
+	if a.Engine == store.EngineGLiNER {
+		// Reported as a model, because it is one, and as definitively local,
+		// because it cannot be anything else: there is no endpoint to point
+		// elsewhere and no key to set. ConsentMissing is therefore always
+		// false, rather than false-by-omission.
+		p.Provider = store.EngineGLiNER
+		p.Model = "gliner"
+		p.Remote = false
+		p.Labels = a.Labels()
+	}
+
 	if a.Engine == store.EngineLLM {
 		cfg, err := configFor(a)
 		if err != nil {
@@ -171,6 +186,11 @@ type Options struct {
 	BatchSize int
 	// Progress, when set, is called after each message.
 	Progress func(done, total int64)
+	// DataDir is where a local model's weights live. Only the span engine
+	// needs it — the others reach their model over HTTP or do not have one —
+	// and it is passed rather than discovered because this package has no
+	// opinion about where a mailbox is kept.
+	DataDir string
 }
 
 // Run applies an annotator to every message that still needs it.
@@ -207,6 +227,11 @@ func Run(ctx context.Context, name string, opt Options) (*Outcome, error) {
 
 	case store.EngineLLM:
 		if err := runLLM(ctx, a, opt, out); err != nil {
+			return nil, err
+		}
+
+	case store.EngineGLiNER:
+		if err := runGLiNER(ctx, a, opt, out, opt.DataDir); err != nil {
 			return nil, err
 		}
 

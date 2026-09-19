@@ -1,0 +1,44 @@
+version: 2
+
+before:
+  hooks:
+    - make frontend
+    - go mod tidy
+
+builds:
+  - id: iql
+    main: ./cmd/iql
+    binary: iql
+    env:
+      - CGO_ENABLED=1
+    flags:
+      - -tags=sqlite_fts5
+    ldflags:
+      - -s -w
+      - -X github.com/user/inboxql/internal/cli.Version={{.Version}}
+    goos:
+      - darwin
+    goarch:
+      - arm64
+      - amd64
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  footer: >-
+    ---
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

@@ -2,6 +2,7 @@
 bin/
 
 # Generated frontend build output
+dist/
 web/
 frontend/dist/
 

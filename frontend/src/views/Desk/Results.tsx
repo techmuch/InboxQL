@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Inbox } from 'lucide-react';
-import { openAttachment, openContact, openMessage, previewMessage } from '../../lib/tabs';
+import { openAttachment, openContact, openMessage, openTool, previewMessage } from '../../lib/tabs';
 import { navRow } from '../../lib/rovingFocus';
 import { refKey, useSelectionStore } from '../../lib/selection';
 import { contactName, drillDownTerm, type AttachmentFile, type Contact, type QueryResult } from './api';
@@ -49,7 +50,7 @@ export const Results = ({ result, onDrillDown }: ResultsProps) => {
     }
     case 'attachments': {
       const files = result.attachments ?? [];
-      if (files.length === 0) return <Empty label="No files matched" />;
+      if (files.length === 0) return <NoFiles />;
       return <AttachmentResult files={files} onDrillDown={onDrillDown} />;
     }
     default:
@@ -316,6 +317,52 @@ const Empty = ({ label }: { label: string }) => (
     <p className="text-sm">{label}</p>
   </div>
 );
+
+/**
+ * No files — and, when that is because none have been extracted yet, why.
+ *
+ * "No files matched" is true and useless on a mailbox where nothing has ever
+ * been extracted: the query is fine, the entity is empty, and nothing on screen
+ * distinguishes that from having no attachments at all. The health check knows
+ * the difference, so this asks it rather than guessing.
+ */
+const NoFiles = () => {
+  const [pending, setPending] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/health')
+      .then(r => (r.ok ? r.json() : null))
+      .then(report => {
+        if (cancelled || !report?.checks) return;
+        const check = report.checks.find(
+          (c: any) => c.job === 'attachments' && c.status !== 'ok');
+        if (check) setPending(check.detail);
+      })
+      .catch(() => {
+        // Without the check this is just an empty result, which is what it
+        // said before and is never wrong.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!pending) return <Empty label="No files matched" />;
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-2 py-16 text-muted-foreground text-center px-8">
+      <Inbox size={28} className="opacity-40" />
+      <p className="text-sm">No files have been extracted yet.</p>
+      <p className="text-xs max-w-md">{pending}</p>
+      <button
+        type="button"
+        onClick={() => openTool('settings', 'Settings')}
+        className="mt-2 border border-border px-3 py-1.5 text-xs hover:bg-accent transition-colors"
+      >
+        Open Maintenance
+      </button>
+    </div>
+  );
+};
 
 /**
  * Contacts.

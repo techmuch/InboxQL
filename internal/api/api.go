@@ -77,6 +77,14 @@ func Router() (http.Handler, error) {
 	registerAttachmentRoutes(attachmentMux)
 	mux.Handle("/api/attachments/", auth.Middleware(attachmentMux))
 
+	// The health checks and the jobs that fix what they find. Grouped because
+	// they are two halves of one surface: a check names a job, and the job is
+	// what makes the check pass.
+	maintenanceMux := http.NewServeMux()
+	registerMaintenanceRoutes(maintenanceMux)
+	mux.Handle("/api/health", auth.Middleware(maintenanceMux))
+	mux.Handle("/api/maintenance/", auth.Middleware(maintenanceMux))
+
 	llmMux := http.NewServeMux()
 	registerLLMRoutes(llmMux)
 	mux.Handle("/api/llm/", auth.Middleware(llmMux))

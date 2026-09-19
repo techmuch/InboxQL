@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile } from 'nexus-shell';
-import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, AlertTriangle, HardDrive } from 'lucide-react';
+import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, AlertTriangle, HardDrive, Wrench } from 'lucide-react';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
 import { BrowserStoragePanel } from './views/BrowserStoragePanel';
 import { AISettingsPanel } from './views/AISettingsPanel';
+import { MaintenancePanel } from './views/MaintenancePanel';
 import { Annotators } from './views/Annotators';
 import { MessageViewer } from './views/MessageViewer';
 import { ErrorLog } from './views/ErrorLog';
@@ -562,6 +563,7 @@ const SettingsView = () => {
     { id: 'import', label: 'Import Mail', icon: Download },
     { id: 'ai', label: 'AI Configuration', icon: Cpu },
     { id: 'security', label: 'Security', icon: Shield },
+    { id: 'maintenance', label: 'Maintenance', icon: Wrench },
     { id: 'data', label: 'Data Management', icon: Database },
     { id: 'storage', label: 'Browser Storage', icon: HardDrive },
   ];
@@ -971,6 +973,8 @@ const SettingsView = () => {
               <p className="text-sm text-muted-foreground mt-2">We are hard at work bringing this feature to InboxQL.</p>
             </div>
           )}
+
+          {activeCategory === 'maintenance' && <MaintenancePanel />}
 
           {activeCategory === 'data' && (
             <div className="animate-in fade-in duration-300">

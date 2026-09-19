@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	_ "github.com/emersion/go-message/charset"
 	"github.com/emersion/go-message/mail"
 	"github.com/user/inboxql/internal/hasher"
 )

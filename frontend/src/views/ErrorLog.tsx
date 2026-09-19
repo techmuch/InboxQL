@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Filter, Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Filter, Loader2, RefreshCw, Trash2, Copy, Check } from 'lucide-react';
 import { useErrorLogStore } from '../lib/tabs';
 
 interface LoggedError {
@@ -29,6 +29,7 @@ export const ErrorLog = () => {
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +63,23 @@ export const ErrorLog = () => {
     }
   };
 
+  const copyLogs = async () => {
+    if (entries.length === 0) return;
+    const text = entries.map(e => {
+      const header = `[${new Date(e.createdAt).toLocaleString()}] [${e.category}]`;
+      const ref = e.reference ? ` Ref: ${e.reference}` : '';
+      const ctx = e.context ? ` Context: ${e.context}` : '';
+      return `${header}${ref}${ctx}\n${e.message}`;
+    }).join('\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-background text-foreground">
       <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0">
@@ -87,6 +105,10 @@ export const ErrorLog = () => {
         <button onClick={load} disabled={loading}
           className="p-2 hover:bg-accent text-muted-foreground disabled:opacity-40" title="Refresh">
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+        </button>
+        <button onClick={copyLogs} disabled={entries.length === 0}
+          className="p-2 hover:bg-accent text-muted-foreground disabled:opacity-40" title="Copy to clipboard">
+          {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
         </button>
         <button onClick={clear} disabled={clearing || total === 0}
           className="p-2 hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-40"

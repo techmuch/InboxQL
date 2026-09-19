@@ -16,6 +16,7 @@ mock_imap.log
 # IDE files
 .idea/
 .vscode/
+.claude/
 
 # Environment variables
 .env

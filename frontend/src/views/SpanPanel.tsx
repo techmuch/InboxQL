@@ -4,8 +4,10 @@ import { Tag } from 'lucide-react';
 import {
   MarkedText,
   SpanLegend,
+  correctionsFrom,
   countByLabel,
   markTotals,
+  relabel,
   type SpanResponse,
 } from './MarkedText';
 
@@ -31,8 +33,43 @@ import {
  *  mailbox between the real extractions and three card-shaped strings. */
 const DEFAULT_FLOOR = 0.6;
 
-export const SpanPanel = ({ spans }: { spans: SpanResponse | null }) => {
+export const SpanPanel = ({
+  spans,
+  onCorrected,
+}: {
+  spans: SpanResponse | null;
+  onCorrected?: (next: SpanResponse) => void;
+}) => {
   const [floor, setFloor] = useState(DEFAULT_FLOOR);
+  // Which mark is being ruled on, if any. One at a time: a correction
+  // replaces the whole set, so two open at once would be two competing
+  // statements about the same message.
+  const [picking, setPicking] = useState<{ field: string; index: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const correct = async (next: ReturnType<typeof correctionsFrom>, annotator: string) => {
+    if (!spans) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await fetch(
+        `/api/messages/${encodeURIComponent(spans.messageId)}/annotations/${encodeURIComponent(annotator)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ spans: next }),
+        },
+      );
+      if (!r.ok) throw new Error(await r.text());
+      onCorrected?.(await r.json());
+      setPicking(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'could not save that');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (!spans) return null;
   const { total, kept } = markTotals(spans.fields, floor);
@@ -82,6 +119,51 @@ export const SpanPanel = ({ spans }: { spans: SpanResponse | null }) => {
         </div>
       )}
 
+      {picking && (() => {
+        const f = spans.fields.find(x => x.field === picking.field);
+        const seg = f?.segments[picking.index];
+        if (!seg?.label) return null;
+        const annotator = seg.annotator || '';
+        return (
+          <div className="flex flex-wrap items-center gap-2 rounded border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
+            <span className="font-mono font-medium">{seg.text}</span>
+            <span className="text-muted-foreground">is</span>
+            <select
+              value={seg.label}
+              disabled={saving || !annotator}
+              onChange={e => correct(relabel(spans.fields, picking, e.target.value), annotator)}
+              className="border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
+            >
+              {spans.labels.map(l => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={saving || !annotator}
+              onClick={() => correct(correctionsFrom(spans.fields, picking), annotator)}
+              className="border border-border px-2 py-1 hover:bg-accent/50 disabled:opacity-50"
+            >
+              Not a value
+            </button>
+            <button
+              type="button"
+              onClick={() => setPicking(null)}
+              className="px-2 py-1 text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+            {/* A ruling is about the whole message, not this one mark, and a
+                re-run will not overwrite it. Said here because it is
+                surprising if it is not said. */}
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              your ruling replaces this annotator's answer for this message
+            </span>
+            {error && <span className="w-full text-destructive">{error}</span>}
+          </div>
+        );
+      })()}
+
       {subject && subject.marks > 0 && (
         <div className="rounded border border-border bg-muted/10 px-4 py-2">
           <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -92,6 +174,8 @@ export const SpanPanel = ({ spans }: { spans: SpanResponse | null }) => {
             labels={spans.labels}
             floor={floor}
             className="font-sans text-sm leading-relaxed"
+            onPick={i => setPicking({ field: 'subject', index: i })}
+            picked={picking?.field === 'subject' ? picking.index : null}
           />
         </div>
       )}
@@ -103,6 +187,8 @@ export const SpanPanel = ({ spans }: { spans: SpanResponse | null }) => {
             labels={spans.labels}
             floor={floor}
             className="whitespace-pre-wrap"
+            onPick={i => setPicking({ field: 'body', index: i })}
+            picked={picking?.field === 'body' ? picking.index : null}
           />
         </div>
       )}

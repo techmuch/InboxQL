@@ -119,7 +119,7 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
   const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw' | 'spans'>('html');
   // Fetched alongside the message so the Values tab can say how many there
   // are before it is opened. A message with none is the normal case.
-  const { spans } = useMessageSpans(message?.id);
+  const { spans, setSpans } = useMessageSpans(message?.id);
   const markCount = spans?.fields.reduce((n, f) => n + f.marks, 0) ?? 0;
   const [copied, setCopied] = useState(false);
 
@@ -508,7 +508,7 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
           </div>
         )}
 
-        {viewMode === 'spans' && <SpanPanel spans={spans} />}
+        {viewMode === 'spans' && <SpanPanel spans={spans} onCorrected={setSpans} />}
 
         {viewMode === 'raw' && (
           <div className="mt-2 space-y-3">

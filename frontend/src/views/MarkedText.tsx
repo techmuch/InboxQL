@@ -101,7 +101,7 @@ export const useMessageSpans = (messageId: string | undefined) => {
     };
   }, [messageId]);
 
-  return { spans, loading };
+  return { spans, setSpans, loading };
 };
 
 /**
@@ -117,11 +117,16 @@ export const MarkedText = ({
   labels,
   floor = 0,
   className = '',
+  onPick,
+  picked,
 }: {
   field: MarkedField;
   labels: string[];
   floor?: number;
   className?: string;
+  /** Set to make the marks clickable, for correcting one. */
+  onPick?: (segmentIndex: number) => void;
+  picked?: number | null;
 }) => (
   <div className={className}>
     {field.segments.map((s, i) => {
@@ -129,22 +134,27 @@ export const MarkedText = ({
 
       const below = (s.score ?? 0) < floor;
       const human = s.source === 'human';
+      const isPicked = picked === i;
       const title =
         `${s.label}` +
         (s.score !== undefined ? ` · ${(s.score * 100).toFixed(0)}%` : '') +
         (s.annotator ? ` · ${s.annotator}` : '') +
-        (human ? ' · corrected by you' : '');
+        (human ? ' · your correction' : '') +
+        (onPick ? ' — click to correct' : '');
 
       return (
         <mark
           key={i}
           title={title}
+          onClick={onPick ? () => onPick(i) : undefined}
           className={
-            below
+            (below
               ? 'bg-transparent text-inherit underline decoration-dotted decoration-muted-foreground/60 underline-offset-2'
               : `rounded-[3px] border-b-2 px-[1px] text-inherit ${colourFor(s.label, labels)} ${
                   human ? 'ring-1 ring-foreground/30' : ''
-                }`
+                }`) +
+            (onPick ? ' cursor-pointer' : '') +
+            (isPicked ? ' outline outline-2 outline-primary' : '')
           }
         >
           {s.text}
@@ -153,6 +163,72 @@ export const MarkedText = ({
     })}
   </div>
 );
+
+/**
+ * Every mark in the response, as the correction payload expects them.
+ *
+ * A correction replaces the whole set, so rejecting one value means sending
+ * the others back unchanged. Rebuilding the list from what is displayed keeps
+ * that honest: what you see is what gets asserted.
+ *
+ * Offsets are recomputed here from the segment lengths, in BYTES, because that
+ * is what the store holds. `new TextEncoder().encode(s).length` rather than
+ * `s.length`, or a message containing the narrow no-break space in "9:50 PM"
+ * writes back offsets a byte or two short of where it read them.
+ */
+export interface Correction {
+  label: string;
+  field: string;
+  start: number;
+  end: number;
+  text: string;
+}
+
+export function correctionsFrom(fields: MarkedField[], drop?: { field: string; index: number }): Correction[] {
+  const bytes = (s: string) => new TextEncoder().encode(s).length;
+  const out: Correction[] = [];
+
+  for (const f of fields) {
+    let offset = 0;
+    f.segments.forEach((s, i) => {
+      const len = bytes(s.text);
+      if (s.label && !(drop && drop.field === f.field && drop.index === i)) {
+        out.push({ label: s.label, field: f.field, start: offset, end: offset + len, text: s.text });
+      }
+      offset += len;
+    });
+  }
+  return out;
+}
+
+/** The same list with one mark's label changed. */
+export function relabel(
+  fields: MarkedField[],
+  at: { field: string; index: number },
+  label: string,
+): Correction[] {
+  const bytes = (s: string) => new TextEncoder().encode(s).length;
+  const out: Correction[] = [];
+
+  for (const f of fields) {
+    let offset = 0;
+    f.segments.forEach((s, i) => {
+      const len = bytes(s.text);
+      if (s.label) {
+        const isTarget = at.field === f.field && at.index === i;
+        out.push({
+          label: isTarget ? label : s.label,
+          field: f.field,
+          start: offset,
+          end: offset + len,
+          text: s.text,
+        });
+      }
+      offset += len;
+    });
+  }
+  return out;
+}
 
 /** A legend, so a colour can be read without hovering every mark. */
 export const SpanLegend = ({

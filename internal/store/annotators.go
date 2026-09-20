@@ -301,6 +301,29 @@ func SaveAnnotations(annotatorID string, version int, messageID string, anns []*
 	}
 	defer tx.Rollback()
 
+	// A human ruling is the answer, so the machine does not get to write over
+	// it — and checking that here rather than only in the DELETE below is the
+	// whole point.
+	//
+	// The DELETE spares `source != 'human'`, which reads as though a
+	// correction survives. It did not: the rows below go in with INSERT OR
+	// REPLACE against UNIQUE(message_id, annotator_id, annotator_version,
+	// seq), so a machine result at seq 0 silently replaced a human one at
+	// seq 0 immediately after being careful not to delete it. PendingMessages
+	// hides this most of the time by not offering a ruled-on message to a run
+	// at all, which is why it went unnoticed — but any path that re-saves
+	// directly, a whole-mailbox rule pass among them, hit it.
+	var ruled int
+	if err := tx.QueryRow(`
+		SELECT COUNT(*) FROM annotations
+		WHERE message_id = ? AND annotator_id = ? AND annotator_version = ? AND source = ?`,
+		messageID, annotatorID, version, SourceHuman).Scan(&ruled); err != nil {
+		return err
+	}
+	if ruled > 0 {
+		return nil
+	}
+
 	if _, err := tx.Exec(`
 		DELETE FROM annotations
 		WHERE message_id = ? AND annotator_id = ? AND annotator_version = ? AND source != ?`,

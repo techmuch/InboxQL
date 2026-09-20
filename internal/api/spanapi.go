@@ -88,6 +88,39 @@ type span struct {
 
 func registerSpanRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/messages/{id}/annotations", handleMessageAnnotations)
+	mux.HandleFunc("PUT /api/messages/{id}/annotations/{annotator}", handleCorrectSpans)
+	mux.HandleFunc("DELETE /api/messages/{id}/annotations/{annotator}", handleClearSpans)
+}
+
+// handleCorrectSpans records a person's ruling on what a message contains.
+//
+// PUT rather than POST because it replaces: a correction is a statement about
+// all of the message's values, not an edit to one of them. Sending an empty
+// list is meaningful — "the machine found things and none of them are right" —
+// and is not the same as DELETE, which withdraws the ruling entirely.
+func handleCorrectSpans(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Spans []store.SpanCorrection `json:"spans"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		return
+	}
+
+	id, annotator := r.PathValue("id"), r.PathValue("annotator")
+	if err := store.SetHumanSpans(annotator, id, req.Spans); err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	handleMessageAnnotations(w, r)
+}
+
+func handleClearSpans(w http.ResponseWriter, r *http.Request) {
+	id, annotator := r.PathValue("id"), r.PathValue("annotator")
+	if err := store.ClearHumanSpans(annotator, id); err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	handleMessageAnnotations(w, r)
 }
 
 func handleMessageAnnotations(w http.ResponseWriter, r *http.Request) {

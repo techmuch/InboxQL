@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Archive, AlertOctagon, Trash, Mail, MoreVertical,
   CornerUpLeft, CornerUpRight, Inbox, FileText,
-  Globe, Code, Copy, Check,
+  Globe, Code, Copy, Check, Tag,
 } from 'lucide-react';
 import { ContactCard } from './ContactCard';
+import { SpanPanel } from './SpanPanel';
+import { useMessageSpans } from './MarkedText';
 import { SimilarButton } from './SimilarButton';
 import {
   AttachmentChip, AttachmentViewer, useAttachmentFile,
@@ -114,7 +116,11 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [openFileKey, setOpenFileKey] = useState<string | null>(null);
   const openFile = useAttachmentFile(openFileKey);
-  const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw'>('html');
+  const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw' | 'spans'>('html');
+  // Fetched alongside the message so the Values tab can say how many there
+  // are before it is opened. A message with none is the normal case.
+  const { spans } = useMessageSpans(message?.id);
+  const markCount = spans?.fields.reduce((n, f) => n + f.marks, 0) ?? 0;
   const [copied, setCopied] = useState(false);
 
   // Set default view mode based on message content
@@ -300,6 +306,22 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
             <FileText className="w-3.5 h-3.5" />
             <span>Text</span>
           </button>
+          {markCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setViewMode('spans')}
+              className={`px-2.5 py-1 flex items-center gap-1.5 font-medium rounded transition-all ${
+                viewMode === 'spans'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Extracted values, shown where they were found"
+            >
+              <Tag className="w-3.5 h-3.5" />
+              <span>Values</span>
+              <span className="font-mono text-[10px] opacity-70">{markCount}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setViewMode('raw')}
@@ -485,6 +507,8 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
             </div>
           </div>
         )}
+
+        {viewMode === 'spans' && <SpanPanel spans={spans} />}
 
         {viewMode === 'raw' && (
           <div className="mt-2 space-y-3">

@@ -89,6 +89,14 @@ func Router() (http.Handler, error) {
 	registerLLMRoutes(llmMux)
 	mux.Handle("/api/llm/", auth.Middleware(llmMux))
 
+	// What an annotator found in one message, and where. Its own sub-mux
+	// because it is the first route under /api/messages/ with a path
+	// parameter, and "/api/messages" above is an exact match that this
+	// prefix does not disturb.
+	spanMux := http.NewServeMux()
+	registerSpanRoutes(spanMux)
+	mux.Handle("/api/messages/", auth.Middleware(spanMux))
+
 	// The query language surface; see registerQueryRoutes.
 	//
 	// Mounted route by route rather than under a "/api/" prefix so that adding

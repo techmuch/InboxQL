@@ -486,6 +486,15 @@ So `iql gliner install` downloads what the publisher published and rewrites it
 on this machine. No Python, no ONNX Runtime, no prepared binary from a host
 with no claim to be trusted.
 
+The download is checked rather than merely awaited: HuggingFace serves large
+files through LFS and publishes each one's SHA-256 in `X-Linked-Etag`, so the
+bytes are hashed as they arrive and compared against what the repository says
+it is serving. Confirmed against the real host —
+`94e877856a2cc930…` for `gliner_base` — and a file that fails is refused with
+both digests named, instead of surfacing much later as an inscrutable parse
+error on 750 MB. A host that publishes no checksum is not an error; it just
+means the check could not be made.
+
 ### What it costs to have
 
 18.5 MB of extra binary and 80 modules in the tree, for a feature most people

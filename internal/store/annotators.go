@@ -114,9 +114,17 @@ type Annotator struct {
 	Model string `json:"model,omitempty"`
 	// AllowRemote records explicit consent to send message bodies to a
 	// non-local provider. Default false, and the runner refuses without it.
-	AllowRemote bool      `json:"allowRemote"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	AllowRemote bool `json:"allowRemote"`
+	// Scope narrows what this annotator runs over, as a query. Carried on the
+	// annotator rather than only passed at run time so that a triggered run
+	// knows what to run, and a starter remembers what it wanted narrowing to.
+	Scope string `json:"scope,omitempty"`
+	// Trigger is when to drain the queue PendingMessages already computes:
+	// manual, after-sync or daily. It is a "when", never a second "what" —
+	// Scope is the only filter.
+	Trigger   string    `json:"trigger,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Annotation is one result.
@@ -187,16 +195,17 @@ func SaveAnnotator(a *Annotator) error {
 	a.UpdatedAt = now
 
 	_, err = db.Exec(`
-		INSERT INTO annotators (id, name, kind, engine, version, instructions, schema_json, profile, model, allow_remote, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO annotators (id, name, kind, engine, version, instructions, schema_json, profile, model, allow_remote, scope, trigger, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name, kind = excluded.kind, engine = excluded.engine,
 			version = excluded.version, instructions = excluded.instructions,
 			schema_json = excluded.schema_json, profile = excluded.profile,
-			model = excluded.model,
+			model = excluded.model, scope = excluded.scope, trigger = excluded.trigger,
 			allow_remote = excluded.allow_remote, updated_at = excluded.updated_at`,
 		a.ID, a.Name, a.Kind, a.Engine, a.Version, a.Instructions, a.SchemaJSON,
 		nullIfEmpty(a.Profile), nullIfEmpty(a.Model), boolToInt(a.AllowRemote),
+		nullIfEmpty(a.Scope), triggerOrDefault(a.Trigger),
 		a.CreatedAt.UnixMilli(), a.UpdatedAt.UnixMilli())
 	return err
 }
@@ -231,14 +240,16 @@ func boolToInt(b bool) int {
 }
 
 const annotatorColumns = `id, name, kind, engine, version, instructions, schema_json,
-	COALESCE(profile, ''), COALESCE(model, ''), allow_remote, created_at, updated_at`
+	COALESCE(profile, ''), COALESCE(model, ''), allow_remote,
+	COALESCE(scope, ''), COALESCE(trigger, 'manual'), created_at, updated_at`
 
 func scanAnnotator(scan func(...any) error) (*Annotator, error) {
 	a := &Annotator{}
 	var remote int
 	var created, updated int64
 	if err := scan(&a.ID, &a.Name, &a.Kind, &a.Engine, &a.Version, &a.Instructions,
-		&a.SchemaJSON, &a.Profile, &a.Model, &remote, &created, &updated); err != nil {
+		&a.SchemaJSON, &a.Profile, &a.Model, &remote, &a.Scope, &a.Trigger,
+		&created, &updated); err != nil {
 		return nil, err
 	}
 	a.AllowRemote = remote != 0
@@ -584,4 +595,41 @@ func ListAnnotations(messageID string) ([]*Annotation, error) {
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// Annotator triggers: when to drain the queue, never what to run over.
+//
+// Scope is the only filter. A trigger that also filtered would be a second
+// system for the same job, free to disagree with the first.
+const (
+	// TriggerManual is the default and today's behaviour: it runs when told.
+	TriggerManual = "manual"
+	// TriggerAfterSync drains what is pending once new mail has landed.
+	TriggerAfterSync = "after-sync"
+	// TriggerDaily drains on a timer.
+	TriggerDaily = "daily"
+)
+
+// Triggers lists every kind, for validating a request.
+var Triggers = []string{TriggerManual, TriggerAfterSync, TriggerDaily}
+
+// ValidTrigger reports whether a trigger is one this knows how to honour.
+func ValidTrigger(t string) bool {
+	for _, k := range Triggers {
+		if k == t {
+			return true
+		}
+	}
+	return false
+}
+
+// triggerOrDefault keeps the column non-empty.
+//
+// An annotator created before triggers existed means manual, which is also
+// what an empty value means, so they are the same thing written twice.
+func triggerOrDefault(t string) string {
+	if !ValidTrigger(t) {
+		return TriggerManual
+	}
+	return t
 }

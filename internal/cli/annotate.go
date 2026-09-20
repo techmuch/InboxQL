@@ -32,6 +32,7 @@ are the same mechanism, so they version, re-run and query the same way.
   run       apply it to messages that still need it
   plan      report what a run would do, without doing it
   correct   record a human ruling, which outranks the machine
+  starters  a pack of annotators worth starting from
   probe     define, run and measure an annotator in one go
   embed     compute message vectors with an embedding profile
 
@@ -122,6 +123,8 @@ func runAnnotate(ctx *Context, args []string) error {
 		return annotateRun(ctx, rest)
 	case "plan":
 		return annotatePlan(ctx, rest)
+	case "starters":
+		return annotateStarters(ctx, rest)
 	case "correct":
 		return annotateCorrect(ctx, rest)
 	case "embed":

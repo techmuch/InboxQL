@@ -125,6 +125,8 @@ func Describe(name, scope string) (*Plan, error) {
 		return nil, fmt.Errorf("no annotator named %q", name)
 	}
 
+	scope = scopeFor(a, scope)
+
 	progress, err := store.Progress(a, scope)
 	if err != nil {
 		return nil, err
@@ -174,6 +176,19 @@ func Describe(name, scope string) (*Plan, error) {
 	return p, nil
 }
 
+// scopeFor decides what a run covers.
+//
+// An explicit scope wins; otherwise the annotator's own is used. Carrying it
+// on the annotator is what lets an extractor be gated by a cheap label without
+// depending on whoever runs it remembering to say so — and it is what a
+// triggered run has to read, since nobody is there to pass a flag.
+func scopeFor(a *store.Annotator, explicit string) string {
+	if strings.TrimSpace(explicit) != "" {
+		return explicit
+	}
+	return a.Scope
+}
+
 // Options controls a run.
 type Options struct {
 	// Scope is a query expression narrowing which messages to consider.
@@ -202,6 +217,8 @@ func Run(ctx context.Context, name string, opt Options) (*Outcome, error) {
 	if a == nil {
 		return nil, fmt.Errorf("no annotator named %q", name)
 	}
+
+	opt.Scope = scopeFor(a, opt.Scope)
 
 	started := time.Now()
 	out := &Outcome{Annotator: a.Name, Version: a.Version, DryRun: opt.DryRun}

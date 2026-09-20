@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 30
+	SchemaVersion = 31
 )
 
 var (
@@ -1299,6 +1299,29 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 30
+	}
+
+	if currentVersion < 31 {
+		log.Println("Applying schema migration v31 (annotator scope and trigger)...")
+		// Scope was a run-time flag only, which made two things impossible: a
+		// starter could not remember what it wanted narrowing to, and a
+		// triggered run had no way to know what to run over. Both need the
+		// annotator to carry its own scope.
+		//
+		// `trigger` is when to drain the queue that PendingMessages already
+		// computes — not a second filter. Scope stays the only "what".
+		for _, stmt := range []string{
+			`ALTER TABLE annotators ADD COLUMN scope TEXT;`,
+			`ALTER TABLE annotators ADD COLUMN trigger TEXT NOT NULL DEFAULT 'manual';`,
+		} {
+			if _, err := db.Exec(stmt); err != nil {
+				log.Printf("Warning v31: %v", err)
+			}
+		}
+		if _, err := db.Exec("PRAGMA user_version = 31;"); err != nil {
+			return err
+		}
+		currentVersion = 31
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

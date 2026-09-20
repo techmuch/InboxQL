@@ -435,6 +435,17 @@ func printPlan(ctx *Context, plan *annotate.Plan) {
 	if plan.Provider != "" {
 		ctx.Printf("  %-12s %s\n", p.Dim("provider"), plan.Provider)
 	}
+	if len(plan.Labels) > 0 {
+		// The labels come from the schema rather than being typed out, so a
+		// plan is the first chance to see what will actually be looked for.
+		ctx.Printf("  %-12s %s\n", p.Dim("labels"), strings.Join(plan.Labels, ", "))
+	}
+	// Said positively, not merely by the absence of a warning. "Where does
+	// this send my mail" is the question the plan exists to answer, and
+	// "nowhere" is an answer worth printing.
+	if plan.Engine == store.EngineGLiNER {
+		ctx.Printf("  %-12s %s\n", p.Dim("runs"), "on this machine; nothing is sent anywhere")
+	}
 	if plan.Remote {
 		ctx.Printf("\n  %s %s\n", p.Yellow("warning:"),
 			fmt.Sprintf("this sends %s message bodies to %s.",

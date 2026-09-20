@@ -44,7 +44,9 @@ embed flags:
 
 create flags:
   --kind <label|extract>    yes/no, or structured records (default label)
-  --engine <rule|llm>       a query expression, or a prompt (default rule)
+  --engine <rule|llm|gliner>
+                            a query expression, a prompt, or spans of the
+                            message itself (default rule)
   --instructions <text>     the rule or the prompt; - reads stdin
   --schema <file>           JSON schema for an extractor's records
   --time-field <name>       which extracted field is the record's own date
@@ -62,6 +64,22 @@ Editing --instructions bumps the version, which marks every earlier result
 stale without deleting it. A re-run then only visits what it has not answered
 at the new version.
 
+## Three engines
+
+A rule is a query expression the database evaluates in one pass. It is
+deterministic, costs nothing, and can only answer yes or no.
+
+An LLM annotator is a prompt. It can do either job and understands what a
+field means, but it composes its answer, so an extractor built on one can
+return a value that is not in the message — asked for five fields on a receipt
+it will fill the missing three with "N/A" and call that a record.
+
+A gliner annotator scores spans of the message. Its labels are its schema's
+field names, it runs on this machine, and the only thing it can return is a
+piece of the text it was given, so it cannot invent a value. It cannot label a
+message, it reads the first few hundred words, and it needs a model on disk:
+see "iql gliner install".
+
 A rule is a query expression, so the language in ` + "`iql query`" + ` is also the
 labelling language:
 
@@ -78,7 +96,13 @@ one stays local:
   iql llm profile add cloud --provider openai --model gpt-4o-mini --api-key
 
   iql annotate create receipts --engine llm --kind extract \
-    --profile cloud --allow-remote --instructions "Pull the amount and vendor."`,
+    --profile cloud --allow-remote --instructions "Pull the amount and vendor."
+
+A span extractor takes neither, because it reaches no gateway:
+
+  iql annotate create money --engine gliner --kind extract \
+    --schema fields.json \
+    --instructions "Find the amounts and reference numbers in this message."`,
 		Run: runAnnotate,
 	})
 }
@@ -201,6 +225,10 @@ func annotateShow(ctx *Context, args []string) error {
 	if a.Engine == store.EngineLLM {
 		ctx.Printf("  %-14s %v\n", p.Dim("remote ok"), a.AllowRemote)
 	}
+	if a.Engine == store.EngineGLiNER {
+		ctx.Printf("  %-14s %s\n", p.Dim("labels"), strings.Join(a.Labels(), ", "))
+		ctx.Printf("  %-14s %s\n", p.Dim("runs"), "on this machine")
+	}
 	return nil
 }
 
@@ -213,7 +241,7 @@ func annotateCreate(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("annotate create", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	kind := fs.String("kind", store.KindLabel, "label or extract")
-	engine := fs.String("engine", store.EngineRule, "rule or llm")
+	engine := fs.String("engine", store.EngineRule, "rule, llm or gliner")
 	instructions := fs.String("instructions", "", "the rule expression or prompt; - reads stdin")
 	schemaFile := fs.String("schema", "", "JSON schema file for an extractor")
 	timeField := fs.String("time-field", "", "extracted field holding the record's own date")
@@ -227,11 +255,21 @@ func annotateCreate(ctx *Context, args []string) error {
 	if *kind != store.KindLabel && *kind != store.KindExtract {
 		return Fail(ExitUsage, "--kind must be label or extract")
 	}
-	if *engine != store.EngineRule && *engine != store.EngineLLM {
-		return Fail(ExitUsage, "--engine must be rule or llm")
+	switch *engine {
+	case store.EngineRule, store.EngineLLM, store.EngineGLiNER:
+	default:
+		return Fail(ExitUsage, "--engine must be rule, llm or gliner")
 	}
 	if *kind == store.KindExtract && *engine == store.EngineRule {
-		return Fail(ExitUsage, "a rule can answer yes or no, but it cannot extract records; use --engine llm")
+		return Fail(ExitUsage, "a rule can answer yes or no, but it cannot extract records; use --engine llm or --engine gliner")
+	}
+	// A span extractor finds values in the text. It has no way to answer a
+	// yes-or-no question about a message, because the only thing it can
+	// return is a piece of that message.
+	if *kind == store.KindLabel && *engine == store.EngineGLiNER {
+		return Fail(ExitUsage,
+			"a span extractor pulls values out of a message; it cannot label one.\n"+
+				"Use --kind extract, or --engine llm for a label.")
 	}
 
 	text := *instructions
@@ -397,6 +435,17 @@ func printPlan(ctx *Context, plan *annotate.Plan) {
 	if plan.Provider != "" {
 		ctx.Printf("  %-12s %s\n", p.Dim("provider"), plan.Provider)
 	}
+	if len(plan.Labels) > 0 {
+		// The labels come from the schema rather than being typed out, so a
+		// plan is the first chance to see what will actually be looked for.
+		ctx.Printf("  %-12s %s\n", p.Dim("labels"), strings.Join(plan.Labels, ", "))
+	}
+	// Said positively, not merely by the absence of a warning. "Where does
+	// this send my mail" is the question the plan exists to answer, and
+	// "nowhere" is an answer worth printing.
+	if plan.Engine == store.EngineGLiNER {
+		ctx.Printf("  %-12s %s\n", p.Dim("runs"), "on this machine; nothing is sent anywhere")
+	}
 	if plan.Remote {
 		ctx.Printf("\n  %s %s\n", p.Yellow("warning:"),
 			fmt.Sprintf("this sends %s message bodies to %s.",
@@ -466,8 +515,8 @@ func annotateRun(ctx *Context, args []string) error {
 		ctx.Printf("\n")
 	}
 
-	opt := annotate.Options{Scope: *scope, Limit: *limit}
-	if !ctx.JSON && plan.Engine == store.EngineLLM {
+	opt := annotate.Options{Scope: *scope, Limit: *limit, DataDir: ctx.DataDir}
+	if !ctx.JSON && plan.Engine != store.EngineRule {
 		p := ctx.Printer()
 		opt.Progress = func(done, total int64) {
 			if total > 0 {

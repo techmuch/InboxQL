@@ -49,6 +49,17 @@ const SENDS_CONTENT: Record<string, string> = {
   'embed-attachments': 'The text of every readable file is sent to the configured embedding model.',
 };
 
+// Jobs that fetch something large rather than sending something private.
+//
+// A different question from SENDS_CONTENT and worth asking separately: nothing
+// here leaves the machine, but most of a gigabyte arrives on it, and that is
+// not a thing to discover from a progress bar after clicking Fix.
+const DOWNLOADS: Record<string, string> = {
+  'gliner-install': 'Downloads about 800 MB of model weights, once. Afterwards the model runs entirely on this machine and no mail is sent anywhere.',
+};
+
+const needsConfirming = (job: string) => Boolean(SENDS_CONTENT[job] || DOWNLOADS[job]);
+
 const running = (j?: Job | null) => j?.status === 'queued' || j?.status === 'running';
 
 export const MaintenancePanel = () => {
@@ -215,18 +226,26 @@ export const MaintenancePanel = () => {
           <div className="flex items-start gap-2">
             <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{label(confirming)} sends your mail to a model</p>
-              {/* Said before it happens, not discovered afterwards. Where the
-                  content goes is the user's decision to make. */}
-              <p className="mt-1 text-xs text-muted-foreground">{SENDS_CONTENT[confirming]}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                If the configured model runs on this machine nothing leaves it. If it is a hosted
-                API, this uploads that content to it.
+              <p className="text-sm font-medium">
+                {SENDS_CONTENT[confirming]
+                  ? `${label(confirming)} sends your mail to a model`
+                  : `${label(confirming)} downloads a large file`}
               </p>
+              {/* Said before it happens, not discovered afterwards. Where the
+                  content goes — and what arrives — is the user's decision. */}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {SENDS_CONTENT[confirming] ?? DOWNLOADS[confirming]}
+              </p>
+              {SENDS_CONTENT[confirming] && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  If the configured model runs on this machine nothing leaves it. If it is a hosted
+                  API, this uploads that content to it.
+                </p>
+              )}
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => start(confirming, true)}
+                  onClick={() => start(confirming, Boolean(SENDS_CONTENT[confirming]))}
                   className="border border-border bg-accent px-3 py-1.5 text-xs font-medium hover:bg-accent/70"
                 >
                   Go ahead
@@ -269,7 +288,7 @@ export const MaintenancePanel = () => {
                 <button
                   type="button"
                   disabled={running(active)}
-                  onClick={() => (SENDS_CONTENT[c.job!] ? setConfirming(c.job!) : start(c.job!))}
+                  onClick={() => (needsConfirming(c.job!) ? setConfirming(c.job!) : start(c.job!))}
                   className={`shrink-0 flex items-center gap-1.5 border px-3 py-1.5 text-xs transition-colors disabled:opacity-40 ${
                     fixable(c)
                       ? 'border-primary/50 bg-primary/5 hover:bg-primary/10 font-medium'

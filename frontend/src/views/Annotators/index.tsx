@@ -188,6 +188,7 @@ const AnnotatorCard = ({
           <span className="ml-2 font-mono text-[11px] text-muted-foreground">
             v{a.version} · {a.kind} · {a.engine}
             {a.engine === 'llm' && a.profile ? ` · ${a.profile}` : ''}
+            {a.engine === 'gliner' ? ' · on this machine' : ''}
           </span>
         </button>
 
@@ -295,7 +296,11 @@ const AnnotatorEditor = ({
   const isNew = !annotator.id;
   const [name, setName] = useState(annotator.name ?? '');
   const [kind, setKind] = useState<'label' | 'extract'>(annotator.kind ?? 'label');
-  const [engine, setEngine] = useState<'rule' | 'llm'>(annotator.engine ?? 'rule');
+  const [engine, setEngine] = useState<Engine>(annotator.engine ?? 'rule');
+  // For a span extractor the labels are the schema's field names, so the form
+  // asks for labels and builds the schema, rather than asking anyone to write
+  // JSON to say "look for an amount".
+  const [labels, setLabels] = useState(labelsOf(annotator.schemaJson));
   const [instructions, setInstructions] = useState(annotator.instructions ?? '');
   const [profile, setProfile] = useState(annotator.profile ?? '');
   const [allowRemote, setAllowRemote] = useState(annotator.allowRemote ?? false);
@@ -324,10 +329,14 @@ const AnnotatorEditor = ({
             />
           </Labelled>
           <Labelled label="Kind">
+            {/* A span extractor pulls values out of a message; the only thing
+                it can return is a piece of that message, so it has no way to
+                answer yes or no about one. */}
             <select
-              value={kind}
+              value={engine === 'gliner' ? 'extract' : kind}
               onChange={e => setKind(e.target.value as 'label' | 'extract')}
-              className="w-full border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+              disabled={engine === 'gliner'}
+              className="w-full border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
             >
               <option value="label">label — yes or no</option>
               <option value="extract">extract — structured records</option>
@@ -336,28 +345,47 @@ const AnnotatorEditor = ({
           <Labelled label="Engine">
             <select
               value={engine}
-              onChange={e => setEngine(e.target.value as 'rule' | 'llm')}
+              onChange={e => setEngine(e.target.value as Engine)}
               className="w-full border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="rule">rule — a query</option>
               <option value="llm">llm — a prompt</option>
+              <option value="gliner">gliner — spans of the message</option>
             </select>
           </Labelled>
         </div>
 
+        {engine === 'gliner' && (
+          <Labelled
+            label="Labels"
+            hint="What to look for, separated by commas. These are the record's fields, so changing them asks a different question and starts a new version."
+          >
+            <input
+              value={labels}
+              onChange={e => setLabels(e.target.value)}
+              placeholder="amount, due date, invoice number"
+              className="w-full border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:ring-1 focus:ring-primary"
+            />
+          </Labelled>
+        )}
+
         <Labelled
-          label={engine === 'rule' ? 'Rule' : 'Prompt'}
+          label={engine === 'rule' ? 'Rule' : engine === 'gliner' ? 'Note' : 'Prompt'}
           hint={engine === 'rule'
             ? 'A query expression. The same language the query bar takes, so a rule is testable there first.'
-            : 'What to ask of each message body.'}
+            : engine === 'gliner'
+              ? 'The model reads the labels above, not this. It is here so you can say what this annotator is for.'
+              : 'What to ask of each message body.'}
         >
           <textarea
             value={instructions}
             onChange={e => setInstructions(e.target.value)}
-            rows={engine === 'rule' ? 3 : 6}
+            rows={engine === 'rule' || engine === 'gliner' ? 3 : 6}
             placeholder={engine === 'rule'
               ? 'from:*@stripe.com OR subject:invoice'
-              : 'Does this message ask me to do something? Answer with matched and confidence.'}
+              : engine === 'gliner'
+                ? 'Amounts and reference numbers from receipts and invoices.'
+                : 'Does this message ask me to do something? Answer with matched and confidence.'}
             className="w-full border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:ring-1 focus:ring-primary"
           />
         </Labelled>
@@ -403,6 +431,19 @@ const AnnotatorEditor = ({
           </>
         )}
 
+        {engine === 'gliner' && (
+          <div className="flex items-start gap-2 border border-border bg-accent/30 p-3 text-xs text-muted-foreground">
+            <Globe className="mt-px h-3.5 w-3.5 shrink-0" />
+            {/* Said positively rather than by the absence of the amber box
+                above: "where does this send my mail" is worth answering. */}
+            <span>
+              This runs on this machine and sends nothing anywhere. It needs the span model on
+              disk — Settings → Maintenance will fetch it if it is missing. It reads the first few
+              hundred words of each message, and every value it returns is a piece of that message.
+            </span>
+          </div>
+        )}
+
         {rewording && (
           <Banner tone="warn">
             The instruction changed, so this becomes v{(annotator.version ?? 1) + 1}. Earlier results
@@ -416,10 +457,18 @@ const AnnotatorEditor = ({
           </button>
           <button
             type="button"
-            disabled={!name.trim() || !instructions.trim()}
+            disabled={
+              !name.trim() ||
+              !instructions.trim() ||
+              (engine === 'gliner' && splitLabels(labels).length === 0)
+            }
             onClick={() => onSave({
-              id: annotator.id, name: name.trim(), kind, engine,
+              id: annotator.id,
+              name: name.trim(),
+              kind: engine === 'gliner' ? 'extract' : kind,
+              engine,
               instructions: instructions.trim(),
+              schemaJson: engine === 'gliner' ? schemaOf(labels) : annotator.schemaJson,
               profile: engine === 'llm' ? profile : '',
               allowRemote: engine === 'llm' && allowRemote,
             })}
@@ -432,6 +481,39 @@ const AnnotatorEditor = ({
     </div>
   );
 };
+
+/** The engines an annotator can run on. */
+type Engine = 'rule' | 'llm' | 'gliner';
+
+/**
+ * A span extractor's labels are its schema's field names, so the form shows
+ * the fields and stores the schema. "timeField" is excluded because it names
+ * one of the other fields rather than being one.
+ */
+function labelsOf(schemaJson?: string): string {
+  if (!schemaJson) return '';
+  try {
+    const parsed = JSON.parse(schemaJson);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return '';
+    return Object.keys(parsed).filter(k => k !== 'timeField').join(', ');
+  } catch {
+    return '';
+  }
+}
+
+function splitLabels(labels: string): string[] {
+  return labels.split(',').map(l => l.trim()).filter(Boolean);
+}
+
+function schemaOf(labels: string): string {
+  const fields: Record<string, string> = {};
+  for (const label of splitLabels(labels)) {
+    // No article in front of the label: "a amount" is wrong and "a(n)" is
+    // worse, and the field name already says what it is.
+    fields[label] = `${label}, as written in the message`;
+  }
+  return JSON.stringify(fields);
+}
 
 const Labelled = ({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) => (
   <div className="space-y-1">

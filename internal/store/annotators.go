@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -37,10 +38,49 @@ const (
 )
 
 // Annotator engines.
+//
+// EngineGLiNER extracts by scoring spans of the message rather than by asking
+// a model to write JSON about it. It is a third engine rather than a flag on
+// the LLM one because it is not a gateway: there is no endpoint, no key, and
+// nothing leaves the machine, so the profile, model-override and consent
+// fields that EngineLLM turns on do not apply to it.
 const (
-	EngineRule = "rule"
-	EngineLLM  = "llm"
+	EngineRule   = "rule"
+	EngineLLM    = "llm"
+	EngineGLiNER = "gliner"
 )
+
+// Labels are the entity types a span extractor looks for.
+//
+// They are the schema's own field names: an extractor already declares what it
+// produces, and a separate list of labels would be the same information
+// written twice, free to disagree with itself.
+//
+// It follows that for this engine the schema is the question, not a
+// description of the answer — so [SaveAnnotator] bumps the version when it
+// changes, exactly as it does for changed instructions.
+//
+// "timeField" is excluded: it names one of the other fields rather than being
+// one, and asking a model to find a "timeField" in a receipt would be asking
+// for nothing.
+func (a *Annotator) Labels() []string {
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(a.SchemaJSON), &schema); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(schema))
+	for k := range schema {
+		if k == "timeField" {
+			continue
+		}
+		out = append(out, k)
+	}
+	// Stable, because the label order is the class order in the scores: an
+	// unstable order would silently relabel every span from one run to the
+	// next.
+	sort.Strings(out)
+	return out
+}
 
 // Annotator is a named, versioned instruction applied to messages.
 //
@@ -132,6 +172,15 @@ func SaveAnnotator(a *Annotator) error {
 		if strings.TrimSpace(existing.Instructions) != strings.TrimSpace(a.Instructions) {
 			a.Version = existing.Version + 1
 		}
+		// A span extractor's labels are its schema's field names, so for that
+		// engine the schema is the question being asked and a change to it
+		// invalidates the old answers just as a reworded prompt would. For the
+		// other engines the schema describes the shape of a reply the model
+		// was asked for in words, and the words are what count.
+		if a.Engine == EngineGLiNER &&
+			!sameSchema(existing.SchemaJSON, a.SchemaJSON) {
+			a.Version = existing.Version + 1
+		}
 	} else {
 		a.CreatedAt = now
 	}
@@ -150,6 +199,28 @@ func SaveAnnotator(a *Annotator) error {
 		nullIfEmpty(a.Profile), nullIfEmpty(a.Model), boolToInt(a.AllowRemote),
 		a.CreatedAt.UnixMilli(), a.UpdatedAt.UnixMilli())
 	return err
+}
+
+// sameSchema compares two schemas by content rather than by text.
+//
+// Reformatting a schema file, or writing the same fields in a different order,
+// is not a change to the question — and treating it as one would invalidate a
+// whole mailbox's results for a reindented JSON file.
+func sameSchema(a, b string) bool {
+	var av, bv map[string]any
+	if json.Unmarshal([]byte(a), &av) != nil || json.Unmarshal([]byte(b), &bv) != nil {
+		return strings.TrimSpace(a) == strings.TrimSpace(b)
+	}
+	if len(av) != len(bv) {
+		return false
+	}
+	for k, x := range av {
+		y, ok := bv[k]
+		if !ok || fmt.Sprint(x) != fmt.Sprint(y) {
+			return false
+		}
+	}
+	return true
 }
 
 func boolToInt(b bool) int {

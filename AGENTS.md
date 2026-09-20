@@ -528,10 +528,20 @@ A span extractor also:
   annotators, which also lets them re-run separately.
 - **reads the first ~1300 words** of a message and stops. Long threads and
   marketing mail are read in part.
-- **stores offsets.** Each record carries the value, plus `field`
-  (`"subject"` or `"body"`) and byte offsets into it. Byte offsets, not
-  character offsets — mail is full of things like the narrow no-break space in
-  `9:50 PM`, and indexing by character lands a byte or two short.
+- **reads the attachments too.** The subject, the body, and every file whose
+  text has been extracted — on a mailbox of receipts most of the values are
+  inside the PDFs, not the bodies. A file nobody has read yet is skipped, not
+  read as empty; `iql maintenance text` is what reads them.
+- **stores offsets.** Each record carries the value, plus `field` and byte
+  offsets into that field. `field` is `"subject"`, `"body"`, or
+  `"attachment:<content hash>"` — the hash, because the same document sent to
+  five people is one file.
+
+  Byte offsets, not character offsets. Mail is full of things like the narrow
+  no-break space in `9:50 PM`, and indexing by character lands a byte or two
+  short on exactly the messages that matter. `GET /api/messages/{id}/annotations`
+  returns the text pre-cut into marked runs so a reader never has to do this
+  arithmetic at all.
 - **carries a real confidence per record**, which is that span's own score
   rather than one number the model volunteered about its whole reply.
 

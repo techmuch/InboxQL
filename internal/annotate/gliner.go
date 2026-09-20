@@ -102,9 +102,23 @@ func runGLiNER(ctx context.Context, a *store.Annotator, opt Options, out *Outcom
 				return err
 			}
 
-			text, subjectLen := spanText(msg)
-			spans, err := m.Extract(text, labels, glinerThreshold)
-			anns := make([]*store.Annotation, 0, len(spans))
+			parts, err := documents(msg)
+			if err != nil {
+				return err
+			}
+
+			var found []labelled
+			for _, part := range parts {
+				spans, perr := m.Extract(part.Text, labels, glinerThreshold)
+				if perr != nil {
+					err = perr
+					break
+				}
+				for _, sp := range spans {
+					found = append(found, labelled{field: part.Field, span: sp})
+				}
+			}
+			anns := make([]*store.Annotation, 0, len(found))
 
 			switch {
 			case err != nil:
@@ -117,7 +131,7 @@ func runGLiNER(ctx context.Context, a *store.Annotator, opt Options, out *Outcom
 					Model: m.Name(), Error: err.Error(),
 				})
 
-			case len(spans) == 0:
+			case len(found) == 0:
 				// "Looked, found nothing" — a different answer from "not
 				// evaluated", and the one that makes -extract:x honest.
 				out.Empty++
@@ -127,7 +141,7 @@ func runGLiNER(ctx context.Context, a *store.Annotator, opt Options, out *Outcom
 
 			default:
 				out.Matched++
-				for i, r := range records(spans, subjectLen) {
+				for i, r := range records(found) {
 					payload, _ := json.Marshal(r.data)
 					score := r.score
 					anns = append(anns, &store.Annotation{
@@ -181,52 +195,70 @@ type record struct {
 // no-break space that mail clients put in "9:50 PM", and a reader that indexes
 // by character instead lands a byte or two short in exactly the messages that
 // matter, which looks like a decoding bug and is not one.
-func records(spans []gliner.Span, subjectLen int) []record {
-	out := make([]record, 0, len(spans))
-	for _, s := range spans {
-		field, start, end := "subject", s.Start, s.End
-		if s.Start >= subjectLen {
-			// Past the subject and the blank line that separates them.
-			field = "body"
-			start -= subjectLen
-			end -= subjectLen
-		}
+func records(found []labelled) []record {
+	out := make([]record, 0, len(found))
+	for _, f := range found {
 		out = append(out, record{
 			data: map[string]any{
-				s.Label: s.Text,
-				"field": field,
-				"start": start,
-				"end":   end,
+				f.span.Label: f.span.Text,
+				"field":      f.field,
+				"start":      f.span.Start,
+				"end":        f.span.End,
 			},
-			score: s.Score,
+			score: f.span.Score,
 		})
 	}
 	return out
 }
 
-// spanText is what the model is shown, and how much of it is the subject.
+// labelled is one span and the part of the message it came from.
+type labelled struct {
+	field string
+	span  gliner.Span
+}
+
+// document is one part of a message the extractor reads on its own.
 //
-// The plain body, not the HTML: offsets have to point into something a reader
-// can be shown, and an offset into a stripped-down copy of the markup points
-// at nothing anyone can check. This is the opposite of the choice
-// renderMessage makes for the LLM extractor, and for the same underlying
-// reason — there, structure is the data and nobody ever looks at an offset.
+// Separately rather than concatenated, because an offset has to index
+// something a reader can be shown. Joining the body and three PDFs into one
+// string would give offsets into a buffer that exists nowhere else.
+type document struct {
+	Field string
+	Text  string
+}
+
+// documents are the parts of a message worth reading.
 //
-// The subject leads, separated by a blank line so the model does not read it
-// as the first sentence of the body. It is often where the amount and the
-// reference number actually are: "Order & Pay Receipt for $80.44 at Blue Moon
-// Pizza" carries the total, and the body under it carries the line items.
+// The subject and the body, and then every attachment whose text has been
+// extracted — an invoice arrives as a PDF more often than as a body, and
+// reading only the body is most of the data missing on a mailbox of receipts.
 //
-// The returned length is where the body begins, so a span can be reported
-// against whichever field it fell in — see [records].
-func spanText(m *message.Message) (text string, subjectLen int) {
+// A file with no extracted text is skipped rather than read as empty: a scan
+// nobody has run OCR over is "not read yet", not "says nothing".
+func documents(m *message.Message) ([]document, error) {
+	var out []document
+
+	if s := strings.TrimSpace(m.Subject); s != "" {
+		out = append(out, document{Field: "subject", Text: m.Subject})
+	}
+
 	body := m.Body
 	if strings.TrimSpace(body) == "" {
 		body = m.NormalizedBody
 	}
-	if strings.TrimSpace(m.Subject) == "" {
-		return body, 0
+	if strings.TrimSpace(body) != "" {
+		out = append(out, document{Field: "body", Text: body})
 	}
-	const sep = "\n\n"
-	return m.Subject + sep + body, len(m.Subject) + len(sep)
+
+	docs, err := store.AttachmentTextForMessage(m.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range docs {
+		if strings.TrimSpace(d.Text) == "" {
+			continue
+		}
+		out = append(out, document{Field: d.Field(), Text: d.Text})
+	}
+	return out, nil
 }

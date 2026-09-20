@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Tag } from 'lucide-react';
+import { Paperclip, Tag } from 'lucide-react';
 
 import {
   MarkedText,
@@ -76,8 +76,10 @@ export const SpanPanel = ({
   if (total === 0 && spans.other.length === 0) return null;
 
   const counts = countByLabel(spans.fields, floor);
-  const subject = spans.fields.find(f => f.field === 'subject');
-  const body = spans.fields.find(f => f.field === 'body');
+  // Every part that has something in it. An attachment with no marks is not
+  // worth a panel of its own, but the body is shown even when bare so the
+  // message is still readable here.
+  const shown = spans.fields.filter(f => f.marks > 0 || f.field === 'body');
 
   return (
     <div className="mt-2 space-y-3">
@@ -164,34 +166,39 @@ export const SpanPanel = ({
         );
       })()}
 
-      {subject && subject.marks > 0 && (
-        <div className="rounded border border-border bg-muted/10 px-4 py-2">
-          <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            Subject
+      {shown.map(f => {
+        const isAttachment = f.field.startsWith('attachment:');
+        return (
+          <div
+            key={f.field}
+            className={
+              f.field === 'body'
+                ? 'rounded border border-sky-500/20 bg-sky-500/[0.03] p-6 dark:bg-sky-950/10'
+                : 'rounded border border-border bg-muted/10 px-4 py-3'
+            }
+          >
+            <div className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              {isAttachment && <Paperclip className="h-3 w-3" />}
+              {f.label || f.field}
+              {/* An invoice arrives as a PDF more often than as a body, so
+                  where a value was found is part of what it means. */}
+              {isAttachment && <span className="font-normal normal-case opacity-70">attached file</span>}
+            </div>
+            <MarkedText
+              field={f}
+              labels={spans.labels}
+              floor={floor}
+              className={
+                f.field === 'subject'
+                  ? 'font-sans text-sm leading-relaxed'
+                  : 'whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90'
+              }
+              onPick={i => setPicking({ field: f.field, index: i })}
+              picked={picking?.field === f.field ? picking.index : null}
+            />
           </div>
-          <MarkedText
-            field={subject}
-            labels={spans.labels}
-            floor={floor}
-            className="font-sans text-sm leading-relaxed"
-            onPick={i => setPicking({ field: 'subject', index: i })}
-            picked={picking?.field === 'subject' ? picking.index : null}
-          />
-        </div>
-      )}
-
-      {body && (
-        <div className="rounded border border-sky-500/20 bg-sky-500/[0.03] p-6 font-sans text-sm leading-relaxed text-foreground/90 dark:bg-sky-950/10">
-          <MarkedText
-            field={body}
-            labels={spans.labels}
-            floor={floor}
-            className="whitespace-pre-wrap"
-            onPick={i => setPicking({ field: 'body', index: i })}
-            picked={picking?.field === 'body' ? picking.index : null}
-          />
-        </div>
-      )}
+        );
+      })}
 
       {spans.other.length > 0 && (
         <div className="rounded border border-border bg-muted/10 px-4 py-2 text-[11px] text-muted-foreground">

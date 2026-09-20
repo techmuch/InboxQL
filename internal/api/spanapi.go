@@ -47,7 +47,11 @@ type Segment struct {
 
 // MarkedField is one part of a message — its subject or its body — as runs.
 type MarkedField struct {
-	Field    string    `json:"field"`
+	Field string `json:"field"`
+	// Label is what to call this part to a reader: "Subject", "Body", or an
+	// attachment's filename. Separate from Field, which is the identity a
+	// correction is written against.
+	Label    string    `json:"label,omitempty"`
 	Segments []Segment `json:"segments"`
 	Marks    int       `json:"marks"`
 }
@@ -184,16 +188,30 @@ func handleMessageAnnotations(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(out.Labels)
 
-	for _, f := range []struct {
-		name string
-		text string
-	}{
-		{"subject", msg.Subject},
-		{"body", bodyOf(msg)},
-	} {
-		marked := segment(f.text, spansIn(spans, f.name))
+	parts := []struct{ name, label, text string }{
+		{"subject", "Subject", msg.Subject},
+		{"body", "Body", bodyOf(msg)},
+	}
+
+	// Every readable file on the message, because that is where an invoice
+	// usually is. The text comes from store.AttachmentTextJoined rather than
+	// being joined here: offsets index the string the extractor was shown, and
+	// two places joining pages their own way is how they stop agreeing.
+	if docs, err := store.AttachmentTextForMessage(id); err == nil {
+		for _, d := range docs {
+			name := d.Filename
+			if name == "" {
+				name = d.Hash[:min(12, len(d.Hash))]
+			}
+			parts = append(parts, struct{ name, label, text string }{d.Field(), name, d.Text})
+		}
+	}
+
+	for _, p := range parts {
+		marked := segment(p.text, spansIn(spans, p.name))
+		marked.Field = p.name
+		marked.Label = p.label
 		out.Fields = append(out.Fields, marked)
-		out.Fields[len(out.Fields)-1].Field = f.name
 	}
 
 	writeJSON(w, http.StatusOK, out)

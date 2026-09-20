@@ -25,6 +25,8 @@ export interface Segment {
 
 export interface MarkedField {
   field: string;
+  /** What to call this part to a reader: Subject, Body, or a filename. */
+  label?: string;
   segments: Segment[];
   marks: number;
 }

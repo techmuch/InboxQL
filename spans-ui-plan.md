@@ -142,6 +142,47 @@ renderer rather than writing a second one.
 
 ---
 
+---
+
+# Built, 20 September 2026
+
+All five phases, verified against the live mailbox rather than a fixture.
+
+| Phase | Result |
+|---|---|
+| 1 — endpoint | `GET /api/messages/{id}/annotations`, text returned as runs |
+| 2 — marks | a fourth view in the message toolbar, appearing only when there is something to show |
+| 3 — the floor | a slider reading 20/18/7 at 0/0.6/0.9 on a real receipt, solid and dimmed agreeing at each step |
+| 4 — correction | click a mark to relabel or reject it |
+| 5 — attachments | extraction reads readable files, and the panel shows them by filename |
+
+The rendered DOM text is an exact 1820-character match for the stored body on
+the message it was checked against, so the marking adds and drops nothing.
+Every stored record still resolves to its own value at its own offsets — 36 of
+36 on the attachment-aware run, across all three field kinds.
+
+## What Phase 5 found
+
+**Twenty of thirty-six values came from inside attachments** — more than the
+body (9) and subject (7) combined. `$5.00`, `6.99`, `Aug 17, 2024`, `07/30/24`:
+none of them in any message body. On a mailbox of receipts the PDF really is
+where the data is, and reading only the body was missing most of it.
+
+## Two things this uncovered
+
+**A human ruling had never survived a re-run.** `SaveAnnotations` deletes
+`WHERE source != 'human'`, which reads as careful, and then inserts with
+`INSERT OR REPLACE` against `UNIQUE(message_id, annotator_id,
+annotator_version, seq)` — so a machine row at seq 0 replaced the human row at
+seq 0 immediately after being spared. `PendingMessages` hides it nearly always
+by never offering a ruled-on message to a run. `ApplyRule` never had the bug;
+the other path now matches it.
+
+**The build order matters.** `make frontend` copies `frontend/dist` into
+`internal/embed/static`, which is what the binary embeds. Building the Go
+binary first embeds the previous bundle, and the symptom is a feature that
+"does not work" while the source is correct.
+
 ## Not doing
 
 **A ledger of extracted values** — amounts over time, totals by merchant. It

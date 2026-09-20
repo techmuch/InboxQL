@@ -267,3 +267,50 @@ func TestMachineResultsCannotOverwriteARulingAtTheSameSeq(t *testing.T) {
 		}
 	}
 }
+
+// A value found inside an attached PDF has to be correctable too, and the
+// file is named by content hash rather than by index: a bare index would not
+// survive the file arriving again on another message, or the message being
+// re-annotated in a different order.
+func TestCorrectionAcceptsAnAttachmentField(t *testing.T) {
+	openQueryFixture(t)
+	spanExtractor(t, "money")
+	msg := anyMessageID(t)
+
+	hash := "ab12cd34ef56"
+	if err := SetHumanSpans("money", msg, []SpanCorrection{
+		{Label: "amount", Field: "attachment:" + hash, Start: 10, End: 16, Text: "$80.44"},
+	}); err != nil {
+		t.Fatalf("an attachment span was rejected: %v", err)
+	}
+
+	all, _ := ListAnnotations(msg)
+	found := false
+	for _, x := range all {
+		if x.Data()["field"] == "attachment:"+hash {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the attachment field was not stored")
+	}
+}
+
+func TestSpanFieldNames(t *testing.T) {
+	for _, tc := range []struct {
+		field string
+		ok    bool
+	}{
+		{"subject", true},
+		{"body", true},
+		{"attachment:abc123", true},
+		{"attachment:", false},
+		{"attachment", false},
+		{"header", false},
+		{"", false},
+	} {
+		if got := validSpanField(tc.field); got != tc.ok {
+			t.Errorf("validSpanField(%q) = %v, want %v", tc.field, got, tc.ok)
+		}
+	}
+}

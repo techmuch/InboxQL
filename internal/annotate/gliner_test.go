@@ -7,53 +7,38 @@ import (
 	"github.com/user/inboxql/internal/message"
 )
 
-// The model is shown the subject and the body joined, so its offsets index a
-// string nothing else holds. Every record has to say which field it landed in
-// and where within that field, or the offsets point into a buffer that does
-// not exist anywhere a reader can open.
-func TestRecordsResolveOffsetsToAField(t *testing.T) {
-	m := &message.Message{
-		Subject: "Receipt for $80.44",
-		Body:    "Total $80.44\nCheck #319",
-	}
-	text, subjectLen := spanText(m)
-
-	// Two spans, one in each half, located the way the model would.
-	inSubject := gliner.Span{
-		Label: "amount", Text: "$80.44",
-		Start: 12, End: 18, Score: 0.9,
-	}
-	bodyAt := subjectLen + 6 // "Total " is 6 bytes into the body
-	inBody := gliner.Span{
-		Label: "amount", Text: "$80.44",
-		Start: bodyAt, End: bodyAt + 6, Score: 0.8,
-	}
-	if text[inSubject.Start:inSubject.End] != "$80.44" {
-		t.Fatalf("test fixture is wrong: subject span is %q", text[inSubject.Start:inSubject.End])
-	}
-	if text[inBody.Start:inBody.End] != "$80.44" {
-		t.Fatalf("test fixture is wrong: body span is %q", text[inBody.Start:inBody.End])
+// Each record says which part of the message it came from and where within
+// that part. The model is shown the subject, the body and each readable
+// attachment separately, so an offset always indexes something a reader can
+// be shown — not a buffer that exists nowhere else.
+func TestRecordsCarryTheirFieldAndOffsets(t *testing.T) {
+	got := records([]labelled{
+		{field: "subject", span: gliner.Span{Label: "amount", Text: "$80.44", Start: 12, End: 18, Score: 0.9}},
+		{field: "body", span: gliner.Span{Label: "amount", Text: "$80.44", Start: 6, End: 12, Score: 0.8}},
+		{field: "attachment:abc123", span: gliner.Span{Label: "due date", Text: "07/30/24", Start: 40, End: 48, Score: 0.7}},
+	})
+	if len(got) != 3 {
+		t.Fatalf("got %d records, want 3", len(got))
 	}
 
-	got := records([]gliner.Span{inSubject, inBody}, subjectLen)
-	if len(got) != 2 {
-		t.Fatalf("got %d records, want 2", len(got))
-	}
-
-	first := got[0].data
-	if first["field"] != "subject" {
-		t.Errorf("first record is in %v, want subject", first["field"])
-	}
-	if s, e := first["start"].(int), first["end"].(int); m.Subject[s:e] != "$80.44" {
-		t.Errorf("subject[%d:%d] = %q, want $80.44", s, e, m.Subject[s:e])
-	}
-
-	second := got[1].data
-	if second["field"] != "body" {
-		t.Errorf("second record is in %v, want body", second["field"])
-	}
-	if s, e := second["start"].(int), second["end"].(int); m.Body[s:e] != "$80.44" {
-		t.Errorf("body[%d:%d] = %q, want $80.44", s, e, m.Body[s:e])
+	for i, want := range []struct {
+		field, label, text string
+		start, end         int
+	}{
+		{"subject", "amount", "$80.44", 12, 18},
+		{"body", "amount", "$80.44", 6, 12},
+		{"attachment:abc123", "due date", "07/30/24", 40, 48},
+	} {
+		d := got[i].data
+		if d["field"] != want.field {
+			t.Errorf("record %d field = %v, want %s", i, d["field"], want.field)
+		}
+		if d[want.label] != want.text {
+			t.Errorf("record %d %s = %v, want %s", i, want.label, d[want.label], want.text)
+		}
+		if d["start"] != want.start || d["end"] != want.end {
+			t.Errorf("record %d offsets = %v:%v, want %d:%d", i, d["start"], d["end"], want.start, want.end)
+		}
 	}
 }
 
@@ -61,11 +46,10 @@ func TestRecordsResolveOffsetsToAField(t *testing.T) {
 // everything a single reply mentioned. That is what makes extract:x@0.8 mean
 // what a reader assumes it means.
 func TestRecordsKeepPerSpanConfidence(t *testing.T) {
-	spans := []gliner.Span{
-		{Label: "amount", Text: "$675.00", Start: 10, End: 17, Score: 0.905},
-		{Label: "account number", Text: "5887", Start: 40, End: 44, Score: 0.511},
-	}
-	got := records(spans, 0)
+	got := records([]labelled{
+		{field: "body", span: gliner.Span{Label: "amount", Text: "$675.00", Score: 0.905, Start: 10, End: 17}},
+		{field: "body", span: gliner.Span{Label: "order number", Text: "5887", Score: 0.511, Start: 40, End: 44}},
+	})
 
 	if got[0].score != 0.905 || got[1].score != 0.511 {
 		t.Errorf("scores are %v and %v, want 0.905 and 0.511", got[0].score, got[1].score)
@@ -73,36 +57,48 @@ func TestRecordsKeepPerSpanConfidence(t *testing.T) {
 	if got[0].data["amount"] != "$675.00" {
 		t.Errorf("first record = %v, want the amount under its own label", got[0].data)
 	}
-	if got[1].data["account number"] != "5887" {
-		t.Errorf("second record = %v, want the account number under its own label", got[1].data)
-	}
 }
 
-func TestSpanTextFallsBackAndReportsTheSplit(t *testing.T) {
-	t.Run("no subject", func(t *testing.T) {
-		text, n := spanText(&message.Message{Body: "just a body"})
-		if text != "just a body" || n != 0 {
-			t.Errorf("got %q, %d", text, n)
+// The subject and the body are read separately rather than concatenated, so
+// neither needs an offset adjustment and an empty one is simply absent.
+func TestDocumentsSplitsTheMessage(t *testing.T) {
+	// A store has to be open: documents also asks it for the message's
+	// readable attachments. These cases have none, which is the point —
+	// the message's own halves are what is under test.
+	openAnnotateFixture(t)
+
+	t.Run("subject and body", func(t *testing.T) {
+		parts := mustDocuments(t, &message.Message{Subject: "Receipt", Body: "Total $5"})
+		if len(parts) != 2 {
+			t.Fatalf("got %d parts: %+v", len(parts), parts)
+		}
+		if parts[0].Field != "subject" || parts[0].Text != "Receipt" {
+			t.Errorf("first part = %+v", parts[0])
+		}
+		if parts[1].Field != "body" || parts[1].Text != "Total $5" {
+			t.Errorf("second part = %+v", parts[1])
 		}
 	})
 
-	t.Run("empty body uses the normalized one", func(t *testing.T) {
-		text, n := spanText(&message.Message{
+	t.Run("no subject", func(t *testing.T) {
+		parts := mustDocuments(t, &message.Message{Body: "just a body"})
+		if len(parts) != 1 || parts[0].Field != "body" {
+			t.Errorf("got %+v, want the body alone", parts)
+		}
+	})
+
+	t.Run("empty body falls back to the normalized one", func(t *testing.T) {
+		parts := mustDocuments(t, &message.Message{
 			Subject: "Hi", Body: "   ", NormalizedBody: "the real text",
 		})
-		if text[n:] != "the real text" {
-			t.Errorf("body half is %q, want the normalized body", text[n:])
+		if len(parts) != 2 || parts[1].Text != "the real text" {
+			t.Errorf("got %+v", parts)
 		}
 	})
 
-	t.Run("split lands on the body", func(t *testing.T) {
-		m := &message.Message{Subject: "Subject line", Body: "Body text"}
-		text, n := spanText(m)
-		if text[n:] != m.Body {
-			t.Errorf("text[%d:] = %q, want %q", n, text[n:], m.Body)
-		}
-		if text[:len(m.Subject)] != m.Subject {
-			t.Errorf("the subject is not at the front of %q", text)
+	t.Run("nothing at all", func(t *testing.T) {
+		if parts := mustDocuments(t, &message.Message{}); len(parts) != 0 {
+			t.Errorf("got %+v, want nothing to read", parts)
 		}
 	})
 }
@@ -126,4 +122,13 @@ func TestReachReportsHowFarExtractionGets(t *testing.T) {
 	if got <= 0 {
 		t.Errorf("Reach(long) = %d, want a positive prefix", got)
 	}
+}
+
+func mustDocuments(t *testing.T, m *message.Message) []document {
+	t.Helper()
+	parts, err := documents(m)
+	if err != nil {
+		t.Fatalf("documents: %v", err)
+	}
+	return parts
 }

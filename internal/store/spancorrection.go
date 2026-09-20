@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,7 +36,7 @@ import (
 // SpanCorrection is one value a person is asserting.
 type SpanCorrection struct {
 	Label string `json:"label"`
-	Field string `json:"field"` // "subject" or "body"
+	Field string `json:"field"` // "subject", "body", or "attachment:<hash>"
 	Start int    `json:"start"` // byte offset, inclusive
 	End   int    `json:"end"`   // byte offset, exclusive
 	Text  string `json:"text"`
@@ -59,8 +60,10 @@ func SetHumanSpans(annotatorName, messageID string, spans []SpanCorrection) erro
 		if s.Label == "" {
 			return fmt.Errorf("correction %d has no label", i)
 		}
-		if s.Field != "subject" && s.Field != "body" {
-			return fmt.Errorf("correction %d: field must be subject or body, not %q", i, s.Field)
+		if !validSpanField(s.Field) {
+			return fmt.Errorf(
+				"correction %d: field must be subject, body or attachment:<hash>, not %q",
+				i, s.Field)
 		}
 		if s.End <= s.Start || s.Start < 0 {
 			return fmt.Errorf("correction %d: %d:%d is not a span", i, s.Start, s.End)
@@ -146,4 +149,20 @@ func ClearHumanSpans(annotatorName, messageID string) error {
 		"DELETE FROM annotations WHERE message_id = ? AND annotator_id = ? AND source = ?",
 		messageID, a.ID, SourceHuman)
 	return err
+}
+
+// validSpanField reports whether a correction names a part of a message that
+// can hold a span.
+//
+// The subject, the body, or one readable attachment by content hash. A bare
+// index would not survive the file arriving again on another message, or the
+// message being re-annotated in a different order, which is why the hash is
+// the identity.
+func validSpanField(field string) bool {
+	switch field {
+	case "subject", "body":
+		return true
+	}
+	hash, ok := strings.CutPrefix(field, "attachment:")
+	return ok && hash != ""
 }

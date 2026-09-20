@@ -132,6 +132,7 @@ type Span struct {
 // because it holds working buffers.
 type Model struct {
 	dir  string
+	card Card
 	enc  *sp.Encoder
 	exec *model.Exec
 	mu   sync.Mutex
@@ -209,7 +210,7 @@ func Open(dataDir string) (*Model, error) {
 		return nil, fmt.Errorf("building the graph: %w", err)
 	}
 
-	return &Model{dir: dir, enc: sp.NewEncoder(spm), exec: exec}, nil
+	return &Model{dir: dir, card: ReadCard(dataDir), enc: sp.NewEncoder(spm), exec: exec}, nil
 }
 
 // checkInputs rejects a model that was not prepared for this code.
@@ -236,7 +237,22 @@ func checkInputs(om onnx.Model) error {
 }
 
 // Name identifies the model for provenance.
-func (m *Model) Name() string { return "gliner (" + filepath.Base(m.dir) + ")" }
+//
+// It goes into annotations.model on every record, so it has to answer "which
+// weights produced this", not just "which engine". The repository and the
+// first bytes of the digest do that; a model dropped into the directory by
+// hand has no card and says so, which is more useful than a confident name
+// that means nothing.
+func (m *Model) Name() string {
+	switch {
+	case m.card.Repo != "" && m.card.Digest != "":
+		return fmt.Sprintf("gliner %s@%s", m.card.Repo, m.card.Digest[:12])
+	case m.card.Repo != "":
+		return "gliner " + m.card.Repo
+	default:
+		return "gliner (unrecorded)"
+	}
+}
 
 // Word is one whitespace-delimited word and where it sits in the source.
 type Word struct {

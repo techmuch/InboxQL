@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -93,7 +94,47 @@ func Install(ctx context.Context, dataDir, repo string, progress Progress) error
 			return fmt.Errorf("installing %s: %w", src.Local, err)
 		}
 	}
-	return nil
+	return writeCard(dataDir, repo)
+}
+
+// Card is what was installed, written beside the weights.
+//
+// Its job is provenance. Every annotation records the model that produced it,
+// and "gliner" is not an answer to which model — two runs months apart may
+// have been different weights. The digest is computed once, here, rather than
+// on every Open, because hashing 750 MB to start a job that is about to hash
+// nothing else is a second of work for a string that cannot have changed.
+type Card struct {
+	Repo      string    `json:"repo"`
+	Digest    string    `json:"digest"`
+	Installed time.Time `json:"installed"`
+}
+
+const cardFile = "model.json"
+
+func writeCard(dataDir, repo string) error {
+	digest, err := Digest(dataDir, "model.onnx")
+	if err != nil {
+		return fmt.Errorf("checksumming the model: %w", err)
+	}
+	card := Card{Repo: repo, Digest: digest, Installed: time.Now()}
+	blob, err := json.MarshalIndent(card, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(Dir(dataDir), cardFile), blob, 0o644)
+}
+
+// ReadCard reports what is installed. The zero Card means "nothing recorded",
+// which is what a model put there by hand looks like.
+func ReadCard(dataDir string) Card {
+	var card Card
+	blob, err := os.ReadFile(filepath.Join(Dir(dataDir), cardFile))
+	if err != nil {
+		return card
+	}
+	_ = json.Unmarshal(blob, &card)
+	return card
 }
 
 func download(ctx context.Context, client *http.Client, url, dst, name string, progress Progress) error {

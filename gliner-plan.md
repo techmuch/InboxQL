@@ -441,8 +441,18 @@ invalidate a mailbox.
 
 **The source stays `llm`.** The three sources are ordered by *authority*, and a
 span result has exactly an LLM result's authority: below a human, above
-nothing. Provenance lives in `annotations.model`, which already records it. A
-fourth value would have been a schema change that bought nothing.
+nothing. Provenance lives in `annotations.model`, which already records it — and
+had to be made worth recording: the first version wrote `gliner (gliner)`,
+which identifies nothing. An install now writes a card beside the weights, and
+every record says which ones produced it:
+
+```
+gliner onnx-community/gliner_base@bc87c9602a58
+```
+
+A model placed in the directory by hand reports `gliner (unrecorded)` rather
+than a confident name that means nothing, and `iql gliner status` says so in
+yellow.
 
 **Offsets are stored against a named field.** The model is shown
 `subject + "\n\n" + body`, so its offsets index a string nothing else holds.

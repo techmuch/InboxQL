@@ -93,18 +93,30 @@ func glinerStatus(ctx *Context) error {
 			size += st.Size()
 		}
 	}
-	digest, _ := gliner.Digest(ctx.DataDir, "model.onnx")
+	// From the card rather than hashed again: it was recorded at install and
+	// cannot have changed without the file changing, and hashing 750 MB to
+	// print one line is not worth the wait.
+	card := gliner.ReadCard(ctx.DataDir)
 
 	if ctx.JSON {
 		return ctx.EmitJSON(map[string]any{
-			"installed": true, "dir": dir, "bytes": size, "digest": digest,
+			"installed": true, "dir": dir, "bytes": size,
+			"repo": card.Repo, "digest": card.Digest, "installedAt": card.Installed,
 		})
 	}
 	ctx.Printf("Span-extraction model installed.\n")
 	ctx.Printf("  %-10s %s\n", p.Dim("where"), dir)
 	ctx.Printf("  %-10s %s\n", p.Dim("size"), humanBytes(size))
-	if digest != "" {
-		ctx.Printf("  %-10s %s\n", p.Dim("digest"), digest[:16])
+	if card.Repo != "" {
+		ctx.Printf("  %-10s %s\n", p.Dim("model"), card.Repo)
+	}
+	if card.Digest != "" {
+		ctx.Printf("  %-10s %s\n", p.Dim("digest"), card.Digest[:16])
+	} else {
+		// Placed by hand rather than installed. It may work perfectly; it just
+		// cannot be traced, and every annotation it produces will say so.
+		ctx.Printf("  %-10s %s\n", p.Dim("digest"),
+			p.Yellow("unrecorded — this model was not put here by `iql gliner install`"))
 	}
 	ctx.Printf("%s\n", p.Dim("Use it with `iql annotate create <name> --kind extract --engine gliner`."))
 	return nil

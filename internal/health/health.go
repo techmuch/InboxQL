@@ -40,10 +40,11 @@ const (
 	JobEmbed       = "embed-attachments"
 	JobReindex     = "reindex"
 	JobGLiNER      = "gliner-install"
+	JobAnnotators  = "annotators"
 )
 
 // Jobs lists every kind, for validating a request.
-var Jobs = []string{JobAttachments, JobText, JobOCR, JobEmbed, JobReindex, JobGLiNER}
+var Jobs = []string{JobAttachments, JobText, JobOCR, JobEmbed, JobReindex, JobGLiNER, JobAnnotators}
 
 // Status is the outcome of a single check.
 type Status string

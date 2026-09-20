@@ -15,6 +15,8 @@ import (
 	"github.com/user/inboxql/internal/account"
 	"github.com/user/inboxql/internal/auth"
 	"github.com/user/inboxql/internal/embed"
+	"github.com/user/inboxql/internal/health"
+	"github.com/user/inboxql/internal/maintenance"
 	"github.com/user/inboxql/internal/message"
 	"github.com/user/inboxql/internal/query"
 	"github.com/user/inboxql/internal/store"
@@ -389,7 +391,19 @@ func handleAccountSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go syncManager.StartSync(acc)
+	go func() {
+		syncManager.StartSync(acc)
+		// New mail has landed, so anything asking for after-sync now has
+		// something to read. Started as a job rather than run here: it takes
+		// minutes, and the maintenance surface is what can show progress and
+		// be told to stop.
+		//
+		// A failure to start is not worth reporting — it means a sweep is
+		// already running, which is the outcome this wanted anyway.
+		_, _ = maintenanceJobs().Start(health.JobAnnotators, maintenance.Options{
+			Profile: store.TriggerAfterSync,
+		})
+	}()
 
 	w.WriteHeader(http.StatusAccepted)
 	fmt.Fprint(w, "Sync started")

@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"strings"
 
 	"github.com/user/inboxql/internal/annotate"
@@ -187,4 +189,125 @@ func listStarters(ctx *Context, only []string) error {
 			"about 0.6 a span extractor asked for reference numbers starts offering\n"+
 			"card-shaped strings it found on the page."))
 	return nil
+}
+
+// annotateSweep runs everything waiting on a trigger.
+//
+// The manual face of what a trigger does automatically, so the behaviour can
+// be seen and tested without waiting for a sync or a timer.
+func annotateSweep(ctx *Context, args []string) error {
+	fs := flag.NewFlagSet("annotate sweep", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	when := fs.String("trigger", store.TriggerAfterSync, "which trigger to honour")
+	dryRun := fs.Bool("dry-run", false, "report what would run and do nothing")
+	if err := parseArgs(fs, args); err != nil {
+		return Fail(ExitUsage, "invalid flags")
+	}
+	if !store.ValidTrigger(*when) {
+		return Fail(ExitUsage, "--trigger must be one of: %s", strings.Join(store.Triggers, ", "))
+	}
+
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	due, err := annotate.Due(*when)
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+
+	p := ctx.Printer()
+	if len(due) == 0 {
+		if ctx.JSON {
+			return ctx.EmitJSON(map[string]any{"trigger": *when, "due": []string{}})
+		}
+		ctx.Printf("Nothing is waiting on %s.\n", *when)
+		return nil
+	}
+
+	if *dryRun {
+		type row struct {
+			Name    string `json:"name"`
+			Engine  string `json:"engine"`
+			Scope   string `json:"scope,omitempty"`
+			Pending int64  `json:"pending"`
+		}
+		var rows []row
+		for _, a := range due {
+			r := row{Name: a.Name, Engine: a.Engine, Scope: a.Scope}
+			if pr, err := store.Progress(a, a.Scope); err == nil {
+				r.Pending = pr.Total - pr.Evaluated
+			}
+			rows = append(rows, r)
+		}
+		if ctx.JSON {
+			return ctx.EmitJSON(map[string]any{"trigger": *when, "due": rows})
+		}
+		ctx.Printf("%s would run:\n", *when)
+		for _, r := range rows {
+			ctx.Printf("  %-12s %-7s %s\n", r.Name, r.Engine,
+				count(r.Pending, "message", "messages"))
+			if r.Scope != "" {
+				ctx.Printf("    %s %s\n", p.Dim("scope"), r.Scope)
+			}
+		}
+		// A pass is capped on purpose; saying so stops "it did not finish"
+		// being read as a failure.
+		ctx.Printf("%s\n", p.Dim(fmt.Sprintf(
+			"At most %d messages per annotator per pass. The rest stay pending.",
+			annotate.TriggeredLimit)))
+		return nil
+	}
+
+	out, err := annotate.Sweep(context.Background(), *when, ctx.DataDir,
+		func(name string, done, total int64) {
+			if !ctx.JSON && total > 0 {
+				p.Printf("\r  %s %s %d/%d", p.Dim("running"), name, done, total)
+			}
+		})
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	if ctx.JSON {
+		return ctx.EmitJSON(out)
+	}
+
+	ctx.Printf("\r%-48s\n", "")
+	for _, o := range out.Ran {
+		ctx.Printf("  %-12s evaluated %d, %d record(s)\n", o.Annotator, o.Evaluated, o.Records)
+	}
+	for _, f := range out.Failed {
+		ctx.Printf("  %s %s\n", p.Yellow("failed"), f)
+	}
+	if out.Remaining > 0 {
+		ctx.Printf("%s\n", p.Dim(fmt.Sprintf(
+			"%d still pending — a pass is capped at %d each; run it again.",
+			out.Remaining, annotate.TriggeredLimit)))
+	}
+	ctx.Printf("%s\n", p.Dim("done in "+out.Duration))
+	return nil
+}
+
+// reportWaitingAnnotators says what a sync has left for the annotators.
+//
+// Said, not done. `iql account sync` is documented as synchronous and safe in
+// a cron job; silently gaining twenty minutes of span extraction would make
+// that false. The UI starts the job instead, because it can show progress and
+// offer to stop — see the after-sync trigger in the maintenance panel.
+func reportWaitingAnnotators(ctx *Context) {
+	due, err := annotate.Due(store.TriggerAfterSync)
+	if err != nil || len(due) == 0 {
+		return
+	}
+	names := make([]string, 0, len(due))
+	for _, a := range due {
+		names = append(names, a.Name)
+	}
+	p := ctx.Printer()
+	ctx.Printf("%s\n", p.Dim(fmt.Sprintf(
+		"%s waiting on after-sync: %s",
+		count(int64(len(due)), "annotator is", "annotators are"),
+		strings.Join(names, ", "))))
+	ctx.Printf("%s\n", p.Dim("  iql annotate sweep"))
 }

@@ -347,6 +347,8 @@ func (m *Manager) workerFor(kind string) (worker, error) {
 		return runEmbed, nil
 	case health.JobGLiNER:
 		return runGLiNERInstall, nil
+	case health.JobAnnotators:
+		return runAnnotators, nil
 	case health.JobReindex:
 		return runReindex, nil
 	}

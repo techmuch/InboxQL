@@ -125,6 +125,59 @@ machinery the maintenance panel already exposes.
 
 ---
 
+---
+
+# Built, 20 September 2026
+
+All three phases, verified against the live mailbox.
+
+## Phase 1 — run from the viewer
+
+`GET /api/messages/{id}/annotators` answers "which of these has not seen this
+message", which is the three-valued status and nothing more. The Values tab
+offers those, says `~20s` before it is pressed, and names the annotator while
+it works.
+
+Opened a scanned Metro receipt no annotator had seen, pressed `receipts`,
+waited eight seconds, got 11 marks — every one of them from inside the
+attached PDF, the body being only "Created and shared using Adobe Scan".
+
+**A flaw caught in the wiring:** the Values tab appeared only when there were
+already marks, which hid the one control that could produce the first ones.
+
+## Phase 2 — starters
+
+Eleven, five of them free rule labels gating six span extractors. Measured
+here: the labels evaluated all 188 messages instantly and matched 34, 7, 9, 1
+and 9; `bills` then had **7 messages to read rather than 188**, and found 30
+records in them.
+
+Scope moved onto the annotator (schema v31), because a starter that has to be
+told its own scope every time is not a starter — and because a triggered run
+has nobody to pass a flag.
+
+**Two things the listing had to be told to say.** A rule matching nothing is
+not worth installing, so each reports its reach — which caught `shipping`
+matching zero until its rule learned "pickup". And an extractor gated by a
+label that has not run matches nothing *yet*, which read as "this finds
+nothing" when it meant "nobody has asked the gate".
+
+## Phase 3 — triggers
+
+`Due` is the whole idea: the annotators that asked for this trigger **and have
+something pending**. One with nothing waiting is skipped, because a job that
+evaluates nothing is noise in every progress bar it touches.
+
+Proved end to end through the API: a sync returned 202, the after-sync job
+started on its own, and `bookings` read its 9 scoped messages and wrote 47
+records — all 47 resolving to their stored value at their own offsets, across
+subject, body and attachment.
+
+**The split on where it fires.** The UI starts a job, because it can show
+progress and be stopped. `iql account sync` only *says* what is waiting: it is
+documented as synchronous and safe in a cron job, and silently gaining twenty
+minutes of span extraction would make that false.
+
 ## Not doing
 
 **A trigger language.** "Run when a message matches X and the sender is Y" is

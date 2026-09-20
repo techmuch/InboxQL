@@ -358,6 +358,7 @@ func accountSync(ctx *Context, args []string) error {
 	}
 
 	ctx.Printf("Sync %s: %s\n", updated.ID, updated.LastSyncStatus)
+	reportWaitingAnnotators(ctx)
 	if updated.LastSyncError != "" {
 		ctx.Printf("  %s\n", updated.LastSyncError)
 	}

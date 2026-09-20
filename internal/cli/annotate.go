@@ -33,6 +33,7 @@ are the same mechanism, so they version, re-run and query the same way.
   plan      report what a run would do, without doing it
   correct   record a human ruling, which outranks the machine
   starters  a pack of annotators worth starting from
+  sweep     run everything waiting on a trigger
   probe     define, run and measure an annotator in one go
   embed     compute message vectors with an embedding profile
 
@@ -125,6 +126,8 @@ func runAnnotate(ctx *Context, args []string) error {
 		return annotatePlan(ctx, rest)
 	case "starters":
 		return annotateStarters(ctx, rest)
+	case "sweep":
+		return annotateSweep(ctx, rest)
 	case "correct":
 		return annotateCorrect(ctx, rest)
 	case "embed":
@@ -232,6 +235,12 @@ func annotateShow(ctx *Context, args []string) error {
 		ctx.Printf("  %-14s %s\n", p.Dim("labels"), strings.Join(a.Labels(), ", "))
 		ctx.Printf("  %-14s %s\n", p.Dim("runs"), "on this machine")
 	}
+	if a.Scope != "" {
+		ctx.Printf("  %-14s %s\n", p.Dim("scope"), a.Scope)
+	}
+	if a.Trigger != "" && a.Trigger != store.TriggerManual {
+		ctx.Printf("  %-14s %s\n", p.Dim("trigger"), a.Trigger)
+	}
 	return nil
 }
 
@@ -251,6 +260,8 @@ func annotateCreate(ctx *Context, args []string) error {
 	profile := fs.String("profile", "", "model profile to run against; default: the default profile")
 	model := fs.String("model", "", "override the profile's model, on the same gateway")
 	allowRemote := fs.Bool("allow-remote", false, "consent to sending bodies to a remote provider")
+	scope := fs.String("scope", "", "narrow what this runs over; remembered on the annotator")
+	trigger := fs.String("trigger", store.TriggerManual, "when to run: manual, after-sync or daily")
 	if err := parseArgs(fs, rest); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -269,6 +280,16 @@ func annotateCreate(ctx *Context, args []string) error {
 	// A span extractor finds values in the text. It has no way to answer a
 	// yes-or-no question about a message, because the only thing it can
 	// return is a piece of that message.
+	if !store.ValidTrigger(*trigger) {
+		return Fail(ExitUsage, "--trigger must be one of: %s", strings.Join(store.Triggers, ", "))
+	}
+	// A scope is a query, so a typo is caught here rather than becoming an
+	// annotator that silently runs over nothing.
+	if *scope != "" {
+		if err := store.ValidateQuery(*scope); err != nil {
+			return Fail(ExitUsage, "--scope is not a valid query: %v", err)
+		}
+	}
 	if *kind == store.KindLabel && *engine == store.EngineGLiNER {
 		return Fail(ExitUsage,
 			"a span extractor pulls values out of a message; it cannot label one.\n"+
@@ -341,6 +362,7 @@ func annotateCreate(ctx *Context, args []string) error {
 		Name: name, Kind: *kind, Engine: *engine,
 		Instructions: text, SchemaJSON: schemaJSON,
 		Profile: *profile, Model: *model, AllowRemote: *allowRemote,
+		Scope: *scope, Trigger: *trigger,
 	}
 	if err := store.SaveAnnotator(a); err != nil {
 		return Fail(ExitError, "%v", err)

@@ -37,9 +37,16 @@ func checkGLiNER(rep *Report, dataDir string) {
 			fmt.Sprintf("installed; %s can run", countOf(len(wanting), "annotator", "annotators")))
 		return
 	}
+	// "1 annotator needs it" / "2 annotators need it": the verb has to agree
+	// with the count as well as the noun.
+	needs := "need"
+	if len(wanting) == 1 {
+		needs = "needs"
+	}
 	rep.addJob("span extraction model", StatusFail,
-		fmt.Sprintf("%s need it and it is not installed: %s",
-			countOf(len(wanting), "annotator", "annotators"), strings.Join(wanting, ", ")),
+		fmt.Sprintf("%s %s it and it is not installed: %s",
+			countOf(len(wanting), "annotator", "annotators"), needs,
+			strings.Join(wanting, ", ")),
 		"iql gliner install", JobGLiNER)
 }
 

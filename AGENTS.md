@@ -426,6 +426,56 @@ ratio (`toRatio`), and a 24-hour histogram of incoming messages.
 
 ---
 
+## `in:attachments` — files are their own kind
+
+A file is an entity, and the entity is the **bytes**, not the arrival. The same
+attachment sent to five people is **one** file with five occurrences, so a
+listing of files does not repeat it and `messages>1` finds the ones that went
+round.
+
+```
+iql --json query "in:attachments filetype:pdf larger:1mb"
+iql --json query "in:attachments content:invoice from:*@acme.com"
+iql --json query "in:attachments is:shared | count by from"
+```
+
+| Term | Matches |
+|---|---|
+| `filename:` `file:` `name:` | the name it arrived under — *any* of them |
+| `filetype:` `type:` `mime:` | `pdf image photo audio video doc sheet slides`, or a MIME prefix |
+| `content:` `inside:` | words **inside** the file, once it has been read |
+| `size:` `larger:` `smaller:` | the file's own size |
+| `messages:` | how many messages carried it — `messages>1` is a circulated document |
+| `id:` | the content hash; a prefix is enough |
+| `similar:<hash>` | files near it in meaning, once embedded |
+| `is:` | `stored missing inline attached shared read unread scanned searchable` |
+| `has:text` | something was extracted from it |
+
+**Any message field also works** and asks about the mail the file arrived on:
+`in:attachments from:*@acme.com after:7d` is "files that came from Acme last
+week". Over *every* occurrence — a document that arrived from two people is
+from both.
+
+A bare word searches the filename, the file's text, and the carrying message,
+because nothing distinguishes which was meant.
+
+### The states that look like absence
+
+Three separate silences, and they are different answers:
+
+```
+is:unread     nobody has looked inside this file yet
+is:scanned    read, and it holds no text — an image of a page. iql ocr reads these
+is:missing    recorded, but the bytes are not on disk
+```
+
+A mailbox where nothing has been extracted returns nothing for `content:`, and
+that means *nobody has read them*, not *no file says that*. `iql doctor` says
+which, and the fix is `iql maintenance attachments` then
+`iql maintenance text`.
+
+---
+
 ## `annotate` — labels and extracted data
 
 An annotator is a named, versioned instruction applied to messages. A **label**
@@ -439,12 +489,75 @@ iql --json annotate plan <name> [--scope <query>]
 iql --json annotate run  <name> [--scope <query>] [--limit n] [--dry-run]
 ```
 
-Two engines:
+Three engines:
 
 - **`rule`** — the instruction is a query expression. Evaluated by the database
   in one pass, deterministic, no provider needed. Prefer this whenever the
   question can be asked as a query.
 - **`llm`** — the instruction is a prompt, evaluated one message at a time.
+- **`gliner`** — the instruction is a set of labels, and the answer is spans of
+  the message itself. Extractors only. Runs on this machine.
+
+### Which engine to extract with
+
+**Prefer `gliner` over `llm` for extraction.** An LLM composes its answer, so
+it can return a value that is not in the message. Asked for five fields on an
+order confirmation, a local model returned
+
+```json
+{"amount":"$675.00","order number":"109870",
+ "due date":"N/A","invoice number":"N/A","account number":"N/A"}
+```
+
+at confidence 1.0. Three of those are fabrications, and
+`extract:x.due_date` matches a record whose due date is the string `"N/A"`. A
+span model has no way to do that: the only thing it can return is a pair of
+offsets, so every value is a substring of the message.
+
+Reach for `llm` when the field needs *understanding* rather than *locating* —
+"the sentiment of this complaint", "what the sender is actually asking for" —
+because a span model knows nothing about a field beyond the words of its name.
+
+A span extractor also:
+
+- **cannot label.** `--kind label --engine gliner` is refused.
+- **takes its labels from the schema's field names.** There is no separate
+  label list, and changing the schema bumps the version, because it is a
+  different question.
+- **scores at most 12 fields at once.** Split a wider schema into two
+  annotators, which also lets them re-run separately.
+- **reads the first ~1300 words** of a message and stops. Long threads and
+  marketing mail are read in part.
+- **stores offsets.** Each record carries the value, plus `field`
+  (`"subject"` or `"body"`) and byte offsets into it. Byte offsets, not
+  character offsets — mail is full of things like the narrow no-break space in
+  `9:50 PM`, and indexing by character lands a byte or two short.
+- **carries a real confidence per record**, which is that span's own score
+  rather than one number the model volunteered about its whole reply.
+
+### The model it needs
+
+`gliner` needs weights on disk, which are not in the binary:
+
+```
+iql --json gliner status      installed or not, and which model
+iql gliner install            download (~800MB) and prepare, once
+```
+
+`annotate run` on a `gliner` annotator with no model exits **5** and names the
+command. `iql doctor` reports it as a failure, but only once an annotator
+actually asks for the engine — a mailbox with no span extractors is not
+missing anything.
+
+**It sends nothing anywhere.** The model runs in this process; the one network
+request the feature ever makes is the download above, which is checked against
+the checksum the repository publishes. So unlike an `llm` annotator, there is
+no consent question and no endpoint to warn the user about. Say so plainly if
+they ask — this is the extractor that does not involve a third party.
+
+Budget roughly **15–20 seconds per message** on a laptop CPU, against about 40
+for a local generative model. Scope the first run rather than starting on a
+whole mailbox.
 
 ### Labels are three-valued, and this will trip you up
 
@@ -563,7 +676,9 @@ You will not usually need these, but they are available and all support
 
 `init` (prepare a data directory), `doctor` (health checks, non-zero on
 failure), `account` (add/list/remove/verify/sync), `user`, `vault`
-(status/rotate), `llm` (status/configure/test/disable), `maintenance`,
+(status/rotate), `llm` (status/configure/test/disable), `maintenance`
+(attachments/text/reindex), `ocr` (read scans with a vision model),
+`gliner` (status/install/remove — the span-extraction model),
 `backup` / `restore`, `export`, `version`, `start`.
 
 Two to avoid unless explicitly asked: `account remove` deletes every stored
@@ -630,24 +745,33 @@ finished, so it is safe in a script. It can take a while on a large mailbox.
 
 Do not promise the user any of this; none of it exists:
 
-- Semantic or vector search, embeddings, relevance ranking. `iql query` uses an
-  FTS5 index for token and phrase matching, which is lexical: it will not find
-  "billing" from "invoice". `search` remains plain `LIKE`.
+- Relevance ranking, and semantic search *by default*. `iql query` uses an
+  FTS5 index for token and phrase matching, which is lexical: a search for
+  "invoice" will not find "billing". `search` remains plain `LIKE`.
+
+  The exception is `similar:<id>`, which does compare meaning — but only
+  between things that have been embedded, and only after
+  `iql annotate embed` has run with an embedding profile configured. It
+  answers "what else is like this one", not "find me things about billing".
+  Nothing is embedded until somebody asks, so `similar:` on a fresh mailbox
+  returning nothing means *not embedded*, not *nothing alike*.
 - Topic modelling or clustering. The dashboard's "topics" is still the first
   word of the subject line. An LLM annotator is the way to get real topics, and
   it has to be run first.
 - Sentiment analysis, except as an annotator someone defines.
-- Attachment extraction over IMAP. Sync stores bodies only. `iql import
-  --attachments` does extract and store attachments from a desktop client, and
-  `import scan --deep` counts them, but a synced mailbox has none.
+- Reading a file InboxQL cannot parse. Text is extracted from PDFs and plain
+  formats; a scan holds no text layer and needs `iql ocr`, and some formats
+  have no reader at all. `is:scanned` and `is:unread` say which is which.
 - Agent execution. The Visual AI Agent Builder in the web UI saves graph JSON
   and cannot run it — there is no Eino runtime.
 - Reading mail as HTML. `body` is the plain-text part; `htmlBody` exists in the
   database but `search` and `read` return plain text. Extractors read
   `htmlBody` directly, because the structure behind a chart is the data.
-- Running an annotator over HTTP. `/api/annotators` lists them and their
-  coverage; defining and running one is CLI-only, because a run can send the
-  mailbox to a provider and that decision belongs at a terminal.
+- Defining or running an annotator **without a person present**. The API can
+  do both now — `POST /api/annotators` and `/api/annotators/run`, which the
+  web UI uses — but a run on the `llm` engine can send a mailbox to a
+  provider, so consent is still recorded per annotator and still refused
+  without it. Surface the queue; let the user rule.
 - Ingesting anything but mail. Any source renderable as RFC822 can enter
   through `import`, but there is no calendar, webhook or chat connector.
 

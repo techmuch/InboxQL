@@ -94,6 +94,92 @@ func registerSpanRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/messages/{id}/annotations", handleMessageAnnotations)
 	mux.HandleFunc("PUT /api/messages/{id}/annotations/{annotator}", handleCorrectSpans)
 	mux.HandleFunc("DELETE /api/messages/{id}/annotations/{annotator}", handleClearSpans)
+	mux.HandleFunc("GET /api/messages/{id}/annotators", handleMessageAnnotators)
+}
+
+// Offer is one annotator and what it has to say about this message.
+type Offer struct {
+	Name   string `json:"name"`
+	Kind   string `json:"kind"`
+	Engine string `json:"engine"`
+	// Evaluated is false when this annotator has never seen this message at
+	// its current version — the only ones worth offering to run.
+	Evaluated bool `json:"evaluated"`
+	// Records is how many values it produced here, when it has run.
+	Records int `json:"records"`
+	// Ruled is true when a person has corrected this message, in which case a
+	// re-run will not touch it and saying so is better than a button that
+	// appears to do nothing.
+	Ruled bool `json:"ruled"`
+	// Slow marks an engine measured in tens of seconds per message, so the
+	// control can say so before it is pressed rather than after.
+	Slow bool `json:"slow"`
+}
+
+// handleMessageAnnotators says which annotators could be run here.
+//
+// The viewer cannot otherwise make the offer: "has this annotator seen this
+// message" is the three-valued status, and a missing row means never
+// evaluated — which is exactly the set worth offering.
+func handleMessageAnnotators(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	anns, err := store.ListAnnotations(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	list, err := store.ListAnnotators()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, offersFor(list, anns))
+}
+
+// offersFor works out what each annotator has to say about one message.
+//
+// A missing row is the answer that matters: the three-valued status means an
+// annotator that has never seen this message has nothing stored for it, and
+// that is exactly the set worth offering to run.
+func offersFor(list []*store.Annotator, anns []*store.Annotation) []Offer {
+	type seen struct {
+		records int
+		ruled   bool
+	}
+	byAnnotator := map[string]*seen{}
+	for _, a := range anns {
+		s := byAnnotator[a.AnnotatorID]
+		if s == nil {
+			s = &seen{}
+			byAnnotator[a.AnnotatorID] = s
+		}
+		if a.Status == store.StatusOK {
+			s.records++
+		}
+		if a.Source == store.SourceHuman {
+			s.ruled = true
+		}
+	}
+
+	out := []Offer{}
+	for _, a := range list {
+		o := Offer{
+			Name: a.Name, Kind: a.Kind, Engine: a.Engine,
+			// A span run is fifteen to twenty seconds on one message and an
+			// LLM run about forty. Either is long enough that a control has
+			// to say so before it is pressed.
+			Slow: a.Engine != store.EngineRule,
+		}
+		// Evaluated even when it found nothing: "looked, nothing here" is an
+		// answer, and re-offering it would invite the same wait for the same
+		// result.
+		if s := byAnnotator[a.ID]; s != nil {
+			o.Evaluated, o.Records, o.Ruled = true, s.records, s.ruled
+		}
+		out = append(out, o)
+	}
+	return out
 }
 
 // handleCorrectSpans records a person's ruling on what a message contains.

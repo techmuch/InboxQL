@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 /**
  * Extracted values, shown where they were found.
@@ -78,32 +78,24 @@ export const useMessageSpans = (messageId: string | undefined) => {
   const [spans, setSpans] = useState<SpanResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     if (!messageId) {
       setSpans(null);
       return;
     }
-    let cancelled = false;
     setLoading(true);
     fetch(`/api/messages/${encodeURIComponent(messageId)}/annotations`)
       .then(r => (r.ok ? r.json() : null))
-      .then(d => {
-        if (!cancelled) setSpans(d);
-      })
+      .then(setSpans)
       // A message with no annotations is the normal case, not an error. The
       // viewer shows the body either way.
-      .catch(() => {
-        if (!cancelled) setSpans(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => setSpans(null))
+      .finally(() => setLoading(false));
   }, [messageId]);
 
-  return { spans, setSpans, loading };
+  useEffect(reload, [reload]);
+
+  return { spans, setSpans, reload, loading };
 };
 
 /**

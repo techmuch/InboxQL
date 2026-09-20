@@ -7,6 +7,7 @@ import {
 import { ContactCard } from './ContactCard';
 import { SpanPanel } from './SpanPanel';
 import { useMessageSpans } from './MarkedText';
+import { RunAnnotator, useMessageOffers } from './RunAnnotator';
 import { SimilarButton } from './SimilarButton';
 import {
   AttachmentChip, AttachmentViewer, useAttachmentFile,
@@ -119,8 +120,12 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
   const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw' | 'spans'>('html');
   // Fetched alongside the message so the Values tab can say how many there
   // are before it is opened. A message with none is the normal case.
-  const { spans, setSpans } = useMessageSpans(message?.id);
+  const { spans, setSpans, reload: reloadSpans } = useMessageSpans(message?.id);
+  const { offers, reload: reloadOffers } = useMessageOffers(message?.id);
   const markCount = spans?.fields.reduce((n, f) => n + f.marks, 0) ?? 0;
+  // The tab appears when there is anything to show OR anything to run: a tab
+  // gated on marks alone would hide the button that produces the first ones.
+  const hasValues = markCount > 0 || offers.length > 0;
   const [copied, setCopied] = useState(false);
 
   // Set default view mode based on message content
@@ -306,7 +311,7 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
             <FileText className="w-3.5 h-3.5" />
             <span>Text</span>
           </button>
-          {markCount > 0 && (
+          {hasValues && (
             <button
               type="button"
               onClick={() => setViewMode('spans')}
@@ -508,7 +513,22 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
           </div>
         )}
 
-        {viewMode === 'spans' && <SpanPanel spans={spans} onCorrected={setSpans} />}
+        {viewMode === 'spans' && (
+          <SpanPanel
+            spans={spans}
+            onCorrected={setSpans}
+            runner={
+              message?.id ? (
+                <RunAnnotator
+                  messageId={message.id}
+                  offers={offers}
+                  reload={reloadOffers}
+                  onFinished={reloadSpans}
+                />
+              ) : null
+            }
+          />
+        )}
 
         {viewMode === 'raw' && (
           <div className="mt-2 space-y-3">

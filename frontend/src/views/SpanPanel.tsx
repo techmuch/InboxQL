@@ -36,9 +36,12 @@ const DEFAULT_FLOOR = 0.6;
 export const SpanPanel = ({
   spans,
   onCorrected,
+  runner,
 }: {
   spans: SpanResponse | null;
   onCorrected?: (next: SpanResponse) => void;
+  /** The control for running an annotator here; rendered above the marks. */
+  runner?: React.ReactNode;
 }) => {
   const [floor, setFloor] = useState(DEFAULT_FLOOR);
   // Which mark is being ruled on, if any. One at a time: a correction
@@ -71,9 +74,13 @@ export const SpanPanel = ({
     }
   };
 
-  if (!spans) return null;
+  if (!spans) return runner ? <div className="mt-2">{runner}</div> : null;
   const { total, kept } = markTotals(spans.fields, floor);
-  if (total === 0 && spans.other.length === 0) return null;
+  // Nothing found yet is not nothing to show: the run control is the point of
+  // opening this tab on a message no annotator has reached.
+  if (total === 0 && spans.other.length === 0) {
+    return runner ? <div className="mt-2">{runner}</div> : null;
+  }
 
   const counts = countByLabel(spans.fields, floor);
   // Every part that has something in it. An attachment with no marks is not
@@ -83,6 +90,7 @@ export const SpanPanel = ({
 
   return (
     <div className="mt-2 space-y-3">
+      {runner}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-sky-500/25 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-700 dark:text-sky-300">
         <span className="flex items-center gap-1.5 font-medium">
           <Tag className="h-3.5 w-3.5" />

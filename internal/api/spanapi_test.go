@@ -178,3 +178,73 @@ func TestSegmentMarshalsWithoutEmptyFields(t *testing.T) {
 		t.Errorf("an unmarked run serialised as %s", blob)
 	}
 }
+
+// The offer is driven by the three-valued status: a missing row means the
+// annotator has never seen this message, which is the only set worth offering
+// to run. One that looked and found nothing is not re-offered — that is an
+// answer, and re-running would buy the same wait for the same result.
+func TestOffersFromTheThreeValuedStatus(t *testing.T) {
+	list := []*store.Annotator{
+		{ID: "a", Name: "receipts", Kind: store.KindExtract, Engine: store.EngineGLiNER},
+		{ID: "b", Name: "money", Kind: store.KindLabel, Engine: store.EngineRule},
+		{ID: "c", Name: "unseen", Kind: store.KindExtract, Engine: store.EngineGLiNER},
+	}
+	conf := 0.8
+	anns := []*store.Annotation{
+		{AnnotatorID: "a", Status: store.StatusOK, Source: store.SourceLLM, Confidence: &conf},
+		{AnnotatorID: "a", Status: store.StatusOK, Source: store.SourceLLM, Confidence: &conf},
+		{AnnotatorID: "b", Status: store.StatusEmpty, Source: store.SourceRule},
+	}
+
+	got := offersFor(list, anns)
+	if len(got) != 3 {
+		t.Fatalf("got %d offers, want 3", len(got))
+	}
+
+	byName := map[string]Offer{}
+	for _, o := range got {
+		byName[o.Name] = o
+	}
+
+	if o := byName["receipts"]; !o.Evaluated || o.Records != 2 {
+		t.Errorf("receipts = %+v, want evaluated with 2 records", o)
+	}
+	// Looked and found nothing is still evaluated.
+	if o := byName["money"]; !o.Evaluated || o.Records != 0 {
+		t.Errorf("money = %+v, want evaluated with no records", o)
+	}
+	if o := byName["unseen"]; o.Evaluated {
+		t.Errorf("unseen = %+v, want never evaluated", o)
+	}
+}
+
+// A control that says "~20s" before it is pressed is the difference between a
+// slow feature and a broken one.
+func TestOffersMarkTheSlowEngines(t *testing.T) {
+	got := offersFor([]*store.Annotator{
+		{ID: "a", Name: "rule", Engine: store.EngineRule},
+		{ID: "b", Name: "span", Engine: store.EngineGLiNER},
+		{ID: "c", Name: "prompt", Engine: store.EngineLLM},
+	}, nil)
+
+	want := map[string]bool{"rule": false, "span": true, "prompt": true}
+	for _, o := range got {
+		if o.Slow != want[o.Name] {
+			t.Errorf("%s slow = %v, want %v", o.Name, o.Slow, want[o.Name])
+		}
+	}
+}
+
+// A human ruling means a re-run will not touch this message, so the control
+// has to say so rather than offering a button that does nothing.
+func TestOffersReportAHumanRuling(t *testing.T) {
+	got := offersFor(
+		[]*store.Annotator{{ID: "a", Name: "receipts", Engine: store.EngineGLiNER}},
+		[]*store.Annotation{
+			{AnnotatorID: "a", Status: store.StatusOK, Source: store.SourceHuman},
+		})
+
+	if len(got) != 1 || !got[0].Ruled {
+		t.Errorf("got %+v, want a ruling reported", got)
+	}
+}

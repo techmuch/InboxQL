@@ -487,7 +487,50 @@ iql --json annotate list
 iql --json annotate show <name>
 iql --json annotate plan <name> [--scope <query>]
 iql --json annotate run  <name> [--scope <query>] [--limit n] [--dry-run]
+iql --json annotate starters [--install] [--only a,b]
+iql --json annotate sweep [--trigger after-sync|daily] [--dry-run]
 ```
+
+### Somewhere to start
+
+`annotate starters` is a pack of eleven worth beginning from, meant to be
+edited. It reports how much of *this* mailbox each one reaches, so a rule that
+matches nothing here is visible before it is installed.
+
+**The mix is the lesson.** Every span extractor ships paired with a cheap rule
+label that gates it — `receipts` is scoped to `label:money`, which is a query
+and therefore free. Copy that pattern rather than making everything an
+extractor: the label narrows a 20-second-per-message job to the mail that
+could possibly match.
+
+Creating them runs nothing. They arrive with coverage at zero.
+
+### Scope lives on the annotator
+
+`--scope` still wins when given, but an annotator remembers its own, so
+`iql annotate run receipts` covers `label:money` without being told. That is
+also what a triggered run reads, since nobody is there to pass a flag.
+
+### Triggers say when, never what
+
+| Trigger | Means |
+|---|---|
+| `manual` | the default: it runs when told |
+| `after-sync` | drain what is pending once new mail has landed |
+| `daily` | drain on a timer |
+
+A trigger is **not a second filter** — scope is the only "what". It is a policy
+for when to drain the queue `PendingMessages` already computes, so an
+annotator with nothing pending is skipped rather than started.
+
+`annotate sweep` runs everything waiting on a trigger, and `--dry-run` reports
+what it would do. A pass is capped at 200 messages per annotator: what is left
+stays pending and the next pass takes it, so a short run is not a failure.
+
+**Over HTTP, a sync starts the sweep as a maintenance job.** `iql account sync`
+does not — it is synchronous and safe in a cron job, and silently gaining
+twenty minutes of extraction would make that false, so it prints what is
+waiting instead.
 
 Three engines:
 

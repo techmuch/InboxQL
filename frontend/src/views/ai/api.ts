@@ -140,7 +140,7 @@ export interface Annotator {
   id: string;
   name: string;
   kind: 'label' | 'extract';
-  engine: 'rule' | 'llm';
+  engine: 'rule' | 'llm' | 'gliner';
   version: number;
   instructions: string;
   schemaJson?: string;

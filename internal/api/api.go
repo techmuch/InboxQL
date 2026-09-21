@@ -217,7 +217,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.60",
+	Version: "0.0.61",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.

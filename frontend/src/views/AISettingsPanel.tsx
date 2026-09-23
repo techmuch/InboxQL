@@ -1,25 +1,31 @@
 import { useState } from 'react';
-import { ArrowUpRight, Cpu, SlidersHorizontal, Tag } from 'lucide-react';
+import { ArrowUpRight, Cpu, Package, SlidersHorizontal, Tag } from 'lucide-react';
 import { Models } from './ai/Models';
 import { Analysis } from './ai/Analysis';
+import { Starters } from './ai/Starters';
 
 /**
  * The AI settings surface.
  *
  * Three kinds of thing used to share one page: a runtime you start and stop,
  * a gateway's credentials, and analysis parameters. They are different
- * decisions on different schedules, so they are different tabs — and the
- * fourth, annotators, is not here at all, because writing and running one is
- * work rather than configuration.
+ * decisions on different schedules, so they are different tabs.
+ *
+ * Starters sits here rather than with the annotators for the same reason:
+ * choosing which of a pack to create is a setup decision made once, while
+ * writing and running an annotator is work, and lives in Tools → Annotators.
  */
 export const AISettingsPanel = () => {
-  const [tab, setTab] = useState<'models' | 'analysis'>('models');
+  const [tab, setTab] = useState<'models' | 'analysis' | 'starters'>('models');
 
   return (
     <div className="animate-in fade-in space-y-6 duration-300">
       <nav className="flex gap-1 border-b border-border" role="tablist">
         <Tab active={tab === 'models'} onClick={() => setTab('models')} icon={<Cpu className="h-3.5 w-3.5" />}>
           Models
+        </Tab>
+        <Tab active={tab === 'starters'} onClick={() => setTab('starters')} icon={<Package className="h-3.5 w-3.5" />}>
+          Starters
         </Tab>
         <Tab active={tab === 'analysis'} onClick={() => setTab('analysis')} icon={<SlidersHorizontal className="h-3.5 w-3.5" />}>
           Analysis
@@ -39,7 +45,7 @@ export const AISettingsPanel = () => {
         </button>
       </nav>
 
-      {tab === 'models' ? <Models /> : <Analysis />}
+      {tab === 'models' ? <Models /> : tab === 'starters' ? <Starters /> : <Analysis />}
     </div>
   );
 };

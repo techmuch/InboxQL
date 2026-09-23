@@ -461,22 +461,44 @@ func listAnnotators(w http.ResponseWriter, r *http.Request) {
 	type row struct {
 		*store.Annotator
 		Progress *store.AnnotatorProgress `json:"progress"`
-		// Scope and ConsentMissing describe what running this would do:
+		// Reach and ConsentMissing describe what running this would do:
 		// whether it sends message bodies off the machine, and whether it is
 		// currently allowed to. Answered per annotator, from its own profile.
-		Scope          string `json:"scope,omitempty"`
+		//
+		// Named "reach" rather than "scope" because the annotator itself now
+		// has a Scope — the query narrowing what it runs over — and an
+		// embedded field of the same name would be silently shadowed here,
+		// hiding it from every caller.
+		Reach          string `json:"reach,omitempty"`
 		Endpoint       string `json:"endpoint,omitempty"`
 		ConsentMissing bool   `json:"consentMissing,omitempty"`
 		// ProfileMissing flags an annotator naming a profile that no longer
 		// exists — a run would fail, and the list is where that should show.
 		ProfileMissing bool `json:"profileMissing,omitempty"`
+		// ScopeBroken flags a scope that no longer compiles, usually because
+		// the label it narrowed to was deleted. The annotator still lists, so
+		// it can be edited; a run would cover the whole mailbox.
+		ScopeBroken bool `json:"scopeBroken,omitempty"`
 	}
 	out := make([]row, 0, len(annotators))
 	for _, a := range annotators {
-		p, err := store.Progress(a, "")
+		// Against its own scope, not the whole mailbox. An extractor gated by
+		// a label has finished when it has read that label's messages, and
+		// reporting "9 / 188" for a job that is complete reads as 5% done.
+		p, err := store.Progress(a, a.Scope)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			// A scope that no longer compiles — the label it named was
+			// deleted, say. Fall back to the whole mailbox and flag it,
+			// because failing the request would take the entire panel down
+			// over one annotator nobody can then edit to fix.
+			p, err = store.Progress(a, "")
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			item := row{Annotator: a, Progress: p, ScopeBroken: true}
+			out = append(out, item)
+			continue
 		}
 		item := row{Annotator: a, Progress: p}
 		if a.Engine == store.EngineLLM {
@@ -484,7 +506,7 @@ func listAnnotators(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				item.ProfileMissing = true
 			} else {
-				item.Scope = cfg.Scope()
+				item.Reach = cfg.Scope()
 				if cfg.IsRemote() {
 					item.Endpoint = cfg.Endpoint
 					item.ConsentMissing = !a.AllowRemote

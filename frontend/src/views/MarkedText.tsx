@@ -86,9 +86,11 @@ export const useMessageSpans = (messageId: string | undefined) => {
     setLoading(true);
     fetch(`/api/messages/${encodeURIComponent(messageId)}/annotations`)
       .then(r => (r.ok ? r.json() : null))
-      .then(setSpans)
-      // A message with no annotations is the normal case, not an error. The
-      // viewer shows the body either way.
+      // Anything that is not a span response is treated as none. The viewer
+      // must render the message whatever this endpoint says: a body nobody
+      // can read because an annotation call returned an unexpected shape is
+      // a worse failure than missing marks.
+      .then(d => setSpans(isSpanResponse(d) ? d : null))
       .catch(() => setSpans(null))
       .finally(() => setLoading(false));
   }, [messageId]);
@@ -97,6 +99,11 @@ export const useMessageSpans = (messageId: string | undefined) => {
 
   return { spans, setSpans, reload, loading };
 };
+
+/** Whether a response is one this can draw. */
+function isSpanResponse(d: unknown): d is SpanResponse {
+  return Boolean(d) && Array.isArray((d as SpanResponse).fields);
+}
 
 /**
  * One field's text with its extracted values marked.
@@ -182,7 +189,7 @@ export function correctionsFrom(fields: MarkedField[], drop?: { field: string; i
   const bytes = (s: string) => new TextEncoder().encode(s).length;
   const out: Correction[] = [];
 
-  for (const f of fields) {
+  for (const f of fields ?? []) {
     let offset = 0;
     f.segments.forEach((s, i) => {
       const len = bytes(s.text);
@@ -204,7 +211,7 @@ export function relabel(
   const bytes = (s: string) => new TextEncoder().encode(s).length;
   const out: Correction[] = [];
 
-  for (const f of fields) {
+  for (const f of fields ?? []) {
     let offset = 0;
     f.segments.forEach((s, i) => {
       const len = bytes(s.text);
@@ -246,7 +253,7 @@ export const SpanLegend = ({
 /** How many marks each label has, at or above the floor. */
 export function countByLabel(fields: MarkedField[], floor: number): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const f of fields) {
+  for (const f of fields ?? []) {
     for (const s of f.segments) {
       if (!s.label) continue;
       if ((s.score ?? 0) < floor) continue;
@@ -260,7 +267,7 @@ export function countByLabel(fields: MarkedField[], floor: number): Record<strin
 export function markTotals(fields: MarkedField[], floor: number): { total: number; kept: number } {
   let total = 0;
   let kept = 0;
-  for (const f of fields) {
+  for (const f of fields ?? []) {
     for (const s of f.segments) {
       if (!s.label) continue;
       total++;

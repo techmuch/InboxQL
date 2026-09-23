@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useAnnotatorJob } from '../ai/useAnnotatorJob';
 import {
   AlertTriangle, Globe, Play, Plus, RefreshCw, Tag, Trash2,
 } from 'lucide-react';
@@ -24,9 +25,16 @@ import { useQueryStore } from '../../lib/filters';
  *
  * # What it deliberately does not do
  *
- * Runs are bounded and synchronous — a batch at a time, with progress in
- * between. Firing a goroutine and drawing a progress bar over a job system
- * that does not exist would look finished and lose work.
+ * A rule run is synchronous, because a pass over a whole mailbox finishes
+ * before a job could report that it started.
+ *
+ * A span or LLM run is not. Up to 200 messages at tens of seconds each is
+ * over an hour, which no request survives — so those go through the
+ * maintenance job system, the one triggers already use, and come back as
+ * progress that moves and a button that stops it.
+ *
+ * This file used to say that drawing a progress bar "over a job system that
+ * does not exist would look finished and lose work". It exists now.
  */
 export const Annotators = () => {
   const [annotators, setAnnotators] = useState<Annotator[]>([]);
@@ -51,18 +59,54 @@ export const Annotators = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  // Which annotator the job belongs to, so its progress is drawn on the right
+  // row rather than at the top of the list.
+  const [runningName, setRunningName] = useState<string | null>(null);
+  const job = useAnnotatorJob(
+    useCallback(() => {
+      load();
+      setRunningName(null);
+    }, [load]),
+  );
+
   const run = async (a: Annotator, dryRun: boolean) => {
-    setBusy(a.name);
-    setNotice(null);
-    try {
-      const out = await runAnnotator(a.name, dryRun ? { dryRun: true } : { limit: 200 });
-      setNotice({ ok: true, text: describeRun(a, out, dryRun) });
-      if (!dryRun) await load();
-    } catch (e) {
-      setNotice({ ok: false, text: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setBusy(null);
+    // A plan is a question, not work: it answers in milliseconds whatever the
+    // engine, so it stays a plain request.
+    if (dryRun) {
+      setBusy(a.name);
+      setNotice(null);
+      try {
+        const out = await runAnnotator(a.name, { dryRun: true });
+        setNotice({ ok: true, text: describeRun(a, out, true) });
+      } catch (e) {
+        setNotice({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      } finally {
+        setBusy(null);
+      }
+      return;
     }
+
+    // A rule pass over a whole mailbox is milliseconds; a span pass is up to
+    // 200 messages at about twenty seconds each. Only the second needs a job,
+    // and giving the first one would add a spinner to work already done.
+    if (a.engine === 'rule') {
+      setBusy(a.name);
+      setNotice(null);
+      try {
+        const out = await runAnnotator(a.name, { limit: 200 });
+        setNotice({ ok: true, text: describeRun(a, out, false) });
+        await load();
+      } catch (e) {
+        setNotice({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      } finally {
+        setBusy(null);
+      }
+      return;
+    }
+
+    setNotice(null);
+    setRunningName(a.name);
+    await job.start(a.name, 200);
   };
 
   if (loading) {
@@ -119,6 +163,8 @@ export const Annotators = () => {
                 busy={busy === a.name}
                 onEdit={() => setEditing(a)}
                 onRun={dry => run(a, dry)}
+                job={runningName === a.name ? job.job : null}
+                onCancel={job.cancel}
                 onDelete={async () => {
                   if (!window.confirm(
                     `Delete "${a.name}" and every result it produced? Messages are untouched.`,
@@ -166,6 +212,8 @@ const AnnotatorCard = ({
   busy,
   onEdit,
   onRun,
+  job,
+  onCancel,
   onDelete,
   onShowResults,
 }: {
@@ -173,6 +221,9 @@ const AnnotatorCard = ({
   busy: boolean;
   onEdit: () => void;
   onRun: (dryRun: boolean) => void;
+  /** The live job for this annotator, when one is running. */
+  job?: { status: string; done: number; total: number; summary?: string; lastError?: string } | null;
+  onCancel?: () => void;
   onDelete: () => void;
   onShowResults: () => void;
 }) => {
@@ -189,10 +240,12 @@ const AnnotatorCard = ({
             v{a.version} · {a.kind} · {a.engine}
             {a.engine === 'llm' && a.profile ? ` · ${a.profile}` : ''}
             {a.engine === 'gliner' ? ' · on this machine' : ''}
+            {a.scope ? ` · ${a.scope}` : ''}
+            {a.trigger && a.trigger !== 'manual' ? ` · ${a.trigger}` : ''}
           </span>
         </button>
 
-        {a.engine === 'llm' && a.scope === 'remote' && (
+        {a.engine === 'llm' && a.reach === 'remote' && (
           <span
             title={a.endpoint}
             className="flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-mono text-amber-600 dark:text-amber-400"
@@ -242,6 +295,36 @@ const AnnotatorCard = ({
 
       <p className="truncate px-4 pb-2 font-mono text-xs text-muted-foreground">{a.instructions}</p>
 
+      {/* A running job, which is a different fact from coverage and so gets
+          its own bar. The coverage one below cannot move while a job runs —
+          it is read from the annotator list, which is only re-read when the
+          job ends — and drawing progress on it would have been the bug this
+          replaced. */}
+      {job && (
+        <div className="flex items-center gap-3 border-t border-primary/30 bg-primary/5 px-4 py-1.5">
+          <div className="h-1 flex-1 bg-muted">
+            <div
+              className="h-1 bg-primary transition-all"
+              style={{ width: `${job.total > 0 ? Math.round((job.done / job.total) * 100) : 0}%` }}
+            />
+          </div>
+          <span className="shrink-0 font-mono text-[11px] tabular-nums">
+            {job.total > 0
+              ? `${job.done.toLocaleString()} / ${job.total.toLocaleString()} read`
+              : 'starting…'}
+          </span>
+          {onCancel && (job.status === 'running' || job.status === 'queued') && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="shrink-0 border border-border px-2 py-0.5 text-[11px] hover:bg-accent/50"
+            >
+              Stop
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Coverage, because an annotator that has only seen a tenth of the
           mailbox gives answers that look complete and are not. */}
       <div className="flex items-center gap-3 border-t border-border/60 px-4 py-1.5">
@@ -253,8 +336,18 @@ const AnnotatorCard = ({
         </div>
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
           {done.toLocaleString()} / {total.toLocaleString()} evaluated
+          {/* Against its own scope, so a gated extractor that has read every
+              message it covers reads as finished rather than as 5% done. */}
+          {a.scope ? ' in scope' : ''}
         </span>
       </div>
+
+      {a.scopeBroken && (
+        <Banner tone="error">
+          Its scope <code className="font-mono">{a.scope}</code> no longer compiles — usually a
+          label that was deleted. A run would cover the whole mailbox; edit it to narrow it again.
+        </Banner>
+      )}
 
       {a.profileMissing && (
         <Banner tone="error">

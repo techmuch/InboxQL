@@ -71,6 +71,7 @@ func handleMaintenanceStart(w http.ResponseWriter, r *http.Request) {
 		Limit       int    `json:"limit"`
 		Redo        bool   `json:"redo"`
 		Profile     string `json:"profile"`
+		Annotator   string `json:"annotator"`
 	}
 	if err := decodeJSON(w, r, &req); err != nil {
 		return
@@ -81,6 +82,7 @@ func handleMaintenanceStart(w http.ResponseWriter, r *http.Request) {
 		Limit:       req.Limit,
 		Redo:        req.Redo,
 		Profile:     req.Profile,
+		Annotator:   req.Annotator,
 	})
 	if err != nil {
 		var running *maintenance.ErrAlreadyRunning

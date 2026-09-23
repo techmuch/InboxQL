@@ -99,6 +99,13 @@ func Router() (http.Handler, error) {
 	registerSpanRoutes(spanMux)
 	mux.Handle("/api/messages/", auth.Middleware(spanMux))
 
+	// The starter pack. Its own routes rather than part of the annotator
+	// surface, because listing one reports what it would reach in this
+	// mailbox — a question about the pack, not about any annotator.
+	starterMux := http.NewServeMux()
+	registerStarterRoutes(starterMux)
+	mux.Handle("/api/starters", auth.Middleware(starterMux))
+
 	// The query language surface; see registerQueryRoutes.
 	//
 	// Mounted route by route rather than under a "/api/" prefix so that adding

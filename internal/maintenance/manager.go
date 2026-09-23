@@ -134,6 +134,12 @@ type Options struct {
 	// Profile names the model profile to embed with. Empty means the default,
 	// which is usually a chat model and so usually wrong — see embedProfile.
 	Profile string
+	// Annotator names one annotator to run, instead of sweeping a trigger.
+	//
+	// A span run is tens of seconds a message, so a UI cannot hold the request
+	// open and watch it; this is how a click becomes something with progress
+	// and a stop button rather than a browser timing out.
+	Annotator string
 }
 
 // Start begins a job, unless one of that kind is already running.

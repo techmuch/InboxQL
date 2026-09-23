@@ -47,7 +47,9 @@ export const useMessageOffers = (messageId: string | undefined) => {
     }
     fetch(`/api/messages/${encodeURIComponent(messageId)}/annotators`)
       .then(r => (r.ok ? r.json() : []))
-      .then(setOffers)
+      // Only a list is usable. Anything else means no offers rather than a
+      // viewer that cannot draw the message it was opened for.
+      .then(d => setOffers(Array.isArray(d) ? d : []))
       .catch(() => setOffers([]));
   }, [messageId]);
 

@@ -148,11 +148,17 @@ export interface Annotator {
   model?: string;
   allowRemote: boolean;
   progress?: { total: number; evaluated: number; ok: number; empty: number };
-  /** What running it would do, answered from its own profile. */
-  scope?: 'local' | 'remote';
+  /** The query narrowing what this runs over, carried on the annotator. */
+  scope?: string;
+  /** When to drain its queue: manual, after-sync or daily. */
+  trigger?: string;
+  /** Whether its model profile is local or remote. */
+  reach?: 'local' | 'remote';
   endpoint?: string;
   consentMissing?: boolean;
   profileMissing?: boolean;
+  /** Its scope no longer compiles; a run would cover everything. */
+  scopeBroken?: boolean;
 }
 
 export const listAnnotators = () => request<Annotator[]>('/api/annotators');

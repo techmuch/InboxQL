@@ -237,8 +237,17 @@ func completeStage(c *Completion, verb string, words []string, token string) {
 		return
 	}
 
-	// `by` is optional sugar and does not change what comes next.
+	// The word under the cursor is still being typed, and it is also the last
+	// of `words` — both are read out of the text before the cursor. Counting
+	// it as committed is why a half-written field never completed: `| sum rec`
+	// looked like a field already chosen and offered buckets instead of
+	// `receipts.amount`.
 	trimmed := words
+	if lower != "" && len(trimmed) > 0 && strings.EqualFold(trimmed[len(trimmed)-1], token) {
+		trimmed = trimmed[:len(trimmed)-1]
+	}
+
+	// `by` is optional sugar and does not change what comes next.
 	if len(trimmed) > 0 && strings.EqualFold(trimmed[len(trimmed)-1], "by") {
 		trimmed = trimmed[:len(trimmed)-1]
 	}
@@ -247,7 +256,7 @@ func completeStage(c *Completion, verb string, words []string, token string) {
 	case "count", "top":
 		if len(trimmed) == 0 {
 			c.Context = ContextGroupKey
-			offerAll(c, GroupKeys, lower, "group")
+			offerGroupKeys(c, lower)
 		}
 	case "sort":
 		if len(trimmed) == 0 {
@@ -258,10 +267,13 @@ func completeStage(c *Completion, verb string, words []string, token string) {
 			offerAll(c, []string{"asc", "desc"}, lower, "direction")
 		}
 	case "series", "sum", "avg", "min", "max":
-		// The field is an extracted one, which only the store knows.
+		// `<annotator>.<field>`, which only the store knows. The whole path,
+		// not just the annotator: the name and the field are one thing, and
+		// offering them in two steps is what the old `| extract x | sum y`
+		// made people do.
 		if len(trimmed) == 0 {
 			c.Context = ContextValue
-			c.ValueSource = ValuesAnnotators
+			c.ValueSource = ValuesExtractPaths
 		} else {
 			c.Context = ContextBucket
 			offerAll(c, Buckets, lower, "bucket")
@@ -274,6 +286,16 @@ func completeStage(c *Completion, verb string, words []string, token string) {
 	default:
 		c.Context = ContextStage
 	}
+}
+
+// offerGroupKeys offers what a `count by` or `top` may group on.
+//
+// Both the built-in keys and `<annotator>.<field>`, because an extracted value
+// is a grouping key like any other now and there is nothing in the syntax to
+// hint that it is available.
+func offerGroupKeys(c *Completion, prefix string) {
+	offerAll(c, GroupKeys, prefix, "group")
+	c.ValueSource = ValuesExtractPaths
 }
 
 func offerAll(c *Completion, values []string, prefix, kind string) {
@@ -307,7 +329,10 @@ func stageSummary(name string) string {
 	case "participants":
 		return "who appears, and how often"
 	case "extract":
-		return "read an extractor's structured output"
+		// Kept for saved queries, not taught: on its own it filters nothing,
+		// and its position does not matter. `| sum receipts.amount` says the
+		// same thing in one place.
+		return "deprecated — write the extractor into the field, e.g. receipts.amount"
 	case "series":
 		return "an extracted value over time"
 	case "sum", "avg", "min", "max":

@@ -94,7 +94,7 @@ A query is a **filter**, optionally followed by **pipeline stages** after `|`.
 | `after: before: on:` | `2026-08-15`, `2026-08`, `2026`, `today`, `7d` |
 | `larger: smaller:` | `5mb`, `500kb`, a byte count |
 | `label: unlabeled: conf>` | annotator results — see below |
-| `extract:name.field>10` | extracted structured data |
+| `extract:name` `extract:name.field>10` | extracted structured data |
 | `thread:<message-id>` | every message in that conversation |
 | `saved:<name>` | everything a saved query matches |
 | `in:<kind>` | what the query is about: `mail`, `drafts`, `tickets` |
@@ -157,13 +157,39 @@ the response's `kind` field says which.
 | sample <n>                        a random draw, not the newest n
 | thread                            expand to whole conversations
 | participants                      who appears, and how often
-| extract <annotator>               read structured output
-| series <field> by <bucket>        an extracted value over time
-| sum|avg|min|max <field> [by <bucket>]
+| series <ann>.<field> by <bucket>  an extracted value over time
+| sum|avg|min|max <ann>.<field> [by <bucket>]
 ```
 
 Group and bucket names: `from domain to cc account mailbox label thread
-subject`, and `hour day week month year`.
+subject`, and `hour day week month year` — plus **any extracted value**, as
+`<annotator>.<field>`.
+
+**An extracted value is named the same way everywhere**, which is the one thing
+worth remembering here:
+
+```
+extract:receipts.amount>100        filter on it
+| sum receipts.amount by month     add it up
+| series receipts.amount by week   over time
+| count by receipts.merchant       how many messages per value
+| top receipts.merchant 10         the commonest
+```
+
+A field whose name contains a space is quoted: `| count by "receipts.order
+number"`.
+
+`| count by` counts **messages**, like every other grouping key — a message
+naming two merchants adds one to each. `| sum` and `| series` add up
+**records**, because a weekly digest with seven bars is seven of them and
+collapsing those to the message is what would destroy the series.
+
+`| extract <annotator>` still parses and still supplies a default extractor to
+a later aggregate, so old saved queries keep working. **Do not write new ones
+with it.** On its own it filters nothing — `| extract receipts` returns the
+whole mailbox — and its position does not matter, so it reads as a step that
+happens and is not one. Use `extract:receipts` to filter and the path form to
+aggregate.
 
 Responses are `{query, kind, count, ...}` where `kind` is `"messages"`,
 `"groups"` or `"count"`. Only one aggregate stage per query.
@@ -643,7 +669,8 @@ An extractor's records are queryable and aggregatable:
 
 ```
 iql --json query "extract:saas-metrics.signups>1000"
-iql --json query "from:analytics@acme.com | extract saas-metrics | series signups by week"
+iql --json query "from:analytics@acme.com | series saas-metrics.signups by week"
+iql --json query "| count by saas-metrics.plan"
 ```
 
 One message can yield several records — a weekly digest with a bar per day is

@@ -105,6 +105,10 @@ const (
 	ValuesSaved      = "saved"
 	ValuesFolders    = "folders"
 	ValuesFileTypes  = "filetypes"
+	// ValuesExtractPaths offers `<annotator>.<field>` — the one spelling for
+	// naming an extracted value, used by the filter term and by every stage
+	// that reads one.
+	ValuesExtractPaths = "extractpaths"
 )
 
 var matchOps = []Op{OpMatch, OpExact, OpGlob}

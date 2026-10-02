@@ -511,13 +511,17 @@ func (p *pipeline) buildSeries(s Stage) (*Plan, error) {
 // several records — a weekly digest with seven bars is seven rows — and
 // collapsing them to the message would throw away the series.
 func (p *pipeline) buildAggregate(s Stage) (*Plan, error) {
+	// The path wins over `| extract`. A field written as `receipts.amount`
+	// carries its own extractor, which is the whole point: the name and the
+	// field are one thing said in one place, rather than two stages whose
+	// order does not matter.
 	annotator := p.extractor
 	if s.Annotator != "" {
 		annotator = s.Annotator
 	}
 	if annotator == "" {
-		return nil, fmt.Errorf("%s %s: name the extractor first, e.g. `| extract saas-metrics | %s %s by month`",
-			s.Func, s.Field, s.Func, s.Field)
+		return nil, fmt.Errorf("%s %s: say which extractor, e.g. `| %s <annotator>.%s by month` "+
+			"(list them with `iql annotate list`)", s.Func, s.Field, s.Func, s.Field)
 	}
 
 	if p.opt.KnownAnnotator != nil && !p.opt.KnownAnnotator(annotator) {
@@ -684,8 +688,72 @@ func groupKey(field string, opt Options) (group, error) {
 		}, nil
 
 	default:
-		return group{}, fmt.Errorf("cannot group by %q (try: %s)", field, strings.Join(GroupKeys, ", "))
+		// `<annotator>.<field>` — an extracted value. The same spelling the
+		// filter side uses, so `extract:receipts.merchant` and
+		// `| count by receipts.merchant` name the same thing.
+		//
+		// Without this the grouper was handed a bare word with no way to know
+		// which extractor it belonged to, so `| extract receipts | count by
+		// merchant` could only fail. Carrying the extractor in the path is
+		// what makes it answerable.
+		if name, path, ok := extractedPath(field); ok {
+			return extractedGroup(name, path, opt)
+		}
+		return group{}, fmt.Errorf("cannot group by %q (try: %s, or an extracted value as `<annotator>.<field>`)",
+			field, strings.Join(GroupKeys, ", "))
 	}
+}
+
+// extractedPath reads a grouping key of the form `<annotator>.<field>`.
+//
+// Only the first dot splits: an annotator name is a slug and has none, while a
+// field name may.
+func extractedPath(field string) (name, path string, ok bool) {
+	i := strings.Index(field, ".")
+	if i <= 0 || i >= len(field)-1 {
+		return "", "", false
+	}
+	return field[:i], field[i+1:], true
+}
+
+// extractedGroup groups messages by one extracted field.
+//
+// # What the number counts
+//
+// Messages, like every other grouping key, via the COUNT(DISTINCT m.id) the
+// caller already applies. An extracted field is multi-valued in exactly the
+// way `to:` is: a message naming two merchants contributes one to each, and a
+// message naming the same merchant twice still contributes one. Counting rows
+// here would make `| count by receipts.merchant` mean something different from
+// `| count by to`, for no reason a reader could guess.
+//
+// Aggregates are the other case and stay as they are: `| sum receipts.amount`
+// adds up records, because collapsing seven bars of a weekly digest to one
+// message is exactly what would throw the series away.
+//
+// # Why the path is inlined
+//
+// A placeholder in the SELECT list would have to be bound before the WHERE
+// clause's arguments, and one in HAVING after them — but `having` is appended
+// to the statement after WHERE while `preArgs` are prepended. Keeping the json
+// path as an escaped literal leaves one bound value, the annotator name in the
+// JOIN, whose position is unambiguous.
+func extractedGroup(name, path string, opt Options) (group, error) {
+	if opt.KnownAnnotator != nil && !opt.KnownAnnotator(name) {
+		return group{}, fmt.Errorf("no annotator named %q (list them with `iql annotate list`)", name)
+	}
+
+	expr := "json_extract(a.data_json, '" + strings.ReplaceAll("$."+path, "'", "''") + "')"
+	return group{
+		expr: expr,
+		join: "JOIN annotations a ON a.message_id = m.id AND a.status = 'ok' " +
+			"JOIN annotators an ON an.id = a.annotator_id AND a.annotator_version = an.version " +
+			"AND an.name = ?",
+		preArgs: []any{name},
+		// A record that does not carry this field is not a group called
+		// "null"; it is a record the question does not apply to.
+		having: expr + " IS NOT NULL AND " + expr + " != ''",
+	}, nil
 }
 
 func sortColumn(field string) (string, error) {

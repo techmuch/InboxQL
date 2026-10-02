@@ -56,6 +56,8 @@ func completionValues(source, prefix string) ([]query.Candidate, error) {
 		return out, nil
 	case query.ValuesFileTypes:
 		return fileTypeCandidates(prefix)
+	case query.ValuesExtractPaths:
+		return extractPathCandidates(prefix)
 	}
 	return nil, nil
 }
@@ -198,6 +200,51 @@ func annotatorCandidates(prefix string) ([]query.Candidate, error) {
 			detail = fmt.Sprintf("%s · %d/%d evaluated", a.Kind, p.Evaluated, p.Total)
 		}
 		out = append(out, query.Candidate{Value: a.Name, Detail: detail, Kind: "annotator"})
+	}
+	return out, nil
+}
+
+// extractPathCandidates offers `<annotator>.<field>` for every extractor.
+//
+// The whole path rather than the annotator alone. Naming an extracted value
+// takes both halves, and offering them a step at a time is precisely what the
+// old two-stage form made people do — `| extract receipts | sum amount`, with
+// nothing to say which fields receipts even has.
+//
+// A label has no fields, so it is not offered here. It would complete to a
+// path that cannot be summed.
+func extractPathCandidates(prefix string) ([]query.Candidate, error) {
+	annotators, err := ListAnnotators()
+	if err != nil {
+		return nil, err
+	}
+
+	// A half-typed quoted path arrives with its opening quote, because a quote
+	// is not a token boundary — `| sum "rec` is one token still being written.
+	// Matching against it would rule out every candidate.
+	lower := strings.ToLower(strings.TrimPrefix(prefix, `"`))
+	out := []query.Candidate{}
+	for _, a := range annotators {
+		if a.Kind != KindExtract {
+			continue
+		}
+		for _, f := range a.Labels() {
+			path := a.Name + "." + f
+			if lower != "" && !strings.HasPrefix(strings.ToLower(path), lower) {
+				continue
+			}
+			// A field with a space has to be quoted to survive the lexer, and
+			// a completion that does not parse is worse than none.
+			if strings.ContainsAny(path, " \t\"") {
+				path = `"` + strings.ReplaceAll(path, `"`, `\"`) + `"`
+			}
+			out = append(out, query.Candidate{
+				Value: path, Detail: a.Name + " · " + f, Kind: "extracted",
+			})
+			if len(out) >= maxCandidates {
+				return out, nil
+			}
+		}
 	}
 	return out, nil
 }

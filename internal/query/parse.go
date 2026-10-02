@@ -517,9 +517,9 @@ func (p *parser) parseStage() (Stage, error) {
 		s := Stage{Kind: StageSeries, Bucket: "day"}
 		f, ok := word()
 		if !ok {
-			return Stage{}, &Error{Pos: verb.pos, Msg: "series: needs a field, e.g. `| series signups by week`"}
+			return Stage{}, &Error{Pos: verb.pos, Msg: "series: needs a field, e.g. `| series saas-metrics.signups by week`"}
 		}
-		s.Field = f
+		s.Annotator, s.Field = splitPath(f)
 		skipBy()
 		if b, ok := word(); ok {
 			s.Bucket = strings.ToLower(b)
@@ -533,9 +533,10 @@ func (p *parser) parseStage() (Stage, error) {
 		s := Stage{Kind: StageAggregate, Func: name, Bucket: ""}
 		f, ok := word()
 		if !ok {
-			return Stage{}, &Error{Pos: verb.pos, Msg: name + ": needs a field"}
+			return Stage{}, &Error{Pos: verb.pos,
+				Msg: name + ": needs a field, e.g. `| " + name + " receipts.amount by month`"}
 		}
-		s.Field = f
+		s.Annotator, s.Field = splitPath(f)
 		skipBy()
 		if b, ok := word(); ok {
 			s.Bucket = strings.ToLower(b)
@@ -546,6 +547,11 @@ func (p *parser) parseStage() (Stage, error) {
 		return s, nil
 
 	case "extract":
+		// Kept working, no longer taught. It names an extractor for a later
+		// aggregate to use, which is a parameter rather than a stage: on its
+		// own it filters nothing, and `| sum amount | extract receipts`
+		// answers the same as the other order. The path form says the same
+		// thing in one place, so this survives only for saved queries.
 		f, ok := word()
 		if !ok {
 			return Stage{}, &Error{Pos: verb.pos, Msg: "extract: needs an annotator name"}
@@ -602,4 +608,25 @@ func validBucket(b string) bool {
 		return true
 	}
 	return false
+}
+
+// splitPath reads `<annotator>.<field>` into its two halves.
+//
+// This is the one spelling for naming an extracted value, and it is the one
+// the filter side has always used: `extract:receipts.amount>100`. Before this,
+// a pipeline said the same thing in two places — `| extract receipts | sum
+// amount` — across stages whose order did not matter, which is how the field
+// came to be a bare word the grouper could not resolve.
+//
+// A field with no dot keeps its old meaning: the annotator is left empty and
+// whatever `| extract` named supplies it. That is what keeps saved queries
+// answering as they did.
+//
+// Only the first dot splits. A field name may contain one; an annotator name
+// may not, because it is a slug.
+func splitPath(f string) (annotator, field string) {
+	if i := strings.Index(f, "."); i > 0 && i < len(f)-1 {
+		return f[:i], f[i+1:]
+	}
+	return "", f
 }

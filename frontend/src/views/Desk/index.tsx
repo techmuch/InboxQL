@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Layout, Mail, MoreVertical,
-  Bot, HelpCircle, MessagesSquare, Paperclip, Plus, RefreshCw, Send, Sparkles, Star, Trash2, Users,
+  Bot, HelpCircle, MessagesSquare, Paperclip, Plus, RefreshCw, Send, Sparkles, Star, Tag, Trash2, Users,
 } from 'lucide-react';
 import { openMessage, previewMessage, useViewerStore } from '../../lib/tabs';
 import { navRow, useRovingFocus } from '../../lib/rovingFocus';
@@ -14,6 +14,7 @@ import {
   explainQuery, listSaved, runQuery, saveQuery, setMessageFlag, QueryFailed,
   type QueryResult, type SavedQuery,
 } from './api';
+import { listAnnotators, type Annotator } from '../ai/api';
 import { useQueryStore, compose, queryStages } from '../../lib/filters';
 
 /**
@@ -35,6 +36,23 @@ import { useQueryStore, compose, queryStages } from '../../lib/filters';
  * rebuilding a mail client, so the message list below is the original one,
  * wrapped rather than rewritten.
  */
+/**
+ * The query that shows an annotator's mail.
+ *
+ * A label and an extractor answer different questions, so they get different
+ * terms rather than one spelling that is wrong for half of them:
+ *
+ *   label:money        it said yes to this message
+ *   extract:receipts   it pulled at least one record out of this message
+ *
+ * Both are ordinary filter terms, so the entry teaches the language the same
+ * way `folder:inbox` does — clicking it puts something you could have typed
+ * into the bar.
+ */
+function annotationQuery(a: Annotator): string {
+  return a.kind === 'extract' ? `extract:${a.name}` : `label:${a.name}`;
+}
+
 /**
  * What to call a row of each result kind.
  *
@@ -96,6 +114,31 @@ export const Desk = () => {
       // anyone reading their mail.
     });
   }, []);
+
+  // What the annotators have found, as rail entries.
+  //
+  // An annotator's results were reachable only by knowing to type
+  // `label:money` or `extract:receipts` — the same gap the Other block was
+  // written to close for contacts and files. The counts come from the
+  // annotator listing rather than a query apiece: `progress.matched` is
+  // exactly what `label:x` returns, which is checkable (money 34, receipts
+  // 31) and one request instead of a dozen.
+  const [annotators, setAnnotators] = useState<Annotator[]>([]);
+  useEffect(() => {
+    listAnnotators()
+      .then(list => setAnnotators(Array.isArray(list) ? list : []))
+      .catch(() => {
+        // Same as above: a missing section is better than a blank mailbox.
+      });
+  }, []);
+
+  // Only the ones holding something.
+  //
+  // The starter pack is eleven, and on a mailbox where nothing has run yet
+  // that is eleven rows of "0" burying the entries that would actually show
+  // you mail. An annotator with no results is not a place to go; it is a job
+  // to run, and the Annotators panel is where that is done.
+  const annotated = annotators.filter(a => (a.progress?.matched ?? 0) > 0);
 
   // Selection lives outside Desk and is typed, so it survives a mode change
   // and can describe a conversation without pretending to be a message.
@@ -390,6 +433,43 @@ export const Desk = () => {
               <span className="flex-1 text-left truncate">{entry.label}</span>
             </button>
           ))}
+
+          {/* What the annotators found.
+              A label answers yes or no, so its mail is `label:x`; an extractor
+              pulls records out, so its mail is `extract:x` — "this one
+              produced something here". Two different questions, which is why
+              the entry is not one spelling for both. */}
+          {annotated.length > 0 && (
+            <>
+              <div className="px-4 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                Annotations
+              </div>
+              {annotated.map(a => {
+                const q = annotationQuery(a);
+                const off = a.enabled === false;
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => setQuery(q)}
+                    title={off ? `${q} — ${a.name} is switched off; these are what it already found` : q}
+                    className={`w-full flex items-center gap-4 px-4 py-2 text-sm transition-colors ${
+                      queryText.trim() === q ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground/70'
+                    } ${off ? 'opacity-50' : ''}`}
+                  >
+                    <Tag className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    <span className="flex-1 text-left truncate">{a.name}</span>
+                    {/* Switched off still appears, because its results are
+                        still there and still queryable. Hiding it would
+                        contradict what the switch means. */}
+                    {off && <span className="text-[9px] font-mono text-muted-foreground">off</span>}
+                    <span className="text-[10px] font-bold tabular-nums text-muted-foreground">
+                      {a.progress!.matched.toLocaleString()}
+                    </span>
+                  </button>
+                );
+              })}
+            </>
+          )}
         </div>
       </div>
 

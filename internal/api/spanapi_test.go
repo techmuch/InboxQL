@@ -185,9 +185,9 @@ func TestSegmentMarshalsWithoutEmptyFields(t *testing.T) {
 // answer, and re-running would buy the same wait for the same result.
 func TestOffersFromTheThreeValuedStatus(t *testing.T) {
 	list := []*store.Annotator{
-		{ID: "a", Name: "receipts", Kind: store.KindExtract, Engine: store.EngineGLiNER},
-		{ID: "b", Name: "money", Kind: store.KindLabel, Engine: store.EngineRule},
-		{ID: "c", Name: "unseen", Kind: store.KindExtract, Engine: store.EngineGLiNER},
+		{ID: "a", Name: "receipts", Kind: store.KindExtract, Engine: store.EngineGLiNER, Enabled: true},
+		{ID: "b", Name: "money", Kind: store.KindLabel, Engine: store.EngineRule, Enabled: true},
+		{ID: "c", Name: "unseen", Kind: store.KindExtract, Engine: store.EngineGLiNER, Enabled: true},
 	}
 	conf := 0.8
 	anns := []*store.Annotation{
@@ -222,9 +222,9 @@ func TestOffersFromTheThreeValuedStatus(t *testing.T) {
 // slow feature and a broken one.
 func TestOffersMarkTheSlowEngines(t *testing.T) {
 	got := offersFor([]*store.Annotator{
-		{ID: "a", Name: "rule", Engine: store.EngineRule},
-		{ID: "b", Name: "span", Engine: store.EngineGLiNER},
-		{ID: "c", Name: "prompt", Engine: store.EngineLLM},
+		{ID: "a", Name: "rule", Engine: store.EngineRule, Enabled: true},
+		{ID: "b", Name: "span", Engine: store.EngineGLiNER, Enabled: true},
+		{ID: "c", Name: "prompt", Engine: store.EngineLLM, Enabled: true},
 	}, nil)
 
 	want := map[string]bool{"rule": false, "span": true, "prompt": true}
@@ -239,7 +239,7 @@ func TestOffersMarkTheSlowEngines(t *testing.T) {
 // has to say so rather than offering a button that does nothing.
 func TestOffersReportAHumanRuling(t *testing.T) {
 	got := offersFor(
-		[]*store.Annotator{{ID: "a", Name: "receipts", Engine: store.EngineGLiNER}},
+		[]*store.Annotator{{ID: "a", Name: "receipts", Engine: store.EngineGLiNER, Enabled: true}},
 		[]*store.Annotation{
 			{AnnotatorID: "a", Status: store.StatusOK, Source: store.SourceHuman},
 		})

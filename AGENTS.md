@@ -489,6 +489,8 @@ iql --json annotate plan <name> [--scope <query>]
 iql --json annotate run  <name> [--scope <query>] [--limit n] [--dry-run]
 iql --json annotate starters [--install] [--only a,b]
 iql --json annotate sweep [--trigger after-sync|daily] [--dry-run]
+iql --json annotate enable <name>
+iql --json annotate disable <name>
 ```
 
 ### Somewhere to start
@@ -663,6 +665,39 @@ would be sent and where, and let them decide.
 
 `--scope <query>` narrows a run to matching messages, which is the cheap way to
 try a prompt before committing to the mailbox.
+
+### Switched off, which is not deleted
+
+An annotator carries `enabled`. Off means **it will not run**: triggers skip it,
+the message viewer stops offering it, and `annotate run` on it exits 1 with the
+command to switch it back on. Nothing else changes.
+
+**Everything it has already said still counts.** `label:money` keeps matching
+while `money` is off, and `extract:receipts.amount` keeps returning records.
+Those are facts about messages that really were observed — the same reason a
+version bump keeps the old answers rather than deleting them. So a negative
+label still means *evaluated, no*, and coverage still reads as it did; do not
+tell the user their results were cleared, because they were not.
+
+This exists because `annotate delete` cascades. Deleting an annotator deletes
+every annotation it ever wrote, including the human corrections, and those are
+not rebuildable at any price. If a user wants an annotator to stop, `disable`
+is the answer; reach for `delete` only when they say they want the results
+gone too, and say what that costs first — `annotate show` reports it as
+`holds`.
+
+Two numbers that are not the same thing, and the mistake is easy:
+
+- `progress.matched` and `progress.humanCorrections` count **messages**. They
+  are coverage, which is what a progress bar wants.
+- `holds` counts **annotation rows**, which is what a delete would take. One
+  message can hold many: a receipt with an amount, a date and three references
+  is five rows. On a worked mailbox the two differ by roughly nine to one.
+
+Quote the second when you are telling somebody what deleting would cost.
+
+`enabled` is not `trigger`. `trigger: manual` means *only when told*; off means
+*not even then*.
 
 ### Corrections
 

@@ -147,7 +147,19 @@ export interface Annotator {
   profile?: string;
   model?: string;
   allowRemote: boolean;
-  progress?: { total: number; evaluated: number; ok: number; empty: number };
+  /**
+   * Coverage, as the server reports it. These keys are store.AnnotatorProgress
+   * verbatim — `matched`, not `ok`, and `humanCorrections`, not `human`. The
+   * two it used to name do not exist, so anything reading them got undefined.
+   */
+  progress?: {
+    total: number;
+    evaluated: number;
+    matched: number;
+    empty: number;
+    failed: number;
+    humanCorrections: number;
+  };
   /** The query narrowing what this runs over, carried on the annotator. */
   scope?: string;
   /** When to drain its queue: manual, after-sync or daily. */
@@ -159,12 +171,51 @@ export interface Annotator {
   profileMissing?: boolean;
   /** Its scope no longer compiles; a run would cover everything. */
   scopeBroken?: boolean;
+  /**
+   * Whether it runs at all. Distinct from `trigger`, which is when: `manual`
+   * means only when told, and off means not even then. Everything it has
+   * already said still counts and is still queryable.
+   */
+  enabled: boolean;
 }
 
 export const listAnnotators = () => request<Annotator[]>('/api/annotators');
 
 export const saveAnnotator = (a: Partial<Annotator> & { name: string }) =>
   request<Annotator>('/api/annotators', asJson(a));
+
+/**
+ * How much an annotator is holding, in annotation rows.
+ *
+ * Not the same as `progress`, which counts distinct messages because that is
+ * what a coverage bar is about. A delete takes rows, and one message can hold
+ * many — a receipt with an amount, a date and three references is five. On a
+ * worked mailbox the two differ by roughly nine to one, so reporting coverage
+ * as "what would be lost" understates it badly.
+ */
+export interface AnnotationVolume {
+  records: number;
+  /** Rows a person set. Re-running recovers everything except these. */
+  human: number;
+  messages: number;
+}
+
+/**
+ * Switch an annotator on or off.
+ *
+ * A PUT of its own rather than a field on `saveAnnotator`. Saving edits the
+ * instruction, which bumps the version and marks every earlier result stale;
+ * switching off changes nothing about what it has said, only whether it says
+ * anything more. An accidental version bump is too high a price for a
+ * checkbox.
+ */
+export const setAnnotatorEnabled = (name: string, enabled: boolean) =>
+  request<{ annotator: Annotator; held?: AnnotationVolume }>(
+    `/api/annotators?name=${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
 
 export const deleteAnnotator = (name: string) =>
   request<unknown>(`/api/annotators?name=${encodeURIComponent(name)}`, { method: 'DELETE' });

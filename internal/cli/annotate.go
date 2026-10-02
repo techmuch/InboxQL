@@ -33,6 +33,8 @@ are the same mechanism, so they version, re-run and query the same way.
   plan      report what a run would do, without doing it
   correct   record a human ruling, which outranks the machine
   starters  a pack of annotators worth starting from
+  enable    switch one on
+  disable   switch one off, keeping everything it produced
   sweep     run everything waiting on a trigger
   probe     define, run and measure an annotator in one go
   embed     compute message vectors with an embedding profile
@@ -126,6 +128,10 @@ func runAnnotate(ctx *Context, args []string) error {
 		return annotatePlan(ctx, rest)
 	case "starters":
 		return annotateStarters(ctx, rest)
+	case "enable":
+		return annotateSwitch(ctx, rest, true)
+	case "disable":
+		return annotateSwitch(ctx, rest, false)
 	case "sweep":
 		return annotateSweep(ctx, rest)
 	case "correct":
@@ -136,7 +142,7 @@ func runAnnotate(ctx *Context, args []string) error {
 	case "probe":
 		return annotateProbe(ctx, rest)
 	default:
-		return Fail(ExitUsage, "unknown subcommand %q (want list, show, create, delete, run, plan or correct)", sub)
+		return Fail(ExitUsage, "unknown subcommand %q (want list, show, create, delete, run, plan, enable, disable or correct)", sub)
 	}
 }
 
@@ -176,7 +182,15 @@ func annotateList(ctx *Context, args []string) error {
 	t := p.NewTable("NAME", "KIND", "ENGINE", "VER", "EVALUATED", "MATCHED", "CORRECTIONS")
 	for _, r := range out {
 		coverage := fmt.Sprintf("%d/%d", r.Progress.Evaluated, r.Progress.Total)
-		t.Row(r.Name, r.Kind, r.Engine, itoa(r.Version), coverage,
+		// Marked on the row rather than given a column, because almost every
+		// annotator is on and a column of "yes" is a column of noise. The
+		// counts stay as they are: they are what it found, and switching off
+		// does not unfind anything.
+		name := r.Name
+		if !r.Enabled {
+			name += p.Dim(" (off)")
+		}
+		t.Row(name, r.Kind, r.Engine, itoa(r.Version), coverage,
 			fmt.Sprint(r.Progress.Matched), fmt.Sprint(r.Progress.Human))
 	}
 	return t.Flush()
@@ -235,13 +249,113 @@ func annotateShow(ctx *Context, args []string) error {
 		ctx.Printf("  %-14s %s\n", p.Dim("labels"), strings.Join(a.Labels(), ", "))
 		ctx.Printf("  %-14s %s\n", p.Dim("runs"), "on this machine")
 	}
+	// Rows, beside the coverage counts above. Those count messages, which is
+	// right for "how far has it got" and misleading for "how much is here" —
+	// an extractor can write five records on one message, and on this mailbox
+	// the two differ by about nine to one.
+	if vol, err := store.AnnotationVolumeOf(a.ID); err == nil && vol.Records > 0 {
+		held := count(vol.Records, "record", "records")
+		if vol.Human > 0 {
+			held += fmt.Sprintf(", %s set by hand",
+				count(vol.Human, "value", "values"))
+		}
+		ctx.Printf("  %-14s %s\n", p.Dim("holds"), held)
+	}
 	if a.Scope != "" {
 		ctx.Printf("  %-14s %s\n", p.Dim("scope"), a.Scope)
 	}
 	if a.Trigger != "" && a.Trigger != store.TriggerManual {
 		ctx.Printf("  %-14s %s\n", p.Dim("trigger"), a.Trigger)
 	}
+	if !a.Enabled {
+		// Said last and plainly, because everything above it reads as a
+		// working annotator and none of it will happen again.
+		ctx.Printf("\n  %s %s\n", p.Yellow("switched off"),
+			p.Dim(fmt.Sprintf("— nothing new will run. `iql annotate enable %s`", a.Name)))
+	}
 	return nil
+}
+
+// annotateSwitch turns an annotator on or off.
+//
+// # Why this is not a delete
+//
+// Deleting an annotator cascades to every annotation it ever wrote. On a worked
+// mailbox that is hundreds of extracted values and, worse, the human
+// corrections somebody made by hand — which no amount of re-running recovers.
+//
+// So "I do not want this one" has a cheap answer that costs one UPDATE in each
+// direction. What stops is new work: triggers skip it, the message viewer stops
+// offering it, and `run` refuses. What it already said still counts and is
+// still queryable, because those are facts about messages that really were
+// observed.
+func annotateSwitch(ctx *Context, args []string, on bool) error {
+	name, _ := subcommand(args)
+	if name == "" {
+		return Fail(ExitUsage, "which annotator?")
+	}
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	a, err := store.GetAnnotator(name)
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	if a == nil {
+		return Fail(ExitNotFound, "no annotator named %q", name)
+	}
+	if a.Enabled == on {
+		// Not an error: the end state is the one asked for, which is what
+		// matters to anything scripting this.
+		if ctx.JSON {
+			return ctx.EmitJSON(map[string]any{"annotator": a.Name, "enabled": on, "changed": false})
+		}
+		ctx.Printf("%s is already %s.\n", a.Name, offOn(on))
+		return nil
+	}
+	if err := store.SetAnnotatorEnabled(name, on); err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+
+	// Rows, not messages: a delete would take rows, so that is the number
+	// that makes "nothing is lost" a claim somebody can check. Progress counts
+	// distinct messages, which on this mailbox is nine times smaller.
+	vol, verr := store.AnnotationVolumeOf(a.ID)
+
+	if ctx.JSON {
+		out := map[string]any{"annotator": a.Name, "enabled": on, "changed": true}
+		if verr == nil {
+			out["kept"] = vol
+		}
+		return ctx.EmitJSON(out)
+	}
+
+	p := ctx.Printer()
+	ctx.Printf("%s is now %s.\n", p.Bold(a.Name), offOn(on))
+	if !on && verr == nil && vol.Records > 0 {
+		// The whole design rests on nothing being lost, and a command that
+		// says nothing about that is asking to be distrusted.
+		kept := fmt.Sprintf("%s over %s",
+			count(vol.Records, "record", "records"),
+			count(vol.Messages, "message", "messages"))
+		if vol.Human > 0 {
+			// Named separately because re-running recovers everything except
+			// this.
+			kept += fmt.Sprintf(", %s set by hand",
+				count(vol.Human, "value", "values"))
+		}
+		ctx.Printf("  %s\n", p.Dim("kept: "+kept+". Switch it back on and they are still there."))
+	}
+	return nil
+}
+
+func offOn(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }
 
 func annotateCreate(ctx *Context, args []string) error {

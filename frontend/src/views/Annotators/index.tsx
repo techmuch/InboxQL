@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import {
   deleteAnnotator, listAnnotators, listProfiles, runAnnotator, saveAnnotator,
+  setAnnotatorEnabled, type AnnotationVolume,
   type Annotator, type Profile, type RunOutcome,
 } from '../ai/api';
 import { Notice } from '../ai/Models';
@@ -162,6 +163,23 @@ export const Annotators = () => {
                 annotator={a}
                 busy={busy === a.name}
                 onEdit={() => setEditing(a)}
+                onToggle={async () => {
+                  try {
+                    const out = await setAnnotatorEnabled(a.name, !a.enabled);
+                    await load();
+                    // Switching off says what it kept, because the whole
+                    // design rests on nothing being lost and a panel that
+                    // stays silent about that is asking to be distrusted.
+                    setNotice({
+                      ok: true,
+                      text: a.enabled
+                        ? `${a.name} is off. ${kept(out.held)}`
+                        : `${a.name} is on.`,
+                    });
+                  } catch (e) {
+                    setNotice({ ok: false, text: e instanceof Error ? e.message : String(e) });
+                  }
+                }}
                 onRun={dry => run(a, dry)}
                 job={runningName === a.name ? job.job : null}
                 onCancel={job.cancel}
@@ -207,6 +225,29 @@ export const Annotators = () => {
   );
 };
 
+/**
+ * What a switched-off annotator is still holding.
+ *
+ * Said rather than implied: the design's whole claim is that nothing is lost,
+ * and a number is the only form of that claim a reader can check.
+ *
+ * Counted in rows, from the server, rather than taken from `progress` — that
+ * counts distinct messages, and saying "31 results and 1 correction" for 269
+ * records and 19 hand-set values understates the one number the switch exists
+ * to protect.
+ */
+function kept(held?: AnnotationVolume): string {
+  const records = held?.records ?? 0;
+  const ruled = held?.human ?? 0;
+  if (records === 0) return 'It will not run; it had found nothing yet.';
+  const parts = [`${records.toLocaleString()} record${records === 1 ? '' : 's'}`];
+  if (ruled > 0) {
+    // Named separately because re-running recovers everything except these.
+    parts.push(`${ruled.toLocaleString()} value${ruled === 1 ? '' : 's'} set by hand`);
+  }
+  return `It keeps ${parts.join(' and ')} — switch it back on and they are still there.`;
+}
+
 const AnnotatorCard = ({
   annotator: a,
   busy,
@@ -215,6 +256,7 @@ const AnnotatorCard = ({
   job,
   onCancel,
   onDelete,
+  onToggle,
   onShowResults,
 }: {
   annotator: Annotator;
@@ -225,15 +267,28 @@ const AnnotatorCard = ({
   job?: { status: string; done: number; total: number; summary?: string; lastError?: string } | null;
   onCancel?: () => void;
   onDelete: () => void;
+  onToggle: () => void;
   onShowResults: () => void;
 }) => {
   const total = a.progress?.total ?? 0;
   const done = a.progress?.evaluated ?? 0;
   const pending = Math.max(total - done, 0);
 
+  const off = a.enabled === false;
+
   return (
-    <div className="border border-border bg-card">
+    <div className={`border border-border bg-card ${off ? 'opacity-60' : ''}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+        {/* Next to the name, because it is a fact about the annotator rather
+            than an action on it, and the first thing worth knowing when
+            nothing is happening. */}
+        <input
+          type="checkbox"
+          checked={!off}
+          onChange={onToggle}
+          title={off ? `Switch ${a.name} on` : `Switch ${a.name} off, keeping everything it found`}
+          aria-label={off ? `Switch ${a.name} on` : `Switch ${a.name} off`}
+        />
         <button type="button" onClick={onEdit} className="min-w-0 flex-1 text-left">
           <span className="font-medium">{a.name}</span>
           <span className="ml-2 font-mono text-[11px] text-muted-foreground">
@@ -244,6 +299,12 @@ const AnnotatorCard = ({
             {a.trigger && a.trigger !== 'manual' ? ` · ${a.trigger}` : ''}
           </span>
         </button>
+
+        {off && (
+          <span className="bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+            off
+          </span>
+        )}
 
         {a.engine === 'llm' && a.reach === 'remote' && (
           <span
@@ -258,8 +319,8 @@ const AnnotatorCard = ({
           <button
             type="button"
             onClick={() => onRun(true)}
-            disabled={busy}
-            title="Report what a run would do, without doing it"
+            disabled={busy || off}
+            title={off ? 'Switched off' : 'Report what a run would do, without doing it'}
             className="border border-border px-2 py-0.5 text-xs hover:bg-accent/40 disabled:opacity-50"
           >
             Plan
@@ -267,8 +328,14 @@ const AnnotatorCard = ({
           <button
             type="button"
             onClick={() => onRun(false)}
-            disabled={busy || pending === 0}
-            title={pending === 0 ? 'Nothing left to evaluate at this version' : 'Evaluate up to 200 messages'}
+            disabled={busy || off || pending === 0}
+            title={
+              off
+                ? 'Switched off — nothing new will run'
+                : pending === 0
+                  ? 'Nothing left to evaluate at this version'
+                  : 'Evaluate up to 200 messages'
+            }
             className="flex items-center gap-1 border border-border px-2 py-0.5 text-xs hover:bg-accent/40 disabled:opacity-50"
           >
             {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}

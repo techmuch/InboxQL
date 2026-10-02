@@ -217,6 +217,12 @@ func Run(ctx context.Context, name string, opt Options) (*Outcome, error) {
 	if a == nil {
 		return nil, fmt.Errorf("no annotator named %q", name)
 	}
+	if !a.Enabled {
+		// Named explicitly, so this is not a trigger to skip quietly — it is
+		// a request to answer. The error carries the remedy because the state
+		// is invisible from wherever this was typed.
+		return nil, fmt.Errorf("annotator %q is switched off; `iql annotate enable %s` to run it", name, name)
+	}
 
 	opt.Scope = scopeFor(a, opt.Scope)
 

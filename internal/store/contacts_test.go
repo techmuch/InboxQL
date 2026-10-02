@@ -273,4 +273,3 @@ func TestContactNotesAndTags(t *testing.T) {
 		t.Errorf("expected contacts with has:awaiting")
 	}
 }
-

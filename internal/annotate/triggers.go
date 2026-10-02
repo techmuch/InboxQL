@@ -57,6 +57,12 @@ func Due(when string) ([]*store.Annotator, error) {
 
 	var due []*store.Annotator
 	for _, a := range list {
+		if !a.Enabled {
+			// Switched off, so not even its own trigger starts it. This is
+			// the check that makes "off" worth having: without it, a daily
+			// annotator somebody switched off would carry on overnight.
+			continue
+		}
 		if a.Trigger != when {
 			continue
 		}

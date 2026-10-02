@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 31
+	SchemaVersion = 32
 )
 
 var (
@@ -1322,6 +1322,24 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 31
+	}
+
+	if currentVersion < 32 {
+		log.Println("Applying schema migration v32 (annotators can be switched off)...")
+		// Switching one off has to be cheap and reversible, because the
+		// alternative — deleting it — cascades to every annotation it ever
+		// wrote, including human corrections that no amount of re-running can
+		// recover. So "off" is a flag, not a delete.
+		//
+		// Defaulting to 1 leaves every existing annotator exactly as it was.
+		if _, err := db.Exec(
+			`ALTER TABLE annotators ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;`); err != nil {
+			log.Printf("Warning v32: %v", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 32;"); err != nil {
+			return err
+		}
+		currentVersion = 32
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

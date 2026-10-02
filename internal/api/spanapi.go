@@ -164,6 +164,12 @@ func offersFor(list []*store.Annotator, anns []*store.Annotation) []Offer {
 
 	out := []Offer{}
 	for _, a := range list {
+		if !a.Enabled {
+			// Not offered, because pressing it would refuse. What it already
+			// wrote is still drawn on the message — those spans are above,
+			// under `fields`, and are not affected by this.
+			continue
+		}
 		o := Offer{
 			Name: a.Name, Kind: a.Kind, Engine: a.Engine,
 			// A span run is fifteen to twenty seconds on one message and an

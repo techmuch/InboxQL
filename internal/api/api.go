@@ -105,6 +105,7 @@ func Router() (http.Handler, error) {
 	starterMux := http.NewServeMux()
 	registerStarterRoutes(starterMux)
 	mux.Handle("/api/starters", auth.Middleware(starterMux))
+	mux.Handle("/api/starters/", auth.Middleware(starterMux))
 
 	// The query language surface; see registerQueryRoutes.
 	//

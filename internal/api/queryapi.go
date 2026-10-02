@@ -444,11 +444,62 @@ func handleAnnotators(w http.ResponseWriter, r *http.Request) {
 		listAnnotators(w, r)
 	case http.MethodPost:
 		saveAnnotator(w, r)
+	case http.MethodPut:
+		setAnnotatorEnabled(w, r)
 	case http.MethodDelete:
 		deleteAnnotator(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// setAnnotatorEnabled switches an annotator on or off.
+//
+// A PUT of its own rather than a field on the POST that saves it. POST edits
+// the instruction, which bumps the version and marks every earlier result
+// stale; switching off is the opposite — it changes nothing about what the
+// annotator has said, only whether it says anything more. Folding the two
+// together would make an accidental version bump the price of a checkbox.
+//
+// Off is not deleted, and that is the point: DELETE cascades to every
+// annotation it ever wrote, including human corrections, which no amount of
+// re-running recovers. This costs one UPDATE in each direction.
+func setAnnotatorEnabled(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "which annotator? pass ?name=")
+		return
+	}
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		return
+	}
+	if req.Enabled == nil {
+		// A bool's zero value is false, so an absent field would read as
+		// "switch it off" — the one mistake this endpoint must not make.
+		writeError(w, http.StatusBadRequest, "send {\"enabled\": true} or {\"enabled\": false}")
+		return
+	}
+
+	if err := store.SetAnnotatorEnabled(name, *req.Enabled); err != nil {
+		writeError(w, http.StatusNotFound, "%v", err)
+		return
+	}
+	a, err := store.GetAnnotator(name)
+	if err != nil || a == nil {
+		writeError(w, http.StatusInternalServerError, "saved, but could not read it back")
+		return
+	}
+	// What it is still holding, counted in rows. Progress counts distinct
+	// messages, which is the right number for a coverage bar and nine times
+	// too small for "this is what switching off kept" — a delete takes rows.
+	out := map[string]any{"annotator": a}
+	if v, err := store.AnnotationVolumeOf(a.ID); err == nil {
+		out["held"] = v
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func listAnnotators(w http.ResponseWriter, r *http.Request) {

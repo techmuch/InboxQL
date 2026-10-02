@@ -122,7 +122,15 @@ type Annotator struct {
 	// Trigger is when to drain the queue PendingMessages already computes:
 	// manual, after-sync or daily. It is a "when", never a second "what" —
 	// Scope is the only filter.
-	Trigger   string    `json:"trigger,omitempty"`
+	Trigger string `json:"trigger,omitempty"`
+	// Enabled is whether this runs at all. Distinct from Trigger, which is
+	// when: `manual` means only when told, and Disabled means not even then.
+	//
+	// Off is not deleted. Everything it has already said still counts and is
+	// still queryable, because those are facts about messages that really were
+	// observed — the same reason a version bump keeps the old answers. What
+	// stops is new work.
+	Enabled   bool      `json:"enabled"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -155,6 +163,12 @@ func (a *Annotation) Data() map[string]any {
 // Changing the instructions bumps the version, because results produced by the
 // old wording are no longer answers to the new question. Everything else is
 // edited in place.
+//
+// It deliberately does not write Enabled. A bool's zero value is false, so any
+// caller that built an Annotator without thinking about the field would switch
+// it off on save — a silent stop, with nothing in the UI to explain it. New
+// rows take the column's default of on, and [SetAnnotatorEnabled] is the only
+// way to change it.
 func SaveAnnotator(a *Annotator) error {
 	now := time.Now()
 	if a.ID == "" {
@@ -241,18 +255,20 @@ func boolToInt(b bool) int {
 
 const annotatorColumns = `id, name, kind, engine, version, instructions, schema_json,
 	COALESCE(profile, ''), COALESCE(model, ''), allow_remote,
-	COALESCE(scope, ''), COALESCE(trigger, 'manual'), created_at, updated_at`
+	COALESCE(scope, ''), COALESCE(trigger, 'manual'), COALESCE(enabled, 1),
+	created_at, updated_at`
 
 func scanAnnotator(scan func(...any) error) (*Annotator, error) {
 	a := &Annotator{}
-	var remote int
+	var remote, enabled int
 	var created, updated int64
 	if err := scan(&a.ID, &a.Name, &a.Kind, &a.Engine, &a.Version, &a.Instructions,
 		&a.SchemaJSON, &a.Profile, &a.Model, &remote, &a.Scope, &a.Trigger,
-		&created, &updated); err != nil {
+		&enabled, &created, &updated); err != nil {
 		return nil, err
 	}
 	a.AllowRemote = remote != 0
+	a.Enabled = enabled != 0
 	a.CreatedAt = time.UnixMilli(created)
 	a.UpdatedAt = time.UnixMilli(updated)
 	return a, nil
@@ -632,4 +648,69 @@ func triggerOrDefault(t string) string {
 		return TriggerManual
 	}
 	return t
+}
+
+// SetAnnotatorEnabled switches an annotator on or off.
+//
+// Off is not deleted, and that is the whole point. Deleting cascades to every
+// annotation it ever wrote — on a worked mailbox that is hundreds of extracted
+// values and, worse, the human corrections somebody made by hand, which no
+// amount of re-running recovers. Switching off costs one UPDATE and switching
+// back on costs another.
+//
+// What stops is new work: triggers skip it, the viewer stops offering it, and
+// running it by name refuses. What it has already said still counts, because
+// those are facts about messages that really were observed.
+func SetAnnotatorEnabled(name string, on bool) error {
+	res, err := db.Exec(
+		"UPDATE annotators SET enabled = ?, updated_at = ? WHERE name = ?",
+		boolToInt(on), time.Now().UnixMilli(), name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("no annotator named %q", name)
+	}
+	return nil
+}
+
+// AnnotationVolume is how much an annotator is holding.
+//
+// # Why this is not Progress
+//
+// [Progress] answers coverage — how far through the mailbox this annotator has
+// got — and so counts DISTINCT messages. That is the right denominator for a
+// progress bar and the wrong numerator for "what would be lost", because
+// deleting an annotator deletes *rows*, and one message can hold many: a
+// receipt with an amount, a date and three reference numbers is five.
+//
+// On this mailbox the two differ by an order of magnitude. `receipts` covers
+// 32 messages and holds 269 records, 19 of them set by hand. Telling somebody
+// that switching it off keeps "31 results and 1 correction" understates the
+// second number nineteen-fold — and that number is the entire reason the
+// switch exists rather than a delete.
+type AnnotationVolume struct {
+	// Records is every row, at every version. Earlier versions are counted
+	// because they are what a delete would take too.
+	Records int64 `json:"records"`
+	// Human is rows a person set. Not recoverable by re-running at any price,
+	// which is what makes it worth naming separately.
+	Human int64 `json:"human"`
+	// Messages is how many messages those rows are spread over.
+	Messages int64 `json:"messages"`
+}
+
+// AnnotationVolumeOf counts what one annotator has written.
+func AnnotationVolumeOf(annotatorID string) (*AnnotationVolume, error) {
+	v := &AnnotationVolume{}
+	err := db.QueryRow(`
+		SELECT COUNT(*),
+		       COALESCE(SUM(CASE WHEN source = ? THEN 1 ELSE 0 END), 0),
+		       COUNT(DISTINCT message_id)
+		FROM annotations WHERE annotator_id = ?`,
+		SourceHuman, annotatorID).Scan(&v.Records, &v.Human, &v.Messages)
+	if err != nil {
+		return nil, err
+	}
+	return v, nil
 }

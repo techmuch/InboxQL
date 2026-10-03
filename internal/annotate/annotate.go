@@ -155,6 +155,14 @@ func Describe(name, scope string) (*Plan, error) {
 		p.Labels = a.Labels()
 	}
 
+	if a.Engine == store.EngineLaya {
+		// Local and unconditionally so, like the span engine: no endpoint, no
+		// key, nothing to consent to.
+		p.Provider = store.EngineLaya
+		p.Model = "laya"
+		p.Remote = false
+	}
+
 	if a.Engine == store.EngineLLM {
 		cfg, err := configFor(a)
 		if err != nil {
@@ -255,6 +263,11 @@ func Run(ctx context.Context, name string, opt Options) (*Outcome, error) {
 
 	case store.EngineGLiNER:
 		if err := runGLiNER(ctx, a, opt, out, opt.DataDir); err != nil {
+			return nil, err
+		}
+
+	case store.EngineLaya:
+		if err := runLaya(ctx, a, opt, out, opt.DataDir); err != nil {
 			return nil, err
 		}
 

@@ -600,10 +600,17 @@ func saveAnnotator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Engine {
-	case "", store.EngineRule, store.EngineLLM, store.EngineGLiNER:
+	case "", store.EngineRule, store.EngineLLM, store.EngineGLiNER, store.EngineLaya:
 	default:
 		writeError(w, http.StatusBadRequest,
-			"unknown engine %q: use rule, llm or gliner", req.Engine)
+			"unknown engine %q: use rule, llm, gliner or laya", req.Engine)
+		return
+	}
+	// A decision engine scores options and returns which one, so there is
+	// nothing in the text for it to pull out.
+	if req.Engine == store.EngineLaya && req.Kind == store.KindExtract {
+		writeError(w, http.StatusBadRequest,
+			"a decision engine answers a question about a message; it cannot extract from one")
 		return
 	}
 	// A span extractor finds values in the text, so it has no way to answer a

@@ -384,9 +384,9 @@ func annotateCreate(ctx *Context, args []string) error {
 		return Fail(ExitUsage, "--kind must be label or extract")
 	}
 	switch *engine {
-	case store.EngineRule, store.EngineLLM, store.EngineGLiNER:
+	case store.EngineRule, store.EngineLLM, store.EngineGLiNER, store.EngineLaya:
 	default:
-		return Fail(ExitUsage, "--engine must be rule, llm or gliner")
+		return Fail(ExitUsage, "--engine must be rule, llm, gliner or laya")
 	}
 	if *kind == store.KindExtract && *engine == store.EngineRule {
 		return Fail(ExitUsage, "a rule can answer yes or no, but it cannot extract records; use --engine llm or --engine gliner")
@@ -407,7 +407,15 @@ func annotateCreate(ctx *Context, args []string) error {
 	if *kind == store.KindLabel && *engine == store.EngineGLiNER {
 		return Fail(ExitUsage,
 			"a span extractor pulls values out of a message; it cannot label one.\n"+
-				"Use --kind extract, or --engine llm for a label.")
+				"Use --kind extract, or --engine laya for a label that needs judgement.")
+	}
+	// The mirror image: a decision engine scores the options it is given and
+	// returns which one. There is nothing to pull out of the text, so it can
+	// label and cannot extract.
+	if *kind == store.KindExtract && *engine == store.EngineLaya {
+		return Fail(ExitUsage,
+			"a decision engine answers a question about a message; it cannot extract from one.\n"+
+				"Use --kind label, or --engine gliner to pull values out.")
 	}
 
 	text := *instructions

@@ -119,15 +119,48 @@ func TestStarterSchemasFitTheEngine(t *testing.T) {
 	}
 }
 
-// A span extractor cannot answer yes or no about a message, so a starter that
-// asked it to would be refused at creation.
+// Each engine can do one of the two kinds and not the other, and a starter
+// that asked for the wrong pairing would be refused at creation rather than
+// here.
 func TestStartersUseAnEngineThatCanDoTheirKind(t *testing.T) {
 	for _, s := range Starters {
 		switch {
-		case s.Kind == store.KindLabel && s.Engine != store.EngineRule:
-			t.Errorf("%s is a label on the %s engine; labels here should be free", s.Name, s.Engine)
+		case s.Kind == store.KindLabel && s.Engine == store.EngineGLiNER:
+			t.Errorf("%s is a label on the span engine, which cannot label", s.Name)
 		case s.Kind == store.KindExtract && s.Engine == store.EngineRule:
 			t.Errorf("%s is an extractor on the rule engine, which cannot extract", s.Name)
+		case s.Kind == store.KindExtract && s.Engine == store.EngineLaya:
+			t.Errorf("%s is an extractor on the decision engine, which cannot extract", s.Name)
+		}
+	}
+}
+
+// # The gate must stay free
+//
+// The pack's lesson is the pairing: a span extractor costs about twenty seconds
+// a message, so it is scoped to a label that costs nothing. A gate on a model
+// engine would make the expensive thing wait on a slow thing and teach the
+// opposite of the point.
+//
+// The decision labels are not gates. They are the questions a query cannot ask,
+// and they stand alone.
+func TestEveryGateIsARule(t *testing.T) {
+	byName := map[string]Starter{}
+	for _, s := range Starters {
+		byName[s.Name] = s
+	}
+	for _, s := range Starters {
+		if s.Needs == "" {
+			continue
+		}
+		gate, ok := byName[s.Needs]
+		if !ok {
+			t.Errorf("%s is gated by %q, which is not in the pack", s.Name, s.Needs)
+			continue
+		}
+		if gate.Engine != store.EngineRule {
+			t.Errorf("%s is gated by %s, which runs on the %s engine; a gate has to be free",
+				s.Name, gate.Name, gate.Engine)
 		}
 	}
 }

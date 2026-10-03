@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 32
+	SchemaVersion = 33
 )
 
 var (
@@ -703,7 +703,12 @@ func migrateDB(db *sql.DB) error {
 				created_at        INTEGER NOT NULL,
 				FOREIGN KEY (message_id)   REFERENCES messages(id)   ON DELETE CASCADE,
 				FOREIGN KEY (annotator_id) REFERENCES annotators(id) ON DELETE CASCADE,
-				UNIQUE(message_id, annotator_id, annotator_version, seq)
+				-- source is part of the identity: a human ruling and the
+				-- machine answer it overrules are two rows about the same
+				-- message, and the machine's is the evidence of what was
+				-- corrected. Without source here, recording a correction
+				-- replaced the answer it was correcting.
+				UNIQUE(message_id, annotator_id, annotator_version, source, seq)
 			);
 
 			CREATE INDEX IF NOT EXISTS idx_annotations_lookup  ON annotations(annotator_id, annotator_version, status);
@@ -1340,6 +1345,89 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 32
+	}
+
+	if currentVersion < 33 {
+		log.Println("Applying schema migration v33 (a correction no longer erases what it corrected)...")
+		// The unique key was (message_id, annotator_id, annotator_version, seq)
+		// and a human ruling is written at seq 0 with INSERT OR REPLACE — so
+		// recording a correction silently deleted the machine's answer for
+		// that message.
+		//
+		// That is the evidence of what was corrected. Without it you can see
+		// that somebody disagreed and never what they disagreed with, which
+		// makes a disagreement unreviewable and a calibration fit impossible:
+		// the quantity being fitted is the score the model was wrong at.
+		//
+		// Adding source to the key lets the two rows coexist, which is what
+		// "outranks" was always supposed to mean.
+		//
+		// The table is rebuilt rather than re-indexed. SQLite will not drop the
+		// index backing a UNIQUE table constraint, so adding a second index
+		// alongside it leaves the old restriction in force — the migration
+		// appears to succeed and changes nothing, which is the worst of the
+		// available failures. Copy, drop, rename is the only way to alter it.
+		//
+		// Every existing row is valid under the new key, so nothing is lost
+		// and nothing has to be resolved.
+		// Foreign keys off for the rebuild, as SQLite's own documented
+		// procedure requires: the copy, drop and rename all touch a table two
+		// others reference, and with enforcement on the drop is rejected.
+		//
+		// It also lets the copy carry rows whose annotator no longer exists.
+		// Those are the cascade's leftovers from before enforcement was turned
+		// on, and this is not the migration that decides what to do about them
+		// — dropping somebody's annotations to change an index would be a
+		// surprising thing for a schema bump to do.
+		if _, err := db.Exec("PRAGMA foreign_keys = OFF;"); err != nil {
+			return fmt.Errorf("v33 (annotation identity): %w", err)
+		}
+		for _, stmt := range []string{
+			// An earlier attempt that failed part way leaves this behind, and
+			// a migration that cannot be re-run after a failure is a migration
+			// that has to be repaired by hand.
+			`DROP TABLE IF EXISTS annotations_v33;`,
+			`CREATE TABLE annotations_v33 (
+				id                TEXT PRIMARY KEY,
+				message_id        TEXT NOT NULL,
+				annotator_id      TEXT NOT NULL,
+				annotator_version INTEGER NOT NULL,
+				seq               INTEGER NOT NULL DEFAULT 0,
+				status            TEXT NOT NULL,
+				source            TEXT NOT NULL,
+				data_json         TEXT NOT NULL DEFAULT '{}',
+				confidence        REAL,
+				model             TEXT,
+				error             TEXT,
+				created_at        INTEGER NOT NULL,
+				FOREIGN KEY (message_id)   REFERENCES messages(id)   ON DELETE CASCADE,
+				FOREIGN KEY (annotator_id) REFERENCES annotators(id) ON DELETE CASCADE,
+				UNIQUE(message_id, annotator_id, annotator_version, source, seq)
+			);`,
+			`INSERT INTO annotations_v33
+			 SELECT id, message_id, annotator_id, annotator_version, seq, status,
+			        source, data_json, confidence, model, error, created_at
+			 FROM annotations;`,
+			`DROP TABLE annotations;`,
+			`ALTER TABLE annotations_v33 RENAME TO annotations;`,
+			`CREATE INDEX IF NOT EXISTS idx_annotations_lookup  ON annotations(annotator_id, annotator_version, status);`,
+			`CREATE INDEX IF NOT EXISTS idx_annotations_message ON annotations(message_id);`,
+			`CREATE INDEX IF NOT EXISTS idx_annotations_source  ON annotations(annotator_id, source);`,
+		} {
+			if _, err := db.Exec(stmt); err != nil {
+				// Not a warning: a half-rebuilt table is worse than an
+				// unmigrated one, and every statement here is required.
+				_, _ = db.Exec("PRAGMA foreign_keys = ON;")
+				return fmt.Errorf("v33 (annotation identity): %w", err)
+			}
+		}
+		if _, err := db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
+			return fmt.Errorf("v33 (annotation identity): %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 33;"); err != nil {
+			return err
+		}
+		currentVersion = 33
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

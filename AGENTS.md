@@ -560,7 +560,7 @@ does not — it is synchronous and safe in a cron job, and silently gaining
 twenty minutes of extraction would make that false, so it prints what is
 waiting instead.
 
-Three engines:
+Four engines:
 
 - **`rule`** — the instruction is a query expression. Evaluated by the database
   in one pass, deterministic, no provider needed. Prefer this whenever the
@@ -568,6 +568,51 @@ Three engines:
 - **`llm`** — the instruction is a prompt, evaluated one message at a time.
 - **`gliner`** — the instruction is a set of labels, and the answer is spans of
   the message itself. Extractors only. Runs on this machine.
+- **`laya`** — the instruction is a statement, and the answer is how likely it
+  is true. Labels only. Runs on this machine, about three seconds a message.
+
+### Which engine to label with
+
+**`rule` whenever a query can say it.** It is free, exact and re-runs in one
+pass. `subject:invoice OR from:*@stripe.com` is a better label than any model,
+because it is checkable and costs nothing.
+
+**`laya` when the question needs judgement.** "Is this *actually* a purchase, or
+a newsletter that mentions a price" is not a query, and the alternative was an
+LLM — the engine that invents. A decision annotator emits no tokens: it scores
+the two answers and returns a probability, so there is nothing to hallucinate.
+
+```
+iql annotate create purchased --kind label --engine laya \
+  --instructions "this message is a receipt, an invoice, an order confirmation or a payment"
+```
+
+Write the instruction as a **statement about the message**, not a question and
+not a prompt — the model is scoring whether it holds.
+
+It needs weights on disk (`iql laya install`, ~620 MB becoming ~1.2 GB), reads
+the subject, sender and the first few hundred words, and **cannot extract**:
+`--kind extract --engine laya` is refused, as `--kind label --engine gliner` is.
+
+### Its confidence is an ordering, not a frequency
+
+**This is the one thing to get right about this engine.** The published
+checkpoint ships uncalibrated — every temperature 1.0, and its authors measure
+its expected calibration error at 0.466. On this mailbox a software newsletter
+scored 0.993 on "is this a receipt".
+
+So `label:purchased@0.9` is a **ranking cut**, not "ninety percent of these are
+right". Do not tell the user otherwise, and do not present a high score as
+evidence the answer is right.
+
+`iql laya calibrate <name>` fits a temperature from the user's own corrections
+and makes the number mean what it looks like. It needs at least 20 rulings and
+refuses below that. Until it has run, say that the scores order and do not
+measure. `iql laya status` reports the state.
+
+Calibration cannot change an answer — a temperature divides the logits, which
+cannot reorder them — so it never makes the model more accurate, only more
+honest about itself.
 
 ### Which engine to extract with
 
@@ -794,6 +839,7 @@ failure), `account` (add/list/remove/verify/sync), `user`, `vault`
 (status/rotate), `llm` (status/configure/test/disable), `maintenance`
 (attachments/text/reindex), `ocr` (read scans with a vision model),
 `gliner` (status/install/remove — the span-extraction model),
+`laya` (status/install/calibrate/remove — the decision model),
 `backup` / `restore`, `export`, `version`, `start`.
 
 Two to avoid unless explicitly asked: `account remove` deletes every stored

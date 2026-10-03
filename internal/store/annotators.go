@@ -48,6 +48,13 @@ const (
 	EngineRule   = "rule"
 	EngineLLM    = "llm"
 	EngineGLiNER = "gliner"
+	// EngineLaya decides rather than writes: it scores the options it is given
+	// and returns a distribution over them. A fourth engine beside the span one
+	// for the same reason that one is beside the LLM — it reaches no gateway,
+	// so profile, model override and consent do not apply — and distinct from
+	// it because it labels and cannot extract, which is exactly the gap the
+	// span engine leaves.
+	EngineLaya = "laya"
 )
 
 // Labels are the entity types a span extractor looks for.
@@ -713,4 +720,58 @@ func AnnotationVolumeOf(annotatorID string) (*AnnotationVolume, error) {
 		return nil, err
 	}
 	return v, nil
+}
+
+// HumanRuling pairs a person's verdict with what the machine had said.
+//
+// The two are stored as separate rows — a human ruling outranks the machine
+// result rather than overwriting it, which is what lets a re-run keep both —
+// so comparing them is a join rather than a column read.
+type HumanRuling struct {
+	MessageID string
+	// Said is what the machine answered: true when it produced a record.
+	Said bool
+	// Confidence is the machine's own score, which is the quantity a
+	// calibration fit is about.
+	Confidence float64
+	// Ruled is what the person said.
+	Ruled bool
+}
+
+// HumanRulings returns every message a person has ruled on for an annotator,
+// paired with what the machine had said about it.
+//
+// Rows where the machine never answered are skipped: a ruling on a message the
+// annotator has not evaluated is a judgement with nothing to compare against,
+// and including it would make a calibration fit measure the wrong thing.
+func HumanRulings(annotatorID string) ([]HumanRuling, error) {
+	rows, err := db.Query(`
+		SELECT h.message_id,
+		       CASE WHEN mach.status = ? THEN 1 ELSE 0 END,
+		       COALESCE(mach.confidence, 0),
+		       CASE WHEN h.status = ? THEN 1 ELSE 0 END
+		FROM annotations h
+		JOIN annotations mach
+		  ON mach.message_id = h.message_id
+		 AND mach.annotator_id = h.annotator_id
+		 AND mach.source != ?
+		WHERE h.annotator_id = ? AND h.source = ?
+		GROUP BY h.message_id`,
+		StatusOK, StatusOK, SourceHuman, annotatorID, SourceHuman)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []HumanRuling
+	for rows.Next() {
+		var r HumanRuling
+		var said, ruled int
+		if err := rows.Scan(&r.MessageID, &said, &r.Confidence, &ruled); err != nil {
+			return nil, err
+		}
+		r.Said, r.Ruled = said == 1, ruled == 1
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

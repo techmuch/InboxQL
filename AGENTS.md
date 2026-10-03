@@ -502,6 +502,63 @@ which, and the fix is `iql maintenance attachments` then
 
 ---
 
+## `ui` — the open windows, and pointing them at things
+
+A browser with InboxQL open registers itself with the running server. You can
+see what somebody is looking at, and put something in front of them.
+
+```
+iql --json ui list                     who is open, and what each is showing
+iql ui query <id> <query> --note why   point one window at a query
+iql ui open <id> <what>                desk, log, settings, annotators, windows, or a message id
+iql ui notice <id> <text>              say something, changing nothing
+iql ui close <id>                      forget one that is gone
+```
+
+**This command talks to the server, not the data directory.** Every other one
+reads the database; the list of open windows lives in the memory of the process
+serving them, so `iql start` must be running and `--addr` must point at it
+(default `127.0.0.1:8080`, or `$INBOXQL_ADDR`).
+
+### Why this is the useful half
+
+`ui list` answers *what is the user looking at* without asking them. Each window
+reports its current query and its open tabs, so you can see that somebody is on
+`label:purchases` before suggesting anything about it.
+
+The other direction is a handoff: when you have found something, put it on their
+screen rather than describing it.
+
+```
+iql ui query 2 "from:*@stripe.com after:7d" --note "the invoices you asked about"
+```
+
+### Always say why
+
+**`--note` is not decoration.** A screen that reorganises itself with no
+explanation reads as a fault, not as help. The note arrives with the command and
+is shown beside what changed. Use it every time you move somebody's view.
+
+### What a command is, and is not
+
+An instruction to a live window, **not a new source of truth about it**. Point a
+window at a query, let the person reload it, and it returns to its own state.
+You are pointing, not driving.
+
+A command to a window that has closed **fails** — exit 3, "no window named …".
+It does not quietly succeed, so do not report that you showed somebody something
+unless the command returned 0.
+
+`connected: false` in a listing means the window is open but its channel has
+dropped; it cannot be commanded until it reconnects.
+
+### The person can see all of this
+
+The Windows tab in the UI lists every open window, what each is showing, which
+tabs it has, and what it was last told — including by you. There is no way to
+move somebody's screen without it being visible to them afterwards, which is the
+intended property rather than an oversight.
+
 ## `in:logs` — what the application did
 
 A log line is not mail. It has a level, a subsystem, the run it belongs to and
@@ -900,6 +957,7 @@ failure), `account` (add/list/remove/verify/sync), `user`, `vault`
 `gliner` (status/install/remove — the span-extraction model),
 `laya` (status/install/calibrate/remove — the decision model),
 `log` (read what the application did; `log level` sets how much is recorded),
+`ui` (the open browser windows; needs a running server — see above),
 `backup` / `restore`, `export`, `version`, `start`.
 
 Two to avoid unless explicitly asked: `account remove` deletes every stored

@@ -73,6 +73,15 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/errors", auth.Middleware(errorMux))
 	mux.Handle("/api/log/level", auth.Middleware(errorMux))
 
+	// The open frontends. Behind the same middleware as everything else, which
+	// is what stops a page on another origin watching — or driving — somebody's
+	// mail client. That matters more here than elsewhere: the rest of the API
+	// reads mail, this moves the screen in front of a person.
+	uiMux := http.NewServeMux()
+	registerUIRoutes(uiMux)
+	mux.Handle("/api/ui", auth.Middleware(uiMux))
+	mux.Handle("/api/ui/", auth.Middleware(uiMux))
+
 	// Attachments, including the one route that returns bytes rather than
 	// JSON. Authenticated as a group like the rest; see attachmentapi.go for
 	// what else stands between a mailed file and this origin.

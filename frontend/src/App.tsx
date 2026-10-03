@@ -13,7 +13,11 @@ import { ErrorLog } from './views/ErrorLog';
 import { Desk } from './views/Desk';
 import { Board } from './views/Board';
 import { openTool, openErrorLog, openQuery, useViewerStore, type ViewerMode } from './lib/tabs';
+import { Radio, RadioTower } from 'lucide-react';
 import { useThreadingStore, type Threading } from './lib/threading';
+import { startWindowSession, useWindowsStore, WINDOWS_TAB } from './lib/windows';
+import { Windows } from './views/Windows';
+import { WindowNote } from './views/WindowNote';
 import { useQueryStore, queryTerms, compose, asTerm, type QueryTerm } from './lib/filters';
 import { useDevReload } from './lib/devReload';
 import { version as appVersion } from '../package.json';
@@ -1092,6 +1096,7 @@ componentRegistry.register('message', () => <MessageViewer only="message" />);
 componentRegistry.register('viewer-contact', () => <MessageViewer only="contact" />);
 componentRegistry.register('viewer-file', () => <MessageViewer only="file" />);
 componentRegistry.register('errors', ErrorLog);
+componentRegistry.register('windows', Windows);
 
 componentRegistry.register('board', Board);
 componentRegistry.register('annotators', Annotators);
@@ -1114,6 +1119,16 @@ function App() {
   // list, the importer — can open one too. App keeps a stable reference for
   // the effects and commands below.
   const openToolCb = useCallback((id: string, label: string) => openTool(id, label), []);
+
+  // Registering this window with the backend, so something outside the browser
+  // can answer "what is on screen" and "put this in front of them". Started
+  // once, after sign-in: an unauthenticated window has nothing to report and
+  // could not be commanded anyway.
+  const windowName = useWindowsStore(s => s.name);
+  const windowLive = useWindowsStore(s => s.connected);
+  useEffect(() => {
+    if (user) startWindowSession();
+  }, [user]);
 
   const checkAuth = async () => {
     try {
@@ -1234,6 +1249,11 @@ function App() {
       execute: () => openToolCb('agents', 'AI Agents'),
     });
     commandRegistry.registerCommand({
+      id: 'iql.open-windows',
+      label: 'View: Windows',
+      execute: () => openToolCb(WINDOWS_TAB, 'Windows'),
+    });
+    commandRegistry.registerCommand({
       id: 'iql.open-errors',
       label: 'View: Log',
       keybinding: 'Control+Shift+E',
@@ -1271,6 +1291,7 @@ function App() {
       ],
       'Help': [
         { id: 'help.settings', label: 'Settings', commandId: 'iql.open-settings' },
+        { id: 'help.windows', label: 'Windows', commandId: 'iql.open-windows' },
         { id: 'help.errors', label: 'Log', commandId: 'iql.open-errors' },
         { id: 'help.divider', label: '---' },
         { id: 'help.about', label: 'About InboxQL', commandId: 'nexus.about' },
@@ -1294,6 +1315,16 @@ function App() {
     { id: 'unread', label: `${globalUnread} unread, all folders`, alignment: 'left' as const },
     { id: 'status', label: `Sync: ${syncStatus}`, alignment: 'center' as const, icon: RefreshCw },
     { id: 'error', label: lastError || 'System OK', alignment: 'right' as const, icon: lastError ? AlertCircle : Check },
+    // Which window this is, and whether the backend can reach it. Clicking it
+    // opens the list, because a name on its own is a label nobody can map to a
+    // screen until something shows them the mapping.
+    {
+      id: 'window',
+      label: windowName ? `Window ${windowName}${windowLive ? '' : ' (no channel)'}` : 'Window —',
+      alignment: 'right' as const,
+      icon: windowLive ? RadioTower : Radio,
+      onClick: () => openToolCb(WINDOWS_TAB, 'Windows'),
+    },
     { id: 'chat', label: 'Chat', alignment: 'right' as const, icon: MessageSquare, onClick: () => commandRegistry.executeCommand('view.toggleChat') },
   ];
 
@@ -1309,6 +1340,9 @@ function App() {
 
   return (
     <div className="h-screen w-screen overflow-hidden iql-workbench">
+      {/* Outside the shell, because it explains something that happened to the
+          whole window rather than to any one panel. */}
+      <WindowNote />
       <ShellLayout
         // `app-lockup` keeps the QL in InboxQL; see App.css for why a Tailwind
         // class could not do it.

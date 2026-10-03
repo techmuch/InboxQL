@@ -40,6 +40,10 @@ const (
 	EntityDraft      = "draft"
 	EntityContact    = "contact"
 	EntityAttachment = "attachment"
+	// EntityLog is what the application did, as opposed to what arrived in the
+	// mail. A kind of its own because it is one: a log line has a level and a
+	// subsystem and belongs to no message.
+	EntityLog = "log"
 )
 
 // Entities are the row sources a query can be about, and the values `in:`
@@ -62,10 +66,12 @@ var Entities = map[string]string{
 	"attachment":  EntityAttachment,
 	"files":       EntityAttachment,
 	"file":        EntityAttachment,
+	"logs":        EntityLog,
+	"log":         EntityLog,
 }
 
 // EntityNames lists what `in:` accepts, for help and completion.
-var EntityNames = []string{"mail", "drafts", "tickets", "contacts", "attachments"}
+var EntityNames = []string{"mail", "drafts", "tickets", "contacts", "attachments", "logs"}
 
 // Field declares one queryable field.
 type Field struct {
@@ -309,6 +315,49 @@ var Registry = []Field{
 	{
 		Name: "id", Entity: EntityDraft, Type: TypeIdent,
 		Summary: "this exact draft", Example: "in:drafts id:(a OR b)",
+	},
+
+	// --- logs --------------------------------------------------------------
+	//
+	// What the application did, as opposed to what arrived. The fields are the
+	// columns a reader actually filters on: how bad, which subsystem, which
+	// run.
+	{
+		Name: "level", Entity: EntityLog, Type: TypeEnum,
+		Ops:     []Op{OpMatch, OpGreater, OpGreaterOrEqual, OpLess, OpLessOrEqual},
+		Enum:    []string{"debug", "info", "warn", "error"},
+		Summary: "how bad a log line is; comparable, so level>warn is the errors",
+		Example: "in:logs level>warn",
+	},
+	{
+		Name: "category", Entity: EntityLog, Type: TypeEnum,
+		Ops:     []Op{OpMatch, OpGlob},
+		Aliases: []string{"subsystem"},
+		Summary: "which part of the application wrote it", Example: "in:logs category:import",
+	},
+	{
+		Name: "job", Entity: EntityLog, Type: TypeIdent,
+		Summary: "everything one import or maintenance run recorded",
+		Example: "in:logs job:7f2a",
+	},
+	{
+		Name: "message", Entity: EntityLog, Type: TypeText,
+		Aliases: []string{"text"},
+		Summary: "words in the line itself", Example: `in:logs message:timeout`,
+	},
+	{
+		Name: "context", Entity: EntityLog, Type: TypeText,
+		Aliases: []string{"where"},
+		Summary: "where it happened — a mailbox path, say", Example: "in:logs context:INBOX",
+	},
+	{
+		Name: "reference", Entity: EntityLog, Type: TypeText,
+		Aliases: []string{"ref"},
+		Summary: "the item it was about", Example: "in:logs ref:*.eml",
+	},
+	{
+		Name: "id", Entity: EntityLog, Type: TypeIdent,
+		Summary: "this exact log line", Example: "in:logs id:abc",
 	},
 
 	// --- contacts ----------------------------------------------------------

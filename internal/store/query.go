@@ -1,6 +1,8 @@
 package store
 
 import (
+	"time"
+
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -29,7 +31,7 @@ type QueryGroup struct {
 type QueryResult struct {
 	Query string `json:"query"`
 	// Kind is "messages", "groups", "count", "tickets", "drafts", "contacts",
-	// "attachments" or "threads".
+	// "attachments", "threads" or "logs".
 	Kind        string             `json:"kind"`
 	Count       int                `json:"count"`
 	Messages    []*message.Message `json:"messages,omitempty"`
@@ -39,6 +41,7 @@ type QueryResult struct {
 	Attachments []*AttachmentFile  `json:"attachments,omitempty"`
 	Topics      []ContactTopic     `json:"topics,omitempty"`
 	Threads     []*Thread          `json:"threads,omitempty"`
+	Logs        []*LoggedError     `json:"logs,omitempty"`
 	Groups      []QueryGroup       `json:"groups,omitempty"`
 	Total       int64              `json:"total,omitempty"`
 	// GroupField and Bucket describe an aggregate result, so a chart can turn
@@ -199,6 +202,14 @@ func RunQuery(src string, limit, offset int) (*QueryResult, error) {
 			return nil, err
 		}
 		res.Kind, res.Drafts, res.Count = "drafts", drafts, len(drafts)
+		return res, nil
+
+	case query.PlanLogs:
+		logs, err := scanLogs(plan)
+		if err != nil {
+			return nil, err
+		}
+		res.Kind, res.Logs, res.Count = "logs", logs, len(logs)
 		return res, nil
 
 	case query.PlanTickets:
@@ -468,6 +479,8 @@ func ExplainQuery(src string) (*QueryResult, error) {
 		kind = "contacts"
 	case query.PlanTopics:
 		kind = "topics"
+	case query.PlanLogs:
+		kind = "logs"
 	}
 	return &QueryResult{Query: src, Kind: kind, SQL: plan.SQL, Args: plan.Args}, nil
 }
@@ -574,4 +587,26 @@ func similarMessageIDs(messageID string, threshold float64) ([]string, error) {
 		ids = append(ids, n.MessageID)
 	}
 	return ids, nil
+}
+
+// scanLogs reads log rows in the order logSelectList declares them.
+func scanLogs(plan *query.Plan) ([]*LoggedError, error) {
+	rows, err := db.Query(plan.SQL, plan.Args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*LoggedError{}
+	for rows.Next() {
+		e := &LoggedError{}
+		var created int64
+		if err := rows.Scan(&e.ID, &e.Level, &e.Category, &e.JobID,
+			&e.AccountID, &e.Context, &e.Reference, &e.Message, &created); err != nil {
+			return nil, err
+		}
+		e.CreatedAt = time.UnixMilli(created)
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }

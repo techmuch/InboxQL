@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/user/inboxql/internal/logging"
 	"github.com/user/inboxql/internal/store"
 )
 
@@ -136,8 +137,28 @@ func (c *Context) OpenStore() error {
 	if _, err := store.InitDB(c.DataDir); err != nil {
 		return Fail(ExitError, "failed to open database: %v", err)
 	}
+	// Only now: the log is a table, so nothing can be written to it until the
+	// database is open and migrated. Everything before this point — including
+	// the migrations themselves — reaches stderr and not the log, which is the
+	// honest answer rather than a gap worth pretending about.
+	logging.Start()
+	logging.SetLevel(storedLevel())
 	return nil
 }
+
+// storedLevel reads the configured floor, defaulting to info.
+//
+// From the settings table rather than a flag: the level is changed when
+// something has already gone wrong, and a flag would mean reproducing it.
+func storedLevel() string {
+	if v, err := store.GetSetting(logLevelSetting); err == nil && v != "" {
+		return v
+	}
+	return store.LevelInfo
+}
+
+// logLevelSetting is where the floor is stored.
+const logLevelSetting = "log.level"
 
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

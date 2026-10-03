@@ -97,7 +97,7 @@ A query is a **filter**, optionally followed by **pipeline stages** after `|`.
 | `extract:name` `extract:name.field>10` | extracted structured data |
 | `thread:<message-id>` | every message in that conversation |
 | `saved:<name>` | everything a saved query matches |
-| `in:<kind>` | what the query is about: `mail`, `drafts`, `tickets` |
+| `in:<kind>` | what the query is about: `mail`, `drafts`, `tickets`, `contacts`, `attachments`, `logs` |
 | a bare word | full-text search |
 
 **A query is about one kind of thing.** Mail is the default. `in:` says
@@ -502,6 +502,65 @@ which, and the fix is `iql maintenance attachments` then
 
 ---
 
+## `in:logs` — what the application did
+
+A log line is not mail. It has a level, a subsystem, the run it belongs to and
+some words, and it is queried like every other kind:
+
+```
+iql --json query "in:logs level>warn after:7d"
+iql --json query "in:logs | count by category"
+iql --json query "in:logs job:<import-id>"
+```
+
+| Term | Matches |
+|---|---|
+| `level:` | `debug info warn error` — **ordered**, so `level>warn` is the errors |
+| `category:` | the subsystem: `import`, `sync`, `app`, or whatever wrote it |
+| `job:` | everything one import or maintenance run recorded |
+| `account:` | which account it was about |
+| `message: context: reference:` | the text, where it happened, what it was about |
+| `after: before: on:` | against the line's own time |
+
+Group by `level`, `category`, `job`, `account`, or `hour day week month year`.
+
+```
+iql --json log [--level warn] [--category import] [--job <id>] [--limit n] [--clear]
+iql --json log level [debug|info|warn|error]
+```
+
+`iql log` is the quick read; `in:logs` composes. `iql errors` still works and
+means `iql log`.
+
+### What is in it, and what is not
+
+**Everything the process printed.** The standard library's logger is routed
+here, so migrations, syncs, annotator runs and model calls all land at `info`
+under category `app` unless they said otherwise. Before this they went to
+stderr and vanished.
+
+**Nothing from before the database opened.** The log is a table, so the lines
+written while opening and migrating it reach stderr only. That is a real gap
+rather than a bug to report.
+
+**stderr still gets everything.** The database copy is the one you can query
+later; stderr is the one that works when the database does not.
+
+### The level is a volume control
+
+`iql log level debug` changes it now and remembers it, because logging is
+turned up after something has already gone wrong.
+
+**Debug is loud** — a sync writes thousands of lines a minute into the same
+database the mail is in. Tell the user that before suggesting it, and suggest
+turning it back down. The log is capped at 50,000 lines;
+`iql maintenance prune-log` trims it, keeping the newest.
+
+A line is never worth stalling work for, so a full buffer drops rather than
+blocks. Dropped lines are reported in the log itself and by `iql log level`, so
+a gap is visible rather than silent — if you see one, the answer is a lower
+level, not a bigger buffer.
+
 ## `annotate` — labels and extracted data
 
 An annotator is a named, versioned instruction applied to messages. A **label**
@@ -840,6 +899,7 @@ failure), `account` (add/list/remove/verify/sync), `user`, `vault`
 (attachments/text/reindex), `ocr` (read scans with a vision model),
 `gliner` (status/install/remove — the span-extraction model),
 `laya` (status/install/calibrate/remove — the decision model),
+`log` (read what the application did; `log level` sets how much is recorded),
 `backup` / `restore`, `export`, `version`, `start`.
 
 Two to avoid unless explicitly asked: `account remove` deletes every stored

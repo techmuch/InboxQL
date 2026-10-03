@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/user/inboxql/internal/cli/ui"
+	"github.com/user/inboxql/internal/logging"
 )
 
 // Subcommands each command accepts, used only to offer completions and to
@@ -134,7 +135,7 @@ const (
 var commandOrder = []string{
 	"init", "start", "version", "doctor",
 	"account", "user", "vault", "llm", "maintenance", "ocr", "gliner", "laya", "backup", "restore",
-	"import", "export", "errors", "annotate", "ticket", "contact",
+	"import", "export", "log", "annotate", "ticket", "contact",
 	"query", "saved", "sql", "search", "read", "analyze", "draft", "send", "outbox",
 }
 
@@ -152,7 +153,7 @@ var commandGroup = map[string]string{
 	"account": groupAdmin, "user": groupAdmin, "vault": groupAdmin, "llm": groupAdmin,
 	"maintenance": groupAdmin, "ocr": groupAdmin, "gliner": groupAdmin, "laya": groupAdmin,
 	"backup": groupAdmin, "restore": groupAdmin,
-	"import": groupAdmin, "export": groupAdmin, "errors": groupAdmin,
+	"import": groupAdmin, "export": groupAdmin, "log": groupAdmin,
 	"annotate": groupAdmin, "ticket": groupAdmin, "contact": groupAdmin,
 	// query and sql lead the agent group: they are the general tools, and
 	// search is the narrow one kept for compatibility with existing callers.
@@ -366,6 +367,10 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	root.SetErr(stderr)
 
 	err := root.Execute()
+	// Flush before returning, whatever happened. The last lines of a run are
+	// usually the ones worth reading, and they are the ones a buffered writer
+	// loses on exit.
+	logging.Stop()
 	if err == nil {
 		return ExitOK
 	}

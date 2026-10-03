@@ -92,7 +92,7 @@ model while every other one stays local:
 	register(&Command{
 		Name:    "maintenance",
 		Summary: "vacuum, analyze and check the database",
-		Usage: `iql maintenance <vacuum|analyze|integrity|checkpoint|reindex|attachments|text>
+		Usage: `iql maintenance <vacuum|analyze|integrity|checkpoint|reindex|attachments|text|prune-log>
 
   vacuum       rebuild the database, reclaiming freed space
   analyze      refresh query planner statistics
@@ -101,6 +101,7 @@ model while every other one stays local:
   reindex      rebuild the derived search and threading indexes
   attachments  extract attachment parts from stored messages
   text         read the words inside stored files, so they can be searched
+  prune-log    trim the log to its most recent lines
 
 flags:
   --dry-run   report what attachments would recover, without writing
@@ -119,6 +120,12 @@ recorded nowhere, which reads as "no attachments" everywhere in the app; the
 bytes are still in the stored message, so this recovers them without going back
 to the original mailbox. Idempotent, and separate from reindex because it is
 the one maintenance operation that writes outside the database.
+
+prune-log trims the log to its most recent lines. The log lives in the same
+database as the mail and debug level writes thousands of lines a minute, so a
+cap is what stops "turn it up to find something" from becoming a disk-filling
+bug. Trimmed by count rather than by age: an idle week should not erase the
+record of the busy one before it.
 
 text reads what is inside those files — PDFs and plain text today — so that
 content: and a bare word can search them. It is separate from attachments, and
@@ -508,6 +515,20 @@ func runMaintenance(ctx *Context, args []string) error {
 		action = store.IntegrityCheck
 	case "checkpoint":
 		action = store.Checkpoint
+	case "prune-log":
+		// The log is a table in the same database the mail is in, and debug
+		// level writes thousands of lines a minute. Without a cap, turning the
+		// level up and forgetting is a disk-filling bug.
+		action = func() error {
+			removed, err := store.PruneLog(store.MaxLogLines)
+			if err != nil {
+				return err
+			}
+			kept, _ := store.CountLog()
+			ctx.Printf("Removed %s; %s kept.\n",
+				count(removed, "line", "lines"), count(kept, "line", "lines"))
+			return nil
+		}
 	case "reindex":
 		// The full-text index and the participant/reference edges are all
 		// derived from `messages`. A database restored from a backup, or one

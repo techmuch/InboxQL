@@ -21,6 +21,8 @@ const (
 	PlanDrafts
 	// PlanContacts returns contact rows.
 	PlanContacts
+	// PlanLogs returns log lines.
+	PlanLogs
 	// PlanTopics returns a contact's topics with their association strength.
 	PlanTopics
 	// PlanAttachments returns one row per distinct file, not per occurrence.
@@ -187,6 +189,9 @@ func (p *pipeline) build() (*Plan, error) {
 	if p.entity == EntityAttachment {
 		return p.buildAttachments()
 	}
+	if p.entity == EntityLog {
+		return p.buildLogs()
+	}
 	if p.terminal == nil {
 		return p.buildMessages()
 	}
@@ -308,6 +313,107 @@ func (p *pipeline) buildDrafts() (*Plan, error) {
 		args = append(args, p.opt.Offset)
 	}
 	return &Plan{SQL: sql, Args: args, Kind: PlanDrafts, Limit: limit, Entity: EntityDraft}, nil
+}
+
+// logSelectList is what a log row carries to a reader.
+const logSelectList = `l.id, COALESCE(l.level, 'error'), l.category, COALESCE(l.job_id, ''),
+	COALESCE(l.account_id, ''), COALESCE(l.context, ''), COALESCE(l.reference, ''),
+	l.message, l.created_at`
+
+// buildLogs plans a query over the log.
+//
+// Newest first by default, which is the only order anybody reads a log in.
+func (p *pipeline) buildLogs() (*Plan, error) {
+	args := append([]any{}, p.args...)
+
+	if p.terminal != nil {
+		switch p.terminal.Kind {
+		case StageCount:
+			if p.terminal.Field == "" {
+				return &Plan{
+					SQL:    "SELECT COUNT(*) FROM error_log l WHERE " + p.where,
+					Args:   args,
+					Kind:   PlanScalar,
+					Entity: EntityLog,
+				}, nil
+			}
+			return p.buildLogGroups(p.terminal.Field, p.clampLimit(200))
+		case StageTop:
+			return p.buildLogGroups(p.terminal.Field, p.clampLimit(p.terminal.N))
+		default:
+			return nil, fmt.Errorf("%s does not apply to logs", p.terminal.Kind)
+		}
+	}
+
+	order := "l.created_at DESC, l.rowid DESC"
+	if p.sort != nil {
+		switch strings.ToLower(p.sort.Field) {
+		case "date", "time", "":
+			order = "l.created_at"
+		case "level":
+			order = levelRankSQL
+		case "category":
+			order = "l.category"
+		default:
+			return nil, fmt.Errorf("cannot sort logs by %q (try: date, level, category)", p.sort.Field)
+		}
+		if p.sort.Desc {
+			order += " DESC"
+		} else {
+			order += " ASC"
+		}
+	}
+
+	limit := p.clampLimit(p.opt.defaultLimit())
+	args = append(args, limit)
+	sql := "SELECT " + logSelectList + " FROM error_log l WHERE " + p.where +
+		" ORDER BY " + order + " LIMIT ?"
+	if p.opt.Offset > 0 {
+		sql += " OFFSET ?"
+		args = append(args, p.opt.Offset)
+	}
+	return &Plan{SQL: sql, Args: args, Kind: PlanLogs, Limit: limit, Entity: EntityLog}, nil
+}
+
+// buildLogGroups counts log lines per distinct value.
+//
+// `| count by level` and `| count by category` are the two questions a log is
+// actually asked, and the time buckets answer the third — what was it doing at
+// four in the morning.
+func (p *pipeline) buildLogGroups(field string, limit int) (*Plan, error) {
+	var expr string
+	chronological := false
+	switch strings.ToLower(field) {
+	case "level", "":
+		expr = "COALESCE(l.level, 'error')"
+	case "category", "subsystem":
+		expr = "l.category"
+	case "job":
+		expr = "COALESCE(l.job_id, '(none)')"
+	case "account":
+		expr = "COALESCE(l.account_id, '(none)')"
+	case "hour", "day", "week", "month", "year":
+		b, err := bucketExpr("l.created_at", strings.ToLower(field))
+		if err != nil {
+			return nil, err
+		}
+		expr, chronological = b, true
+	default:
+		return nil, fmt.Errorf(
+			"cannot group logs by %q (try: level, category, job, account, hour, day, week, month, year)", field)
+	}
+
+	args := append([]any{}, p.args...)
+	args = append(args, limit)
+	order := "value DESC, label ASC"
+	if chronological {
+		// A series over time reads left to right, not biggest first.
+		order = "label ASC"
+	}
+	sql := "SELECT " + expr + " AS label, COUNT(*) AS value FROM error_log l WHERE " + p.where +
+		" GROUP BY label ORDER BY " + order + " LIMIT ?"
+	return &Plan{SQL: sql, Args: args, Kind: PlanGroups, Limit: limit, Ordered: true,
+		Entity: EntityLog, GroupField: strings.ToLower(field), Bucket: bucketOf(field)}, nil
 }
 
 func (p *pipeline) buildDraftGroups(field string, limit int) (*Plan, error) {

@@ -1235,7 +1235,7 @@ function App() {
     });
     commandRegistry.registerCommand({
       id: 'iql.open-errors',
-      label: 'View: Error Log',
+      label: 'View: Log',
       keybinding: 'Control+Shift+E',
       execute: () => openErrorLog(),
     });
@@ -1271,7 +1271,7 @@ function App() {
       ],
       'Help': [
         { id: 'help.settings', label: 'Settings', commandId: 'iql.open-settings' },
-        { id: 'help.errors', label: 'Error Log', commandId: 'iql.open-errors' },
+        { id: 'help.errors', label: 'Log', commandId: 'iql.open-errors' },
         { id: 'help.divider', label: '---' },
         { id: 'help.about', label: 'About InboxQL', commandId: 'nexus.about' },
         { id: 'help.logout', label: 'Sign Out', commandId: 'iql.logout' },

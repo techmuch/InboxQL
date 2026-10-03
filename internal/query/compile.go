@@ -143,6 +143,8 @@ func (c *compiler) idColumn() string {
 		// A contact's identity is its address; there is no separate key,
 		// because two rows for one address would be two contacts.
 		return "c.address"
+	case EntityLog:
+		return "l.id"
 	case EntityAttachment:
 		// A file's identity is its bytes. Falling back to the row's own id
 		// keeps a part whose bytes were never stored — too large, or arriving
@@ -292,6 +294,11 @@ func (c *compiler) term(t *Term, negated bool) (string, error) {
 
 	if c.entity == EntityAttachment {
 		sql, err := c.attachmentTerm(t, negated)
+		return sql, at(t, err)
+	}
+
+	if c.entity == EntityLog {
+		sql, err := c.logTerm(t, negated)
 		return sql, at(t, err)
 	}
 
@@ -1566,3 +1573,100 @@ func (c *compiler) similarAttachmentTerm(t *Term, negated bool) (string, error) 
 	}
 	return wrap(attachmentKey+" IN ("+strings.Join(placeholders, ", ")+")", negated), nil
 }
+
+// logTerm compiles against the log table.
+//
+// A short list on purpose. A log line is not a document: it has a level, a
+// subsystem, a run it belongs to and some words, and every field here is one
+// of those. A reader filtering a log wants fewer, sharper handles than one
+// searching mail.
+func (c *compiler) logTerm(t *Term, negated bool) (string, error) {
+	switch t.Field {
+	case "level":
+		return c.logLevelTerm(t, negated)
+
+	case "category", "subsystem":
+		return wrap(c.stringPredicate("l.category", t), negated), nil
+
+	case "job":
+		return wrap("l.job_id = "+c.arg(t.Value), negated), nil
+
+	case "account":
+		return wrap("l.account_id = "+c.arg(t.Value), negated), nil
+
+	case "message", "text", "":
+		// A bare word searches the line, which is what somebody typing one
+		// into a log means.
+		return wrap(c.stringPredicate("l.message", t), negated), nil
+
+	case "context", "where":
+		return wrap(c.stringPredicate("COALESCE(l.context, '')", t), negated), nil
+
+	case "reference", "ref":
+		return wrap(c.stringPredicate("COALESCE(l.reference, '')", t), negated), nil
+
+	case "id":
+		return wrap("l.id = "+c.arg(t.Value), negated), nil
+
+	case "after":
+		start, _, err := ParseDateValue(t.Value)
+		if err != nil {
+			return "", fmt.Errorf("after: %w", err)
+		}
+		return wrap("l.created_at >= "+c.arg(start), negated), nil
+
+	case "before":
+		start, _, err := ParseDateValue(t.Value)
+		if err != nil {
+			return "", fmt.Errorf("before: %w", err)
+		}
+		return wrap("l.created_at < "+c.arg(start), negated), nil
+
+	case "on":
+		start, end, err := ParseDateValue(t.Value)
+		if err != nil {
+			return "", fmt.Errorf("on: %w", err)
+		}
+		return wrap("(l.created_at >= "+c.arg(start)+" AND l.created_at < "+c.arg(end)+")", negated), nil
+
+	case "in":
+		return "1=1", nil
+	}
+	return "", fmt.Errorf("%q is not a field of a log line (try: level, category, job, message, after)", t.Field)
+}
+
+// logLevelTerm compiles level:, including the comparisons.
+//
+// Levels are ordered, so `level>warn` is "worse than a warning" and is the
+// query somebody actually wants. Ranked in SQL rather than expanded into a
+// list of the levels above this one, because the list would be a second place
+// the order is written down and the two would eventually disagree.
+func (c *compiler) logLevelTerm(t *Term, negated bool) (string, error) {
+	rank, ok := levelRanks[strings.ToLower(t.Value)]
+	if !ok {
+		return "", fmt.Errorf("level: %q is not a level (debug, info, warn, error)", t.Value)
+	}
+	expr := levelRankSQL
+
+	var sql string
+	switch t.Op {
+	case OpGreater:
+		sql = expr + " > " + c.arg(rank)
+	case OpGreaterOrEqual:
+		sql = expr + " >= " + c.arg(rank)
+	case OpLess:
+		sql = expr + " < " + c.arg(rank)
+	case OpLessOrEqual:
+		sql = expr + " <= " + c.arg(rank)
+	default:
+		sql = expr + " = " + c.arg(rank)
+	}
+	return wrap(sql, negated), nil
+}
+
+// levelRankSQL orders a stored level. A row written before levels existed is
+// an error, because that is the only thing the table ever held.
+const levelRankSQL = `CASE COALESCE(l.level, 'error')
+	WHEN 'debug' THEN 0 WHEN 'warn' THEN 2 WHEN 'error' THEN 3 ELSE 1 END`
+
+var levelRanks = map[string]int{"debug": 0, "info": 1, "warn": 2, "error": 3}

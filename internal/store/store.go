@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 33
+	SchemaVersion = 34
 )
 
 var (
@@ -1428,6 +1428,32 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 33
+	}
+
+	if currentVersion < 34 {
+		log.Println("Applying schema migration v34 (the error log becomes a log)...")
+		// The table was already the right shape — category, job, account,
+		// context, reference, message, time — for everything except saying how
+		// bad a line is. One producer wrote to it and everything else in the
+		// process printed to stderr, so a level was never needed.
+		//
+		// Existing rows are errors, because that is the only thing that was
+		// ever recorded here, and defaulting them to anything else would
+		// rewrite history to make a new column look populated.
+		if _, err := db.Exec(
+			`ALTER TABLE error_log ADD COLUMN level TEXT NOT NULL DEFAULT 'error';`); err != nil {
+			log.Printf("Warning v34: %v", err)
+		}
+		// Level is the first thing a reader filters on and the first thing
+		// retention sorts by, and neither wants a scan.
+		if _, err := db.Exec(
+			`CREATE INDEX IF NOT EXISTS idx_error_log_level ON error_log(level, created_at DESC);`); err != nil {
+			log.Printf("Warning v34: %v", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 34;"); err != nil {
+			return err
+		}
+		currentVersion = 34
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

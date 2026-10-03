@@ -454,7 +454,7 @@ export const useErrorLogStore = create<ErrorLogState>((set) => ({
 /** Open the error log, optionally scoped to one import job. */
 export const openErrorLog = (jobId?: string): void => {
   useErrorLogStore.getState().setJobFilter(jobId ?? null);
-  openTool(ERROR_LOG_TAB, 'Error Log');
+  openTool(ERROR_LOG_TAB, 'Log');
 };
 
 /**

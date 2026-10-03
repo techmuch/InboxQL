@@ -16,6 +16,9 @@ import {
 } from './api';
 import { listAnnotators, type Annotator } from '../ai/api';
 import { useQueryStore, compose, queryStages } from '../../lib/filters';
+import {
+  canThread, isMailQuery, openingFolderQuery, THREAD_STAGE, useThreadingStore,
+} from '../../lib/threading';
 
 /**
  * Desk — one surface over mail, drafts and tickets.
@@ -101,7 +104,38 @@ export const Desk = () => {
       .catch(() => { if (!cancelled) setStages([]); });
     return () => { cancelled = true; };
   }, [query]);
-  const threaded = stages.includes('timeline');
+  const threaded = stages.includes(THREAD_STAGE);
+
+  // Following the preference when it changes.
+  //
+  // The opening query is already seeded from it, so this is only for the
+  // moment somebody flips the setting with the Desk open — without it the
+  // switch does nothing until the next reload, which reads as broken.
+  //
+  // It runs on the preference, not on the query: reacting to the query too
+  // would put the stage back the instant the Threads button removed it, and
+  // the button would stop working.
+  const threading = useThreadingStore(s => s.threading);
+  const appliedThreading = useRef(threading);
+  useEffect(() => {
+    if (appliedThreading.current === threading) return;
+    appliedThreading.current = threading;
+
+    const wanted = threading === 'threaded';
+    if (wanted === threaded) return;
+    // Only where the stage means something. A query that counts, or that is
+    // about contacts, is left exactly as it was.
+    if (wanted && !canThread(query, stages)) return;
+
+    let cancelled = false;
+    compose(query, wanted ? { stage: THREAD_STAGE } : { dropStage: THREAD_STAGE })
+      .then(next => { if (!cancelled) setQuery(next); })
+      .catch(() => {
+        // The preference is still saved; the query in the bar simply keeps the
+        // shape it had, and the next one opens threaded.
+      });
+    return () => { cancelled = true; };
+  }, [threading, threaded, query, stages, setQuery]);
 
   const [result, setResult] = useState<QueryResult | null>(null);
   const [failure, setFailure] = useState<QueryFailed | null>(null);
@@ -368,10 +402,21 @@ export const Desk = () => {
               <button
                 key={item.id}
                 onClick={async () => {
-                  // Replace the folder facet, keep whatever else narrows the
-                  // view. Replacing the whole query would silently discard a
-                  // cross-filter someone had just applied.
                   setFolder(item.id);
+                  // Coming back from contacts, files or tickets, the query is
+                  // about a different kind of thing and adding a folder to it
+                  // produces `in:contacts kind:person folder:inbox` — still
+                  // contacts, now with a term that means nothing there. A
+                  // folder is a statement about mail, so switching kind starts
+                  // over.
+                  //
+                  // Within mail it still composes, because a cross-filter
+                  // somebody just applied should survive changing folder, and
+                  // so should the thread stage.
+                  if (!isMailQuery(query)) {
+                    setQuery(openingFolderQuery(entryQuery));
+                    return;
+                  }
                   setQuery(await compose(query, { field: 'folder', term: entryQuery }));
                 }}
                 title={entryQuery}

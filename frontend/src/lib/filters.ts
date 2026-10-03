@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { startsThreaded, THREAD_STAGE } from './threading';
 
 /**
  * The one query every surface shares.
@@ -28,8 +29,19 @@ interface QueryState {
   clear: () => void;
 }
 
+/**
+ * What the Desk opens on.
+ *
+ * Seeded from the threading preference rather than checked after the fact: an
+ * async check would run the flat query first and replace it, which is a flash
+ * of the wrong list on every load. The preference is in localStorage, so it is
+ * readable synchronously and the first query is already the right one.
+ */
+export const openingQuery = () =>
+  startsThreaded() ? `folder:inbox | ${THREAD_STAGE}` : 'folder:inbox';
+
 export const useQueryStore = create<QueryState>((set) => ({
-  text: 'folder:inbox',
+  text: openingQuery(),
   set: (text) => set({ text }),
   clear: () => set({ text: '' }),
 }));

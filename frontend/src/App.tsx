@@ -13,6 +13,7 @@ import { ErrorLog } from './views/ErrorLog';
 import { Desk } from './views/Desk';
 import { Board } from './views/Board';
 import { openTool, openErrorLog, openQuery, useViewerStore, type ViewerMode } from './lib/tabs';
+import { useThreadingStore, type Threading } from './lib/threading';
 import { useQueryStore, queryTerms, compose, asTerm, type QueryTerm } from './lib/filters';
 import { useDevReload } from './lib/devReload';
 import { version as appVersion } from '../package.json';
@@ -375,6 +376,59 @@ const ViewerModeSetting = () => {
       <p className="text-[11px] text-muted-foreground mt-3">
         Switching to a single tab closes the Contact and File tabs; switching back reopens
         the ones that still have something in them.
+      </p>
+    </section>
+  );
+};
+
+/**
+ * Whether the Desk opens threaded.
+ *
+ * Phrased as what you see rather than as the stage that produces it. The query
+ * bar shows `| timeline` either way, which is where somebody learns the
+ * language; a settings page is not the place to teach it.
+ */
+const ThreadingSetting = () => {
+  const threading = useThreadingStore(s => s.threading);
+  const setThreading = useThreadingStore(s => s.setThreading);
+
+  const options: { id: Threading; label: string; detail: string }[] = [
+    {
+      id: 'flat',
+      label: 'One row per message',
+      detail: 'Every message on its own line, newest first.',
+    },
+    {
+      id: 'threaded',
+      label: 'One row per conversation',
+      detail: 'Messages grouped into the conversation they belong to, with the tickets and drafts it produced.',
+    },
+  ];
+
+  return (
+    <section>
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Inbox Layout</h3>
+      <div className="grid grid-cols-2 gap-4">
+        {options.map(o => (
+          <button
+            key={o.id}
+            onClick={() => setThreading(o.id)}
+            aria-pressed={threading === o.id}
+            className={`relative p-4 border text-left flex flex-col gap-1.5 transition-all ${
+              threading === o.id
+                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                : 'border-border hover:bg-accent'
+            }`}
+          >
+            <span className="text-sm font-medium">{o.label}</span>
+            <span className="text-xs text-muted-foreground leading-snug">{o.detail}</span>
+            {threading === o.id && <Check className="w-3 h-3 text-primary absolute top-2 right-2" />}
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground mt-3">
+        Where the Desk starts. The Threads button still changes any one query, and a query
+        that counts something, or that is about contacts or files, is left alone.
       </p>
     </section>
   );
@@ -957,6 +1011,7 @@ const SettingsView = () => {
                   </div>
                 </section>
 
+                <ThreadingSetting />
                 <ViewerModeSetting />
               </div>
             </div>

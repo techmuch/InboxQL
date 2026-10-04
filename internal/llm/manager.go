@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/user/inboxql/internal/store"
@@ -178,7 +177,7 @@ func (m *processManager) StopServer(provider string) error {
 
 	// 1. Managed process
 	if proc, ok := m.processes[provider]; ok && proc.cmd != nil && proc.cmd.Process != nil {
-		_ = proc.cmd.Process.Signal(syscall.SIGTERM)
+		_ = proc.cmd.Process.Signal(os.Interrupt)
 		done := make(chan struct{})
 		go func() {
 			time.Sleep(2 * time.Second)
@@ -193,8 +192,8 @@ func (m *processManager) StopServer(provider string) error {
 	// 2. Fallback: find PID for port and terminate
 	pid := findPIDForPort(provider)
 	if pid > 0 {
-		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			return fmt.Errorf("failed to terminate PID %d: %w", pid, err)
+		if p, err := os.FindProcess(pid); err == nil {
+			_ = p.Kill()
 		}
 		return nil
 	}

@@ -99,6 +99,13 @@ func Start() {
 		log.SetFlags(0)
 		log.SetOutput(stdlogWriter{})
 
+		// Flushed before the database closes. The command runner stops the
+		// logger after a command's deferred CloseDB has already run, so
+		// without this every buffered line is written into a closed handle and
+		// lost — which is how a CLI command's logs reached stderr and never
+		// the table.
+		store.OnBeforeClose(Stop)
+
 		go drain()
 	})
 }
@@ -119,6 +126,13 @@ func Stop() {
 	finish.Do(func() {
 		close(stop)
 		<-done
+		// Startable again afterwards. Without this a process that stopped the
+		// logger could never log again — which is only ever right for one that
+		// is about to exit, and is a trap for anything that opens a database
+		// twice. It also made a test that checked the log silently disable it
+		// for every test after.
+		lines, stop, done = nil, nil, nil
+		start = sync.Once{}
 	})
 }
 
@@ -185,6 +199,13 @@ func (h *handler) lineFrom(r slog.Record) *store.LoggedError {
 			e.Context = a.Value.String()
 		case "ref", "reference":
 			e.Reference = a.Value.String()
+		case "ms", "duration":
+			// Its own column, so `in:logs duration>1000` is a question the log
+			// can answer rather than a sentence somebody has to read.
+			if n := a.Value.Int64(); n >= 0 {
+				v := n
+				e.Duration = &v
+			}
 		default:
 			extra = append(extra, a.Key+"="+a.Value.String())
 		}

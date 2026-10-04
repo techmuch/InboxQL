@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 36
+	SchemaVersion = 37
 )
 
 var (
@@ -1587,6 +1587,33 @@ func migrateDB(db *sql.DB) error {
 		currentVersion = 36
 	}
 
+	if currentVersion < 37 {
+		log.Println("Applying schema migration v37 (the log can be asked how long things took)...")
+		// The log had no numeric column, so an elapsed time could only go into
+		// the message text — which makes `in:logs duration>1000` impossible.
+		//
+		// For a log whose purpose is "what is this thing doing", elapsed time
+		// is the most useful number there is, so it gets a column rather than
+		// a sentence.
+		//
+		// Null rather than zero for a line that is not about something taking
+		// time: `duration>0` should not match a migration notice, and a
+		// default of 0 would make every row claim to have been instantaneous.
+		if _, err := db.Exec(
+			`ALTER TABLE error_log ADD COLUMN duration_ms INTEGER;`); err != nil {
+			log.Printf("Warning v37: %v", err)
+		}
+		if _, err := db.Exec(
+			`CREATE INDEX IF NOT EXISTS idx_error_log_duration
+			 ON error_log(duration_ms DESC) WHERE duration_ms IS NOT NULL;`); err != nil {
+			log.Printf("Warning v37: %v", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 37;"); err != nil {
+			return err
+		}
+		currentVersion = 37
+	}
+
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)
 	return nil
 }
@@ -1599,7 +1626,26 @@ func migrateDB(db *sql.DB) error {
 // That made the store untestable from more than one test in a package, and
 // forced test files to share a single database opened in TestMain. Production
 // opens once and closes at exit, so the reset changes nothing there.
+// beforeClose runs just before the database is closed.
+//
+// The logger needs it. Its writer batches into this database and is stopped by
+// the command runner — which happens *after* each command's deferred
+// CloseDB, so every buffered line was being flushed into a closed handle and
+// silently lost. A CLI command's logs reached stderr and never the table.
+//
+// A hook rather than store importing the logger, because the logger imports
+// store and the cycle has to break somewhere.
+var beforeClose []func()
+
+// OnBeforeClose registers a function to run before the database closes.
+func OnBeforeClose(fn func()) { beforeClose = append(beforeClose, fn) }
+
 func CloseDB() {
+	for _, fn := range beforeClose {
+		fn()
+	}
+	beforeClose = nil
+
 	if db != nil {
 		db.Close()
 		db = nil

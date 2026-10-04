@@ -19,6 +19,8 @@ func registerErrorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/errors", handleErrorClear)
 	mux.HandleFunc("GET /api/log/level", handleLogLevelGet)
 	mux.HandleFunc("PUT /api/log/level", handleLogLevelSet)
+	mux.HandleFunc("GET /api/log/settings", handleLogSettingsGet)
+	mux.HandleFunc("PUT /api/log/settings", handleLogSettingsSet)
 }
 
 func errorQueryFrom(r *http.Request) store.ErrorQuery {
@@ -103,4 +105,32 @@ func handleLogLevelSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"level": logging.Level()})
+}
+
+// handleLogSettingsGet reports what the log records.
+//
+// Separate from the level, which is how much. The level lives in the Log tab
+// where somebody stands when they want it; these are the set-once decisions and
+// live in Settings.
+func handleLogSettingsGet(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"settings":   store.LoadLogSettings(),
+		"categories": store.LoggableCategories,
+		"level":      logging.Level(),
+	})
+}
+
+func handleLogSettingsSet(w http.ResponseWriter, r *http.Request) {
+	// Read first, then overlay: a client that sends three of four fields must
+	// not have the fourth reset to its default, which is what decoding into a
+	// zero value would do.
+	cfg := store.LoadLogSettings()
+	if err := decodeJSON(w, r, &cfg); err != nil {
+		return
+	}
+	if err := store.SaveLogSettings(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": store.LoadLogSettings()})
 }

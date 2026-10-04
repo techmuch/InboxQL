@@ -13,12 +13,13 @@ import { ErrorLog } from './views/ErrorLog';
 import { Desk } from './views/Desk';
 import { Board } from './views/Board';
 import { openTool, openErrorLog, openQuery, useViewerStore, type ViewerMode } from './lib/tabs';
-import { Radio, RadioTower } from 'lucide-react';
+import { Radio, RadioTower, ScrollText } from 'lucide-react';
 import { useThreadingStore, type Threading } from './lib/threading';
 import { startWindowSession, useWindowsStore, WINDOWS_TAB } from './lib/windows';
 import { Windows } from './views/Windows';
 import { WindowNote } from './views/WindowNote';
 import { RailDefaults } from './views/RailDefaults';
+import { LogSettings } from './views/LogSettings';
 import { useQueryStore, queryTerms, compose, asTerm, type QueryTerm } from './lib/filters';
 import { useDevReload } from './lib/devReload';
 import { version as appVersion } from '../package.json';
@@ -622,6 +623,10 @@ const SettingsView = () => {
     { id: 'import', label: 'Import Mail', icon: Download },
     { id: 'ai', label: 'AI Configuration', icon: Cpu },
     { id: 'security', label: 'Security', icon: Shield },
+    // Its own section rather than inside General, which is per-browser by its
+    // own description, or Maintenance, which is a page of verbs and would
+    // become a junk drawer.
+    { id: 'logging', label: 'Logging', icon: ScrollText },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench },
     { id: 'data', label: 'Data Management', icon: Database },
     { id: 'storage', label: 'Browser Storage', icon: HardDrive },
@@ -1032,6 +1037,17 @@ const SettingsView = () => {
               <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-10" />
               <h3 className="text-lg font-medium opacity-50">Security Configuration coming soon</h3>
               <p className="text-sm text-muted-foreground mt-2">We are hard at work bringing this feature to InboxQL.</p>
+            </div>
+          )}
+
+          {activeCategory === 'logging' && (
+            <div className="animate-in fade-in duration-300">
+              <h2 className="text-2xl font-bold text-foreground mb-2">Logging</h2>
+              <p className="text-muted-foreground text-sm mb-8">
+                What InboxQL writes down about what it is doing. Unlike General, these are stored
+                on the server and apply to every window.
+              </p>
+              <LogSettings />
             </div>
           )}
 

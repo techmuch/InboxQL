@@ -72,6 +72,7 @@ func Router() (http.Handler, error) {
 	registerErrorRoutes(errorMux)
 	mux.Handle("/api/errors", auth.Middleware(errorMux))
 	mux.Handle("/api/log/level", auth.Middleware(errorMux))
+	mux.Handle("/api/log/settings", auth.Middleware(errorMux))
 
 	// The open frontends. Behind the same middleware as everything else, which
 	// is what stops a page on another origin watching — or driving — somebody's
@@ -248,7 +249,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.73",
+	Version: "0.0.74",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.

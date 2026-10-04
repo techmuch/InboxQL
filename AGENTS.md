@@ -608,6 +608,7 @@ iql --json query "in:logs job:<import-id>"
 | `category:` | the subsystem: `import`, `sync`, `app`, or whatever wrote it |
 | `job:` | everything one import or maintenance run recorded |
 | `account:` | which account it was about |
+| `duration:` | how long it took, in milliseconds — `duration>1000` |
 | `message: context: reference:` | the text, where it happened, what it was about |
 | `after: before: on:` | against the line's own time |
 
@@ -634,6 +635,47 @@ rather than a bug to report.
 
 **stderr still gets everything.** The database copy is the one you can query
 later; stderr is the one that works when the database does not.
+
+### Timings
+
+Every query is recorded with how long it took, in a column rather than in
+prose — so this is a question the log can answer:
+
+```
+iql --json query "in:logs duration>1000 after:1h | count by category"
+iql --json log --slow
+```
+
+**A slow query is a warning and carries its SQL.** Anything under the threshold
+is a `debug` line without it: "took 2.2 s" says something is wrong, the
+statement says what, and on every row it would be bloat. Paste it into
+`iql sql --explain`.
+
+Also timed: HTTP requests, syncs, annotator runs and model loads — `laya.Open`
+takes about four seconds and said nothing before, which is the obvious suspect
+when the first annotation of a run seems to hang.
+
+### What is recorded is separate from how much
+
+| | Where | What it is |
+|---|---|---|
+| **Level** | the Log tab, `iql log level` | how much — the floor |
+| **Everything else** | Settings → Logging | what, and how slow is slow |
+
+Settings → Logging holds four things: the slow-query threshold, which of the
+noisy categories are on, how many lines to keep, and whether query text is
+written down.
+
+**Categories sit on top of the level, not inside it.** Debug is otherwise
+all-or-nothing — turn it up to chase one thing and ten thousand request lines
+bury it. `http` is off by default for that reason.
+
+**Query text is user content.** `from:solicitor@…` is as sensitive as the mail
+it finds, and the log outlives the query. Recorded by default because this is a
+local database; when it is switched off the words are omitted entirely rather
+than redacted, and the timings and counts survive. Check
+`iql --json log level` before assuming either way, and do not quote a logged
+query back to a user who has turned it off.
 
 ### The level is a volume control
 

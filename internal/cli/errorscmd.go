@@ -26,6 +26,7 @@ counted, because "3 failed" says nothing about which three or why.
 
 Flags:
   --level <name>     keep this level and above (debug, info, warn, error)
+  --slow             only lines that took longer than the configured threshold
   --category <name>  filter by subsystem — import, app, sync
   --job <id>         only lines from one import or maintenance run
   --limit <n>        maximum lines, newest first (default 50)
@@ -42,6 +43,15 @@ something has already gone wrong — a flag would mean reproducing it first.
 Debug is loud: a sync writes thousands of lines a minute, and the log is a
 table in the same database the mail is in. Turn it up to find something, then
 turn it back down.
+
+## Timings
+
+Every query is recorded with how long it took, and a slow one is a warning
+carrying its SQL, so it can be pasted into "iql sql --explain". The --slow flag
+shows those; "in:logs duration>1000" asks the same question in the language.
+
+What is recorded, how slow is slow, and whether query text is written down are
+in Settings under Logging.
 
 ## It is a query kind
 
@@ -66,6 +76,7 @@ func runErrors(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("log", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	level := fs.String("level", "", "keep this level and above")
+	slow := fs.Bool("slow", false, "only lines slower than the threshold")
 	category := fs.String("category", "", "filter by category")
 	jobID := fs.String("job", "", "filter by import job")
 	limit := fs.Int("limit", 50, "maximum entries")
@@ -84,6 +95,9 @@ func runErrors(ctx *Context, args []string) error {
 	}
 	query := store.ErrorQuery{
 		Category: *category, JobID: *jobID, MinLevel: *level, Limit: *limit}
+	if *slow {
+		query.MinDuration = store.LoadLogSettings().SlowMs
+	}
 
 	if *clear {
 		removed, err := store.ClearErrors(query)
@@ -102,7 +116,8 @@ func runErrors(ctx *Context, args []string) error {
 		return Fail(ExitError, "%v", err)
 	}
 	total, err := store.CountErrors(store.ErrorQuery{
-		Category: *category, JobID: *jobID, MinLevel: *level})
+		Category: *category, JobID: *jobID, MinLevel: *level,
+		MinDuration: query.MinDuration})
 	if err != nil {
 		return Fail(ExitError, "%v", err)
 	}
@@ -122,14 +137,21 @@ func runErrors(ctx *Context, args []string) error {
 	// routinely long. The header line is tabulated so the timestamps and
 	// categories still line up down the page.
 	p := ctx.Printer()
-	t := p.NewTable("WHEN", "LEVEL", "CATEGORY", "REFERENCE")
+	t := p.NewTable("WHEN", "LEVEL", "CATEGORY", "TOOK", "REFERENCE")
 	for _, e := range entries {
+		// The number the log exists to carry. Blank rather than "0ms" for a
+		// line that is not about something taking time — a migration notice is
+		// not an instantaneous query.
+		took := ""
+		if e.Duration != nil {
+			took = fmt.Sprintf("%dms", *e.Duration)
+		}
 		// Coloured by level rather than by being present. Everything here used
 		// to be a failure; now most of it is a record of ordinary work, and
 		// painting it all red would make the failures harder to find, not
 		// easier.
 		t.Row(e.CreatedAt.Format(time.RFC3339),
-			t.Cell(levelStyle(e.Level), e.Level), e.Category, e.Reference)
+			t.Cell(levelStyle(e.Level), e.Level), e.Category, took, e.Reference)
 	}
 	if err := t.Flush(); err != nil {
 		return Fail(ExitError, "writing errors: %v", err)

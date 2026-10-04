@@ -149,7 +149,22 @@ func ThreadMessageIDs(id string) ([]string, error) {
 }
 
 // RunQuery parses, compiles and executes a query string.
-func RunQuery(src string, limit, offset int) (*QueryResult, error) {
+func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
+	// Timed here because this is the one place every query goes through, so
+	// there is no second path that quietly goes untimed. Deferred so a query
+	// that fails is recorded too — a query that did not compile is visible in
+	// the interface and gone the moment the box is retyped, which is exactly
+	// when somebody wants to know what they had.
+	started := time.Now()
+	var sqlText string
+	var rows int
+	defer func() {
+		if res != nil {
+			sqlText, rows = res.SQL, res.Count
+		}
+		logQuery(src, sqlText, time.Since(started), rows, err)
+	}()
+
 	q, err := query.Parse(src)
 	if err != nil {
 		return nil, err
@@ -160,7 +175,7 @@ func RunQuery(src string, limit, offset int) (*QueryResult, error) {
 		return nil, err
 	}
 
-	res := &QueryResult{Query: src, SQL: plan.SQL, Args: plan.Args,
+	res = &QueryResult{Query: src, SQL: plan.SQL, Args: plan.Args,
 		GroupField: plan.GroupField, Bucket: plan.Bucket}
 
 	switch plan.Kind {
@@ -437,7 +452,15 @@ func scanMessages(plan *query.Plan) ([]*message.Message, error) {
 //
 // Used for paging totals, where the caller needs "of how many" alongside a
 // page of results.
-func CountQuery(src string) (int64, error) {
+func CountQuery(src string) (n int64, err error) {
+	// Timed like RunQuery, because this is the second path a query can take and
+	// an untimed one is where a slow query hides. It is also the busier of the
+	// two: reach counts, rail defaults and annotator progress all come through
+	// here, several per page.
+	started := time.Now()
+	var sqlText string
+	defer func() { logQuery(src, sqlText, time.Since(started), int(n), err) }()
+
 	q, err := query.Parse(src)
 	if err != nil {
 		return 0, err
@@ -448,7 +471,7 @@ func CountQuery(src string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	var n int64
+	sqlText = plan.SQL
 	err = db.QueryRow(plan.SQL, plan.Args...).Scan(&n)
 	return n, err
 }

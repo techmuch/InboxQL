@@ -24,6 +24,7 @@ package annotate
 
 import (
 	"context"
+	"log/slog"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -276,6 +277,15 @@ func Run(ctx context.Context, name string, opt Options) (*Outcome, error) {
 	}
 
 	out.Duration = time.Since(started).String()
+
+	// Recorded, because until now a run existed only as a progress bar that
+	// disappeared. "How long did receipts take over the mailbox, and how much
+	// did it find" is the question somebody asks the morning after.
+	slog.Info("annotator run",
+		"category", "annotate", "ms", time.Since(started).Milliseconds(),
+		"ref", a.Name,
+		"evaluated", out.Evaluated, "matched", out.Matched, "failed", out.Failed)
+
 	return out, nil
 }
 

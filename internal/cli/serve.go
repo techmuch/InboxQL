@@ -23,7 +23,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.73"
+var Version = "0.0.74"
 
 func init() {
 	register(&Command{
@@ -336,8 +336,11 @@ func runStart(ctx *Context, args []string) error {
 	// takes a while, and cutting one off mid-response is worse than the
 	// slow-client risk it defends against.
 	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           handler,
+		Addr: *addr,
+		// Outermost, so a request is timed including whatever the auth
+		// middleware does to it, and so a request refused before reaching a
+		// handler is still recorded.
+		Handler:           api.LogRequests(handler),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      5 * time.Minute,

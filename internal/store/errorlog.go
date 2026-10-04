@@ -61,8 +61,15 @@ type LoggedError struct {
 	// Context is where it happened — a mailbox path, say.
 	Context string `json:"context,omitempty"`
 	// Reference identifies the specific item, e.g. the file that would not parse.
-	Reference string    `json:"reference,omitempty"`
-	Message   string    `json:"message"`
+	Reference string `json:"reference,omitempty"`
+	Message   string `json:"message"`
+	// Duration is how long the thing took, in milliseconds, for the lines that
+	// are about something taking time.
+	//
+	// A pointer so that "not about a duration" and "took no time" stay
+	// different. `duration>0` should not match a migration notice, and a
+	// default of zero would have every row claiming to be instantaneous.
+	Duration  *int64    `json:"durationMs,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -94,10 +101,10 @@ func LogError(e *LoggedError) error {
 	e.Context = sanitiseForLog(e.Context)
 
 	_, err := db.Exec(`
-		INSERT INTO error_log (id, level, category, job_id, account_id, context, reference, message, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO error_log (id, level, category, job_id, account_id, context, reference, message, duration_ms, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, e.ID, e.Level, e.Category, nullIfEmpty(e.JobID), nullIfEmpty(e.AccountID),
-		nullIfEmpty(e.Context), nullIfEmpty(e.Reference), e.Message, e.CreatedAt.UnixMilli())
+		nullIfEmpty(e.Context), nullIfEmpty(e.Reference), e.Message, e.Duration, e.CreatedAt.UnixMilli())
 	return err
 }
 
@@ -118,8 +125,8 @@ func LogLines(lines []*LoggedError) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO error_log (id, level, category, job_id, account_id, context, reference, message, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		INSERT INTO error_log (id, level, category, job_id, account_id, context, reference, message, duration_ms, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -138,7 +145,7 @@ func LogLines(lines []*LoggedError) error {
 		if _, err := stmt.Exec(e.ID, e.Level, e.Category,
 			nullIfEmpty(e.JobID), nullIfEmpty(e.AccountID),
 			nullIfEmpty(e.Context), nullIfEmpty(e.Reference),
-			sanitiseForLog(e.Message), e.CreatedAt.UnixMilli()); err != nil {
+			sanitiseForLog(e.Message), e.Duration, e.CreatedAt.UnixMilli()); err != nil {
 			return err
 		}
 	}
@@ -186,8 +193,13 @@ type ErrorQuery struct {
 	JobID    string
 	// MinLevel keeps lines at this level and above. Empty means everything.
 	MinLevel string
-	Limit    int
-	Offset   int
+	// MinDuration keeps lines that took at least this many milliseconds. A
+	// line with no duration never matches: a migration notice is not a fast
+	// query, and sweeping the untimed ones in would make the number useless
+	// for the question it answers.
+	MinDuration int
+	Limit       int
+	Offset      int
 }
 
 // clauses builds the shared WHERE for listing, counting and clearing, so the
@@ -204,6 +216,10 @@ func (q ErrorQuery) clauses() ([]string, []any) {
 		where = append(where, "job_id = ?")
 		args = append(args, q.JobID)
 	}
+	if q.MinDuration > 0 {
+		where = append(where, "duration_ms IS NOT NULL AND duration_ms >= ?")
+		args = append(args, q.MinDuration)
+	}
 	if q.MinLevel != "" {
 		// Ranked in SQL rather than by listing the levels above this one, so
 		// adding a level later does not silently leave this behind.
@@ -215,7 +231,7 @@ func (q ErrorQuery) clauses() ([]string, []any) {
 	return where, args
 }
 
-const errorColumns = `id, COALESCE(level, 'error'), category, job_id, account_id, context, reference, message, created_at`
+const errorColumns = `id, COALESCE(level, 'error'), category, job_id, account_id, context, reference, message, duration_ms, created_at`
 
 // ListErrors returns logged errors, newest first.
 func ListErrors(q ErrorQuery) ([]*LoggedError, error) {
@@ -243,14 +259,19 @@ func ListErrors(q ErrorQuery) ([]*LoggedError, error) {
 		e := &LoggedError{}
 		var jobID, accountID, context, reference sql.NullString
 		var created int64
+		var duration sql.NullInt64
 		if err := rows.Scan(&e.ID, &e.Level, &e.Category, &jobID, &accountID,
-			&context, &reference, &e.Message, &created); err != nil {
+			&context, &reference, &e.Message, &duration, &created); err != nil {
 			return nil, err
 		}
 		e.JobID = jobID.String
 		e.AccountID = accountID.String
 		e.Context = context.String
 		e.Reference = reference.String
+		if duration.Valid {
+			d := duration.Int64
+			e.Duration = &d
+		}
 		e.CreatedAt = time.UnixMilli(created)
 		out = append(out, e)
 	}

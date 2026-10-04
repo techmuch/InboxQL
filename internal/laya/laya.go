@@ -41,6 +41,9 @@
 package laya
 
 import (
+	"log/slog"
+	"time"
+
 	"fmt"
 	"math"
 	"os"
@@ -195,6 +198,7 @@ func Installed(dataDir string) bool {
 // reason the span model's are not: a gigabyte arriving because somebody ran a
 // command that mentioned an annotator is not a surprise anyone should have.
 func Open(dataDir string) (*Model, error) {
+	opened := time.Now()
 	dir := Dir(dataDir)
 	if !Installed(dataDir) {
 		return nil, fmt.Errorf(
@@ -238,6 +242,11 @@ func Open(dataDir string) (*Model, error) {
 	if err != nil {
 		return nil, fmt.Errorf("building the graph: %w", err)
 	}
+
+	// Four seconds of silence otherwise, which is the obvious suspect when the
+	// first annotation of a run seems to hang.
+	slog.Info("loaded the decision model",
+		"category", "annotate", "ms", time.Since(opened).Milliseconds(), "ref", dir)
 
 	return &Model{dir: dir, card: ReadCard(dataDir), tok: tok, exec: exec}, nil
 }

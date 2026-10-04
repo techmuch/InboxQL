@@ -1605,6 +1605,9 @@ func (c *compiler) logTerm(t *Term, negated bool) (string, error) {
 	case "reference", "ref":
 		return wrap(c.stringPredicate("COALESCE(l.reference, '')", t), negated), nil
 
+	case "duration", "took", "ms":
+		return c.logDurationTerm(t, negated)
+
 	case "id":
 		return wrap("l.id = "+c.arg(t.Value), negated), nil
 
@@ -1632,7 +1635,7 @@ func (c *compiler) logTerm(t *Term, negated bool) (string, error) {
 	case "in":
 		return "1=1", nil
 	}
-	return "", fmt.Errorf("%q is not a field of a log line (try: level, category, job, message, after)", t.Field)
+	return "", fmt.Errorf("%q is not a field of a log line (try: level, category, job, duration, message, after)", t.Field)
 }
 
 // logLevelTerm compiles level:, including the comparisons.
@@ -1670,3 +1673,37 @@ const levelRankSQL = `CASE COALESCE(l.level, 'error')
 	WHEN 'debug' THEN 0 WHEN 'warn' THEN 2 WHEN 'error' THEN 3 ELSE 1 END`
 
 var levelRanks = map[string]int{"debug": 0, "info": 1, "warn": 2, "error": 3}
+
+// logDurationTerm compiles duration:, in milliseconds.
+//
+// A line with no duration never matches, including under negation. `-duration>1000`
+// means "took a thousand milliseconds or less", not "is not about a duration" —
+// a migration notice is not a fast query, and sweeping every untimed line into
+// the answer would make the number useless for exactly the question it exists
+// to answer.
+func (c *compiler) logDurationTerm(t *Term, negated bool) (string, error) {
+	ms, err := strconv.ParseInt(strings.TrimSpace(t.Value), 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("duration: %q is not a number of milliseconds", t.Value)
+	}
+
+	var op string
+	switch t.Op {
+	case OpGreater:
+		op = ">"
+	case OpGreaterOrEqual:
+		op = ">="
+	case OpLess:
+		op = "<"
+	case OpLessOrEqual:
+		op = "<="
+	default:
+		op = "="
+	}
+
+	inner := "l.duration_ms " + op + " " + c.arg(ms)
+	if negated {
+		return "(l.duration_ms IS NOT NULL AND NOT (" + inner + "))", nil
+	}
+	return "(l.duration_ms IS NOT NULL AND " + inner + ")", nil
+}

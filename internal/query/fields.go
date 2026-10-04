@@ -356,6 +356,13 @@ var Registry = []Field{
 		Summary: "the item it was about", Example: "in:logs ref:*.eml",
 	},
 	{
+		Name: "duration", Entity: EntityLog, Type: TypeNumber,
+		Ops:     []Op{OpMatch, OpGreater, OpGreaterOrEqual, OpLess, OpLessOrEqual},
+		Aliases: []string{"took", "ms"},
+		Summary: "how long it took, in milliseconds",
+		Example: "in:logs duration>1000",
+	},
+	{
 		Name: "id", Entity: EntityLog, Type: TypeIdent,
 		Summary: "this exact log line", Example: "in:logs id:abc",
 	},

@@ -36,6 +36,9 @@
 package gliner
 
 import (
+	"log/slog"
+	"time"
+
 	"fmt"
 	"math"
 	"os"
@@ -163,6 +166,7 @@ func Installed(dataDir string) bool {
 // annotator is not a surprise anyone should have; `iql gliner install` puts
 // them there deliberately, and this says plainly when they are missing.
 func Open(dataDir string) (*Model, error) {
+	opened := time.Now()
 	dir := Dir(dataDir)
 	if !Installed(dataDir) {
 		return nil, fmt.Errorf(
@@ -209,6 +213,9 @@ func Open(dataDir string) (*Model, error) {
 	if err != nil {
 		return nil, fmt.Errorf("building the graph: %w", err)
 	}
+
+	slog.Info("loaded the span model",
+		"category", "annotate", "ms", time.Since(opened).Milliseconds(), "ref", dir)
 
 	return &Model{dir: dir, card: ReadCard(dataDir), enc: sp.NewEncoder(spm), exec: exec}, nil
 }

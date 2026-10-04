@@ -24,9 +24,9 @@ package annotate
 
 import (
 	"context"
-	"log/slog"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 

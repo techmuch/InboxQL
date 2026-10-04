@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 34
+	SchemaVersion = 35
 )
 
 var (
@@ -1454,6 +1454,75 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 34
+	}
+
+	if currentVersion < 35 {
+		log.Println("Applying schema migration v35 (saved queries can be arranged)...")
+		// The rail was six hardcoded entries in a component plus whatever had
+		// been saved, ordered by `pinned DESC, name ASC` — which is ordering,
+		// badly: the only way to move something was to rename it.
+		//
+		// Position supersedes that. Pinned keeps working because it is in the
+		// CLI and in people's habits; it just stops being the sort.
+		for _, stmt := range []string{
+			`ALTER TABLE saved_queries ADD COLUMN position INTEGER NOT NULL DEFAULT 0;`,
+			// A short name from a fixed vocabulary, not arbitrary markup: this
+			// is rendered in a rail and a query is not a thing to accept SVG
+			// from.
+			`ALTER TABLE saved_queries ADD COLUMN icon TEXT NOT NULL DEFAULT '';`,
+		} {
+			if _, err := db.Exec(stmt); err != nil {
+				log.Printf("Warning v35: %v", err)
+			}
+		}
+		// Seeded from the order they were already displayed in, so nothing
+		// moves on upgrade. A rail that rearranged itself because of a
+		// migration would be the worst possible introduction to being able to
+		// rearrange it.
+		if _, err := db.Exec(`
+			UPDATE saved_queries SET position = (
+				SELECT COUNT(*) FROM saved_queries AS earlier
+				WHERE earlier.pinned > saved_queries.pinned
+				   OR (earlier.pinned = saved_queries.pinned AND earlier.name < saved_queries.name)
+			)`); err != nil {
+			log.Printf("Warning v35: %v", err)
+		}
+		// Seed the six the rail used to hardcode, so an upgrade changes nothing
+		// visible. They were Tickets, Proposed, Files, People, Systems and
+		// Unclassified, written in a component rather than saved — and the
+		// comment beside them said why they existed: "a rail exists precisely
+		// so a surface does not require knowing its name".
+		//
+		// Removing them without seeding would regress exactly that. Seeding
+		// them makes the migration invisible and the rows editable, which is
+		// the whole point.
+		//
+		// Inserted rather than saved through SaveQuery because a migration must
+		// not depend on the query compiler: a seed that failed to validate
+		// would fail the upgrade for a row nobody asked for.
+		seeded := []struct{ name, title, query, icon string }{
+			{"tickets", "Tickets", "in:tickets -status:done -status:rejected", "ticket"},
+			{"proposed", "Proposed", "in:tickets status:proposed", "ticket"},
+			{"files", "Files", "in:attachments", "paperclip"},
+			{"people", "People", "in:contacts kind:person", "users"},
+			{"systems", "Systems", "in:contacts kind:system", "bot"},
+			{"unclassified", "Unclassified", "in:contacts kind:unknown", "search"},
+		}
+		base := nextRailPosition()
+		now := time.Now().UnixMilli()
+		for i, d := range seeded {
+			if _, err := db.Exec(`
+				INSERT OR IGNORE INTO saved_queries
+					(id, name, title, query, description, pinned, position, icon, created_at, updated_at)
+				VALUES (?, ?, ?, ?, '', 0, ?, ?, ?, ?)`,
+				"rail-"+d.name, d.name, d.title, d.query, base+i, d.icon, now, now); err != nil {
+				log.Printf("Warning v35 seed %s: %v", d.name, err)
+			}
+		}
+		if _, err := db.Exec("PRAGMA user_version = 35;"); err != nil {
+			return err
+		}
+		currentVersion = 35
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

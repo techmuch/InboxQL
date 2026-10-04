@@ -18,6 +18,7 @@ import { useThreadingStore, type Threading } from './lib/threading';
 import { startWindowSession, useWindowsStore, WINDOWS_TAB } from './lib/windows';
 import { Windows } from './views/Windows';
 import { WindowNote } from './views/WindowNote';
+import { RailDefaults } from './views/RailDefaults';
 import { useQueryStore, queryTerms, compose, asTerm, type QueryTerm } from './lib/filters';
 import { useDevReload } from './lib/devReload';
 import { version as appVersion } from '../package.json';
@@ -1017,6 +1018,7 @@ const SettingsView = () => {
 
                 <ThreadingSetting />
                 <ViewerModeSetting />
+                <RailDefaults />
               </div>
             </div>
           )}

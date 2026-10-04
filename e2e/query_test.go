@@ -553,4 +553,3 @@ func TestContactNotesTagsAndResponsiveness(t *testing.T) {
 		t.Fatalf("contact untag: %s%s", r.Stdout, r.Stderr)
 	}
 }
-

@@ -41,10 +41,22 @@ describe('Desk contacts', () => {
         body = q.includes('in:contacts')
           ? { query: q, kind: 'contacts', count: contacts.length, contacts }
           : { query: q, kind: 'messages', count: 0, messages: [] };
+      } else if (url.startsWith('/api/rail/folders')) {
+        body = { folders: [], hidden: [], icons: [] };
       } else if (url.startsWith('/api/query/terms')) {
         body = { terms: [], stages: [] };
       } else if (url.startsWith('/api/queries')) {
-        body = [];
+        body = [
+          // The rail's entries come from the server now rather than from the
+          // component, so a test that serves none gets an empty rail. These
+          // are the six the v35 migration seeds, which is what the real
+          // server returns.
+          { name: 'tickets', title: 'Tickets', query: 'in:tickets -status:done -status:rejected', icon: 'ticket' },
+          { name: 'files', title: 'Files', query: 'in:attachments', icon: 'paperclip' },
+          { name: 'people', title: 'People', query: 'in:contacts kind:person', icon: 'users' },
+          { name: 'systems', title: 'Systems', query: 'in:contacts kind:system', icon: 'bot' },
+          { name: 'unclassified', title: 'Unclassified', query: 'in:contacts kind:unknown', icon: 'search' },
+        ];
       }
       return {
         ok: true, status: 200,

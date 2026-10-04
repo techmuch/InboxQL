@@ -17,14 +17,24 @@ import (
 // unique; Title is what a person reads. Keeping them separate means renaming
 // the display text does not break every query that referenced it.
 type SavedQuery struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Title       string    `json:"title"`
-	Query       string    `json:"query"`
-	Description string    `json:"description,omitempty"`
-	Pinned      bool      `json:"pinned"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Title       string `json:"title"`
+	Query       string `json:"query"`
+	Description string `json:"description,omitempty"`
+	Pinned      bool   `json:"pinned"`
+	// Position is where it sits in the rail, lowest first.
+	//
+	// Supersedes Pinned as the sort. Pinned keeps working because it is in the
+	// CLI and in people's habits, but ordering by it meant the only way to move
+	// something was to rename it.
+	Position int `json:"position"`
+	// Icon is a short name from [RailIcons], not markup. A rail of identical
+	// bookmarks is worse than half as many distinct ones, and a query is not a
+	// thing to accept SVG from.
+	Icon      string    `json:"icon,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 var slugUnsafe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -34,13 +44,39 @@ func SlugifyQueryName(s string) string {
 	return strings.Trim(slugUnsafe.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), "-"), "-")
 }
 
-const savedColumns = `id, name, title, query, COALESCE(description, ''), pinned, created_at, updated_at`
+const savedColumns = `id, name, title, query, COALESCE(description, ''), pinned,
+	COALESCE(position, 0), COALESCE(icon, ''), created_at, updated_at`
+
+// RailIcons are the icons a saved query may carry.
+//
+// A fixed vocabulary rather than free text: these resolve to components in the
+// frontend, and a name with no component renders as nothing — a rail row with
+// no icon and no error. Generic words, so they describe what a row is for
+// rather than naming a brand.
+var RailIcons = []string{
+	"bookmark", "inbox", "star", "send", "file", "tag", "folder",
+	"clock", "users", "paperclip", "ticket", "bot", "alert", "search",
+}
+
+// ValidIcon reports whether an icon name is one the rail can draw.
+func ValidIcon(name string) bool {
+	if name == "" {
+		return true // no icon is legal; the rail falls back to a bookmark
+	}
+	for _, i := range RailIcons {
+		if i == name {
+			return true
+		}
+	}
+	return false
+}
 
 func scanSavedQuery(scan func(...any) error) (*SavedQuery, error) {
 	q := &SavedQuery{}
 	var pinned int
 	var created, updated int64
-	if err := scan(&q.ID, &q.Name, &q.Title, &q.Query, &q.Description, &pinned, &created, &updated); err != nil {
+	if err := scan(&q.ID, &q.Name, &q.Title, &q.Query, &q.Description, &pinned,
+		&q.Position, &q.Icon, &created, &updated); err != nil {
 		return nil, err
 	}
 	q.Pinned = pinned != 0
@@ -82,26 +118,50 @@ func SaveQuery(q *SavedQuery) error {
 	if err != nil {
 		return err
 	}
+	if !ValidIcon(q.Icon) {
+		return fmt.Errorf("%q is not an icon this rail can draw (%s)",
+			q.Icon, strings.Join(RailIcons, ", "))
+	}
+
 	if existing != nil {
 		q.ID, q.CreatedAt = existing.ID, existing.CreatedAt
+		// Position is not written here. Editing a query's text should not move
+		// it in the rail — that is what `move` is for, and an edit that
+		// silently reordered things would be the kind of surprise this whole
+		// feature exists to remove.
+		q.Position = existing.Position
 	} else {
 		if q.ID == "" {
 			q.ID = uuid.New().String()
 		}
 		q.CreatedAt = now
+		// New ones go at the end, where somebody looking for what they just
+		// made will find it.
+		q.Position = nextRailPosition()
 	}
 	q.UpdatedAt = now
 
 	_, err = db.Exec(`
-		INSERT INTO saved_queries (id, name, title, query, description, pinned, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO saved_queries (id, name, title, query, description, pinned, position, icon, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name, title = excluded.title, query = excluded.query,
 			description = excluded.description, pinned = excluded.pinned,
+			position = excluded.position, icon = excluded.icon,
 			updated_at = excluded.updated_at`,
 		q.ID, q.Name, q.Title, q.Query, nullIfEmpty(q.Description),
-		boolToInt(q.Pinned), q.CreatedAt.UnixMilli(), q.UpdatedAt.UnixMilli())
+		boolToInt(q.Pinned), q.Position, q.Icon,
+		q.CreatedAt.UnixMilli(), q.UpdatedAt.UnixMilli())
 	return err
+}
+
+// nextRailPosition is one past the last.
+func nextRailPosition() int {
+	var n sql.NullInt64
+	if err := db.QueryRow("SELECT MAX(position) FROM saved_queries").Scan(&n); err != nil || !n.Valid {
+		return 0
+	}
+	return int(n.Int64) + 1
 }
 
 // referencesSaved reports whether a query text uses the saved: field.
@@ -147,7 +207,7 @@ func GetSavedQuery(name string) (*SavedQuery, error) {
 
 // ListSavedQueries returns them pinned first, then alphabetically.
 func ListSavedQueries() ([]*SavedQuery, error) {
-	rows, err := db.Query("SELECT " + savedColumns + " FROM saved_queries ORDER BY pinned DESC, name ASC")
+	rows, err := db.Query("SELECT " + savedColumns + " FROM saved_queries ORDER BY position ASC, name ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -217,4 +277,82 @@ func selfAddresses() ([]string, error) {
 		}
 	}
 	return out, rows.Err()
+}
+
+// MoveSavedQuery puts one at a position, shifting the rest around it.
+//
+// Positions are renumbered on every move rather than left sparse. A sparse list
+// works until two things land on the same number, and then the order depends on
+// the tiebreak rather than on what anybody asked for — which is the bug this
+// replaced.
+func MoveSavedQuery(name string, to int) error {
+	all, err := ListSavedQueries()
+	if err != nil {
+		return err
+	}
+
+	from := -1
+	for i, q := range all {
+		if q.Name == name {
+			from = i
+			break
+		}
+	}
+	if from < 0 {
+		return fmt.Errorf("no saved query named %q", name)
+	}
+
+	// Clamped rather than refused: "move it to the top" from the top is not an
+	// error, it is a thing that is already true.
+	if to < 0 {
+		to = 0
+	}
+	if to >= len(all) {
+		to = len(all) - 1
+	}
+	if to == from {
+		return nil
+	}
+
+	moved := all[from]
+	all = append(all[:from], all[from+1:]...)
+	rest := make([]*SavedQuery, 0, len(all)+1)
+	rest = append(rest, all[:to]...)
+	rest = append(rest, moved)
+	rest = append(rest, all[to:]...)
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i, q := range rest {
+		if _, err := tx.Exec(
+			"UPDATE saved_queries SET position = ? WHERE id = ?", i, q.ID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// SetSavedQueryIcon changes which icon a rail entry draws.
+//
+// Its own function rather than a field on save, for the same reason position
+// is: changing how a row looks should not touch its version of anything else,
+// and a caller that built a SavedQuery without an icon would otherwise clear it.
+func SetSavedQueryIcon(name, icon string) error {
+	if !ValidIcon(icon) {
+		return fmt.Errorf("%q is not an icon this rail can draw (%s)",
+			icon, strings.Join(RailIcons, ", "))
+	}
+	res, err := db.Exec(
+		"UPDATE saved_queries SET icon = ?, updated_at = ? WHERE name = ?",
+		icon, time.Now().UnixMilli(), name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("no saved query named %q", name)
+	}
+	return nil
 }

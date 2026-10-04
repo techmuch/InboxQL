@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/user/inboxql/internal/cli/ui"
@@ -226,8 +227,17 @@ func runSaved(ctx *Context, args []string) error {
 		return savedSave(ctx, rest)
 	case "delete", "rm", "remove":
 		return savedDelete(ctx, rest)
+	case "move":
+		return savedMove(ctx, rest)
+	case "icon":
+		return savedIcon(ctx, rest)
+	case "defaults":
+		return savedDefaults(ctx, rest)
+	case "folders":
+		return savedFolders(ctx, rest)
 	default:
-		return Fail(ExitUsage, "unknown subcommand %q (want list, show, save or delete)", sub)
+		return Fail(ExitUsage,
+			"unknown subcommand %q (want list, show, save, delete, move, icon, defaults or folders)", sub)
 	}
 }
 
@@ -250,13 +260,20 @@ func savedList(ctx *Context, args []string) error {
 	}
 
 	p := ctx.Printer()
-	t := p.NewTable("NAME", "TITLE", "QUERY")
-	for _, q := range queries {
+	// Numbered, because the numbers are what `move` takes. A list you can
+	// reorder and that does not show its own positions makes somebody count
+	// rows by hand.
+	t := p.NewTable("#", "NAME", "ICON", "TITLE", "QUERY")
+	for i, q := range queries {
 		title := q.Title
 		if q.Pinned {
 			title = "* " + title
 		}
-		t.Row(q.Name, ui.Truncate(title, 28), ui.Truncate(q.Query, 48))
+		icon := q.Icon
+		if icon == "" {
+			icon = p.Dim("—")
+		}
+		t.Row(itoa(i), q.Name, icon, ui.Truncate(title, 24), ui.Truncate(q.Query, 42))
 	}
 	return t.Flush()
 }
@@ -815,4 +832,221 @@ func runSQL(ctx *Context, args []string) error {
 		ctx.Printf("\n%s\n", p.Yellow(fmt.Sprintf("Stopped at %d rows; pass --limit for more.", len(res.Rows))))
 	}
 	return nil
+}
+
+// savedMove reorders the rail.
+func savedMove(ctx *Context, args []string) error {
+	name, rest := subcommand(args)
+	where, _ := subcommand(rest)
+	if name == "" || where == "" {
+		return Fail(ExitUsage, "which one, and where? `iql saved move files up`, or `… files 0`")
+	}
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	all, err := store.ListSavedQueries()
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	at := -1
+	for i, q := range all {
+		if q.Name == name {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		return Fail(ExitNotFound, "no saved query named %q", name)
+	}
+
+	var to int
+	switch strings.ToLower(where) {
+	case "up":
+		to = at - 1
+	case "down":
+		to = at + 1
+	case "top", "first":
+		to = 0
+	case "bottom", "last":
+		to = len(all) - 1
+	default:
+		n, err := strconv.Atoi(where)
+		if err != nil {
+			return Fail(ExitUsage, "%q is not a position (a number, or up, down, top, bottom)", where)
+		}
+		to = n
+	}
+
+	if err := store.MoveSavedQuery(name, to); err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	if ctx.JSON {
+		return ctx.EmitJSON(map[string]any{"moved": name, "to": to})
+	}
+	ctx.Printf("Moved %s.\n", name)
+	return savedList(ctx, nil)
+}
+
+// savedIcon sets which icon a rail entry draws.
+func savedIcon(ctx *Context, args []string) error {
+	name, rest := subcommand(args)
+	icon, _ := subcommand(rest)
+	if name == "" {
+		return Fail(ExitUsage, "which one? `iql saved icon files paperclip`")
+	}
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	if icon == "" {
+		// Asking with no icon lists what is available, which is more useful
+		// than an error telling somebody to go and find the list.
+		if ctx.JSON {
+			return ctx.EmitJSON(map[string]any{"icons": store.RailIcons})
+		}
+		ctx.Printf("%s\n", strings.Join(store.RailIcons, " "))
+		return nil
+	}
+	if err := store.SetSavedQueryIcon(name, icon); err != nil {
+		return Fail(ExitUsage, "%v", err)
+	}
+	ctx.Printf("%s now shows the %s icon.\n", name, icon)
+	return nil
+}
+
+// savedDefaults lists or installs the pack.
+func savedDefaults(ctx *Context, args []string) error {
+	fs := flag.NewFlagSet("saved defaults", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	install := fs.Bool("install", false, "add them")
+	only := fs.String("only", "", "comma-separated names to add")
+	if err := parseArgs(fs, args); err != nil {
+		return Fail(ExitUsage, "invalid flags")
+	}
+
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	if *install {
+		var names []string
+		if strings.TrimSpace(*only) != "" {
+			names = strings.Split(*only, ",")
+			for i := range names {
+				names[i] = strings.TrimSpace(names[i])
+			}
+		}
+		added, skipped, err := store.InstallRailDefaults(names)
+		if err != nil {
+			return Fail(ExitError, "%v", err)
+		}
+		if ctx.JSON {
+			return ctx.EmitJSON(map[string]any{"added": added, "skipped": skipped})
+		}
+		if len(added) == 0 {
+			ctx.Printf("Nothing added; those are already here.\n")
+			return nil
+		}
+		ctx.Printf("Added %s: %s\n", count(int64(len(added)), "entry", "entries"), strings.Join(added, ", "))
+		return nil
+	}
+
+	existing := map[string]bool{}
+	if all, err := store.ListSavedQueries(); err == nil {
+		for _, q := range all {
+			existing[q.Name] = true
+		}
+	}
+
+	type row struct {
+		store.RailDefault
+		Reach   int64 `json:"reach"`
+		Present bool  `json:"present"`
+	}
+	out := make([]row, 0, len(store.RailDefaults))
+	for _, d := range store.RailDefaults {
+		// Zero is a real answer and the useful one: an entry that finds nothing
+		// here is a row that teaches somebody the feature does not work.
+		reach, _ := store.RailDefaultReach(d)
+		out = append(out, row{RailDefault: d, Reach: reach, Present: existing[d.Name]})
+	}
+
+	if ctx.JSON {
+		return ctx.EmitJSON(out)
+	}
+	p := ctx.Printer()
+	t := p.NewTable("NAME", "TITLE", "MATCHES", "", "ABOUT")
+	for _, r := range out {
+		here := ""
+		if r.Present {
+			here = p.Dim("already here")
+		}
+		t.Row(r.Name, r.Title, fmt.Sprint(r.Reach), here, ui.Truncate(r.About, 44))
+	}
+	if err := t.Flush(); err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	ctx.Printf("\n%s\n", p.Dim("Add them with `iql saved defaults --install`, or --only a,b."))
+	return nil
+}
+
+// savedFolders shows and hides the mailbox rows.
+//
+// They are not saved queries and cannot be deleted: they carry live unread
+// counts and are the mailbox itself. Hiding Spam is reasonable; losing Inbox
+// with no way back is not.
+func savedFolders(ctx *Context, args []string) error {
+	action, rest := subcommand(args)
+	name, _ := subcommand(rest)
+
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	switch action {
+	case "", "list":
+		hidden := map[string]bool{}
+		for _, f := range store.HiddenFolders() {
+			hidden[f] = true
+		}
+		if ctx.JSON {
+			return ctx.EmitJSON(map[string]any{
+				"folders": store.RailFolders, "hidden": store.HiddenFolders()})
+		}
+		p := ctx.Printer()
+		t := p.NewTable("FOLDER", "")
+		for _, f := range store.RailFolders {
+			state := "shown"
+			if hidden[f] {
+				state = p.Dim("hidden")
+			}
+			t.Row(f, state)
+		}
+		return t.Flush()
+
+	case "hide", "show":
+		if name == "" {
+			return Fail(ExitUsage, "which folder? (%s)", strings.Join(store.RailFolders, ", "))
+		}
+		if err := store.SetFolderHidden(name, action == "hide"); err != nil {
+			return Fail(ExitUsage, "%v", err)
+		}
+		ctx.Printf("%s is now %s.\n", name, map[bool]string{true: "hidden", false: "shown"}[action == "hide"])
+		return nil
+
+	case "reset":
+		// Every hiding feature needs a way back that does not require
+		// remembering what was hidden.
+		if err := store.ShowAllFolders(); err != nil {
+			return Fail(ExitError, "%v", err)
+		}
+		ctx.Printf("All folders shown.\n")
+		return nil
+	}
+	return Fail(ExitUsage, "unknown action %q (want list, hide, show or reset)", action)
 }

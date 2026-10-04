@@ -79,6 +79,19 @@ func Router() (http.Handler, error) {
 	// reads mail, this moves the screen in front of a person.
 	uiMux := http.NewServeMux()
 	registerUIRoutes(uiMux)
+	// Arranging the rail. Its own routes rather than part of the saved-query
+	// surface, because moving an entry and editing one are different acts:
+	// editing a query's text must not move it, and moving it must not touch
+	// its text.
+	railMux := http.NewServeMux()
+	registerRailRoutes(railMux)
+	for _, route := range []string{
+		"/api/rail/defaults", "/api/rail/folders", "/api/rail/folders/reset",
+		"/api/rail/order", "/api/rail/icon",
+	} {
+		mux.Handle(route, auth.Middleware(railMux))
+	}
+
 	mux.Handle("/api/ui", auth.Middleware(uiMux))
 	mux.Handle("/api/ui/", auth.Middleware(uiMux))
 

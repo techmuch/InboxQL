@@ -553,8 +553,17 @@ func TestCompletionUsesRealData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if len(c.Candidates) != 1 || c.Candidates[0].Value != "acme-mail" {
-		t.Errorf("saved: offered %+v, want acme-mail", c.Candidates)
+	// Among them rather than the only one: a fresh database now carries the
+	// six rail entries the v35 migration seeds, so "the only candidate" stopped
+	// being a fact about completion and became a fact about the fixture.
+	var offered bool
+	for _, cand := range c.Candidates {
+		if cand.Value == "acme-mail" {
+			offered = true
+		}
+	}
+	if !offered {
+		t.Errorf("saved: did not offer acme-mail: %+v", c.Candidates)
 	}
 }
 

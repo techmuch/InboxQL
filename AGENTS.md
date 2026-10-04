@@ -221,6 +221,38 @@ iql saved delete <name>
 A saved query is a **building block**, not a bookmark: `saved:<name>` is a term,
 so `saved:acme-invoices after:7d` composes. The name is a slug of the title.
 
+### It is also the rail
+
+The rail's entries **are** saved queries. Six of them used to be hardcoded in a
+component — Tickets, Proposed, Files, People, Systems, Unclassified — and are
+seeded rows now, so they can be renamed, reordered and removed like anything
+else.
+
+```
+iql saved move <name> up|down|top|bottom|<n>    where it sits
+iql saved icon <name> [icon]                    which icon it draws; no icon lists them
+iql saved defaults [--install] [--only a,b]     entries to add, and what each matches here
+iql saved folders [hide|show <folder>|reset]    the mailbox rows
+```
+
+**Position, not alphabetical.** Ordering used to be `pinned DESC, name ASC`,
+so the only way to move something was to rename it. `pinned` still works and no
+longer decides the order.
+
+**Editing does not move.** `saved save` leaves position alone; only `move`
+changes it.
+
+**`defaults` reports what each entry matches in this mailbox.** Zero is the
+useful answer — an entry that finds nothing is a row that teaches somebody the
+feature does not work — so check it before suggesting one.
+
+**Folders are hidden, never deleted.** Inbox and its siblings carry live unread
+counts and are the mailbox itself; `saved folders reset` is the way back.
+
+**The Annotations section is derived and not arrangeable.** It lists the
+annotators that found something, and a hand-ordering would be stale the next
+time one runs.
+
 Two rules: the query is compiled before it is stored, so an invalid one is
 refused where it is written; and saved queries **do not nest** — one cannot
 reference another. Deleting a saved query makes references to it fail rather

@@ -175,6 +175,52 @@ export interface SavedQuery {
   query: string;
   description?: string;
   pinned?: boolean;
+  /** Where it sits in the rail, lowest first. Set by moving, not by saving. */
+  position?: number;
+  /** A short name from the rail's vocabulary, not markup. */
+  icon?: string;
+}
+
+/** One entry the defaults pack offers, and what it would match here. */
+export interface RailDefault {
+  name: string;
+  title: string;
+  query: string;
+  icon: string;
+  about: string;
+  /** How many rows it matches in this mailbox. Zero is the useful answer. */
+  reach: number;
+  present: boolean;
+}
+
+export const listRailDefaults = () => getJSON<RailDefault[]>('/api/rail/defaults');
+
+export const installRailDefaults = (names: string[]) =>
+  putJSON<{ added: string[]; skipped: string[] }>('/api/rail/defaults', { names }, 'POST');
+
+export const listRailFolders = () =>
+  getJSON<{ folders: string[]; hidden: string[]; icons: string[] }>('/api/rail/folders');
+
+export const setFolderHidden = (folder: string, hidden: boolean) =>
+  putJSON<{ hidden: string[] }>('/api/rail/folders', { folder, hidden });
+
+export const resetFolders = () =>
+  putJSON<{ hidden: string[] }>('/api/rail/folders/reset', {}, 'POST');
+
+export const moveSaved = (name: string, to: number) =>
+  putJSON<{ queries: SavedQuery[] }>('/api/rail/order', { name, to });
+
+export const setSavedIcon = (name: string, icon: string) =>
+  putJSON<unknown>('/api/rail/icon', { name, icon });
+
+async function putJSON<T>(url: string, body: unknown, method = 'PUT'): Promise<T> {
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) await readError(res);
+  return res.json();
 }
 
 /**

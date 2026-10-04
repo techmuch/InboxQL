@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Layout, Mail, MoreVertical,
-  Bot, HelpCircle, MessagesSquare, Paperclip, Plus, RefreshCw, Send, Sparkles, Star, Tag, Trash2, Users,
+  AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Mail, MoreVertical,
+  MessagesSquare, RefreshCw, Send, Sparkles, Star, Trash2,
 } from 'lucide-react';
-import { openMessage, previewMessage, useViewerStore } from '../../lib/tabs';
+import { openMessage, openTool, previewMessage, useViewerStore } from '../../lib/tabs';
 import { navRow, useRovingFocus } from '../../lib/rovingFocus';
 import { refKey, refOf, useSelectionStore } from '../../lib/selection';
 import { SelectionBar } from './SelectionBar';
 import { Editor } from './Editor';
 import { Results } from './Results';
 import { Pills } from './Pills';
+import { Rail } from './Rail';
 import {
   explainQuery, listSaved, runQuery, saveQuery, setMessageFlag, QueryFailed,
+  deleteSaved, listRailFolders, moveSaved, resetFolders, setFolderHidden,
   type QueryResult, type SavedQuery,
 } from './api';
 import { listAnnotators, type Annotator } from '../ai/api';
@@ -140,7 +142,19 @@ export const Desk = () => {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [failure, setFailure] = useState<QueryFailed | null>(null);
   const [saved, setSaved] = useState<SavedQuery[]>([]);
+  // The mailbox rows somebody has turned off. Hidden, never deleted: these are
+  // the mailbox itself, and losing Inbox with no way back is a bad afternoon.
+  const [hiddenFolders, setHiddenFolders] = useState<string[]>([]);
   const [explain, setExplain] = useState<string | null>(null);
+
+  useEffect(() => {
+    listRailFolders()
+      .then(b => setHiddenFolders(b.hidden ?? []))
+      .catch(() => {
+        // A rail that cannot read its own preferences shows everything, which
+        // is the safe direction.
+      });
+  }, []);
 
   useEffect(() => {
     listSaved().then(setSaved).catch(() => {
@@ -386,137 +400,60 @@ export const Desk = () => {
 
   return (
     <div className="flex h-full bg-background text-foreground overflow-hidden">
-      <div className="w-64 flex flex-col pt-4 border-r border-border/50 bg-card/20">
-        <div className="px-4 mb-6">
-          <button className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2  shadow-sm hover:shadow-md transition-all font-semibold text-[13px]">
-            <Plus className="w-4 h-4" /> Compose
-          </button>
-        </div>
-        <div className="flex-1 overflow-auto px-2 space-y-0.5">
-          {navItems.map(item => {
-            // Every rail entry is a query. The built-ins are folder:inbox and
-            // friends; a saved query below is the same kind of thing.
-            const entryQuery = `folder:${item.id}`;
-            const active = queryText.trim() === entryQuery;
-            return (
-              <button
-                key={item.id}
-                onClick={async () => {
-                  setFolder(item.id);
-                  // Coming back from contacts, files or tickets, the query is
-                  // about a different kind of thing and adding a folder to it
-                  // produces `in:contacts kind:person folder:inbox` — still
-                  // contacts, now with a term that means nothing there. A
-                  // folder is a statement about mail, so switching kind starts
-                  // over.
-                  //
-                  // Within mail it still composes, because a cross-filter
-                  // somebody just applied should survive changing folder, and
-                  // so should the thread stage.
-                  if (!isMailQuery(query)) {
-                    setQuery(openingFolderQuery(entryQuery));
-                    return;
-                  }
-                  setQuery(await compose(query, { field: 'folder', term: entryQuery }));
-                }}
-                title={entryQuery}
-                className={`w-full flex items-center gap-4 px-4 py-2.5  text-sm transition-colors ${active ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground/70'}`}
-              >
-                <item.icon className={`w-4 h-4 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
-                <span className="flex-1 text-left">{item.label}</span>
-                {item.badge ? <span className="text-[10px] font-bold tabular-nums">{item.badge}</span> : null}
-              </button>
-            );
-          })}
-
-          {saved.length > 0 && (
-            <>
-              <div className="px-4 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Saved</div>
-              {saved.map(q => (
-                <button
-                  key={q.name}
-                  // A saved query is a complete expression, not a facet, so it
-                  // replaces rather than merges.
-                  onClick={() => setQuery(q.query)}
-                  title={q.query}
-                  className={`w-full flex items-center gap-4 px-4 py-2  text-sm transition-colors ${queryText.trim() === q.query.trim() ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground/70'}`}
-                >
-                  <Bookmark className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                  <span className="flex-1 text-left truncate">{q.title}</span>
-                </button>
-              ))}
-            </>
-          )}
-
-          {/* Entities other than mail.
-              Contacts were reachable only by knowing to type `in:contacts` —
-              the entity, the fields and the renderer all existed and nothing
-              pointed at them. A rail exists precisely so a surface does not
-              require knowing its name. */}
-          <div className="px-4 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Other</div>
-          {[
-            { label: 'Tickets', icon: Layout, q: 'in:tickets -status:done -status:rejected' },
-            { label: 'Proposed', icon: Layout, q: 'in:tickets status:proposed' },
-            // Files are an entity like the rest, and were reachable only by
-            // knowing to type `in:attachments` — the same gap this block was
-            // written to close for contacts.
-            { label: 'Files', icon: Paperclip, q: 'in:attachments' },
-            { label: 'People', icon: Users, q: 'in:contacts kind:person' },
-            { label: 'Systems', icon: Bot, q: 'in:contacts kind:system' },
-            // The queue the enrichment annotator exists to work through: most
-            // addresses cannot be classified from headers alone, and this is
-            // where you see how many are waiting.
-            { label: 'Unclassified', icon: HelpCircle, q: 'in:contacts kind:unknown' },
-          ].map(entry => (
-            <button
-              key={entry.label}
-              onClick={() => setQuery(entry.q)}
-              title={entry.q}
-              className={`w-full flex items-center gap-4 px-4 py-2  text-sm transition-colors ${queryText.trim() === entry.q ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground/70'}`}
-            >
-              <entry.icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-              <span className="flex-1 text-left truncate">{entry.label}</span>
-            </button>
-          ))}
-
-          {/* What the annotators found.
-              A label answers yes or no, so its mail is `label:x`; an extractor
-              pulls records out, so its mail is `extract:x` — "this one
-              produced something here". Two different questions, which is why
-              the entry is not one spelling for both. */}
-          {annotated.length > 0 && (
-            <>
-              <div className="px-4 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                Annotations
-              </div>
-              {annotated.map(a => {
-                const q = annotationQuery(a);
-                const off = a.enabled === false;
-                return (
-                  <button
-                    key={a.id}
-                    onClick={() => setQuery(q)}
-                    title={off ? `${q} — ${a.name} is switched off; these are what it already found` : q}
-                    className={`w-full flex items-center gap-4 px-4 py-2 text-sm transition-colors ${
-                      queryText.trim() === q ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground/70'
-                    } ${off ? 'opacity-50' : ''}`}
-                  >
-                    <Tag className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 text-left truncate">{a.name}</span>
-                    {/* Switched off still appears, because its results are
-                        still there and still queryable. Hiding it would
-                        contradict what the switch means. */}
-                    {off && <span className="text-[9px] font-mono text-muted-foreground">off</span>}
-                    <span className="text-[10px] font-bold tabular-nums text-muted-foreground">
-                      {a.progress!.matched.toLocaleString()}
-                    </span>
-                  </button>
-                );
-              })}
-            </>
-          )}
-        </div>
-      </div>
+      <Rail
+        folders={navItems}
+        hiddenFolders={hiddenFolders}
+        saved={saved}
+        annotated={annotated}
+        queryText={queryText}
+        onFolder={async id => {
+          setFolder(id);
+          // Coming back from contacts, files or tickets, the query is about a
+          // different kind of thing and adding a folder to it produces
+          // `in:contacts kind:person folder:inbox` — still contacts, now with
+          // a term that means nothing there.
+          if (!isMailQuery(query)) {
+            setQuery(openingFolderQuery(`folder:${id}`));
+            return;
+          }
+          setQuery(await compose(query, { field: 'folder', term: `folder:${id}` }));
+        }}
+        onQuery={setQuery}
+        annotationQuery={annotationQuery}
+        onMove={async (name, to) => {
+          try {
+            const body = await moveSaved(name, to);
+            setSaved(body.queries ?? []);
+          } catch {
+            // The rail keeps the order it had; the next load corrects it.
+          }
+        }}
+        onRemove={async name => {
+          if (!window.confirm(`Remove "${name}" from the rail? The query is deleted.`)) return;
+          try {
+            await deleteSaved(name);
+            setSaved(await listSaved());
+          } catch {
+            // Same: nothing moves rather than the rail lying about what is there.
+          }
+        }}
+        onEdit={q => setQuery(q.query)}
+        onToggleFolder={async (id, hidden) => {
+          try {
+            const body = await setFolderHidden(id, hidden);
+            setHiddenFolders(body.hidden ?? []);
+          } catch {
+            // Unchanged rather than half-applied.
+          }
+        }}
+        onResetFolders={async () => {
+          try {
+            await resetFolders();
+            setHiddenFolders([]);
+          } catch {}
+        }}
+        onAddDefaults={() => openTool('settings', 'Settings')}
+      />
 
       {/* The ref sits on the whole pane rather than on the list, so pressing
           Down anywhere in Desk that is not a text field moves into the

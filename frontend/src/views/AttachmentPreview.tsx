@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Paperclip, Download, X, FileText, Image as ImageIcon, Mail, MessagesSquare, Sparkles } from 'lucide-react';
-import { openMessageByID, openQuery } from '../lib/tabs';
+import { openMessageByID, openQuery, openTool } from '../lib/tabs';
 
 export interface AttachmentFile {
   key: string;
@@ -265,6 +265,8 @@ export const AttachmentOccurrences = ({ file, currentMessageId }: {
   if (occurrences === null) {
     return <div className="text-xs text-muted-foreground px-3 py-2">Looking for other copies…</div>;
   }
+  // Gated on rows rather than on the message count, so a file attached twice
+  // to one message still shows both — they are both real parts of that mail.
   if (occurrences.length <= 1) {
     return (
       <div className="text-xs text-muted-foreground px-3 py-2">
@@ -277,8 +279,22 @@ export const AttachmentOccurrences = ({ file, currentMessageId }: {
     <div className="border-t border-border">
       <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
         <MessagesSquare className="w-3.5 h-3.5" />
+        {/* Sends are distinct messages; the list below is attachment rows, and
+            the two differ. Measured on a real mailbox: of the files appearing
+            more than once, eight were in genuinely different messages and two
+            were attached twice to a single one — a signature image referenced
+            from two places in the body.
+
+            Saying "2 messages" over those two rows would claim a send that
+            never happened, so the extra rows are named as what they are. */}
         <span>
-          {file.messages} messages
+          {file.messages} {file.messages === 1 ? 'message' : 'messages'}
+          {/* Named only when they differ. Rows above the message count are a
+              file attached more than once to one mail — real parts worth
+              listing, and not a second send. */}
+          {occurrences.length > file.messages && (
+            <> · attached {occurrences.length} times</>
+          )}
           {file.threads > 1 && <> · {file.threads} threads</>}
           {file.names > 1 && <> · {file.names} names</>}
         </span>
@@ -343,6 +359,27 @@ export const AttachmentViewer = ({ file, currentMessageId, onClose }: {
         <span className="text-xs text-muted-foreground shrink-0">
           {fileTypeLabel(file.mimeType)} · {formatBytes(file.size)}
           {textStatusLabel(file) && <> · {textStatusLabel(file)}</>}
+          {/* The fix for a scan lives in Maintenance, and somebody looking at
+              an unsearchable file should not have to know that.
+
+              A link rather than a button: reading scans sends every page of
+              every one to the configured model, which may be remote. That is a
+              decision with a consent attached to it, and the place that asks
+              for the consent is the place it should be made — not a one-click
+              control beside a file. */}
+          {file.textStatus === 'empty' && (
+            <>
+              {' · '}
+              <button
+                type="button"
+                onClick={() => openTool('maintenance', 'Settings')}
+                title="Reading scans sends every page to the configured model"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                read it with OCR
+              </button>
+            </>
+          )}
         </span>
         {/* Only when the file has been read: similarity is over its text, so
             offering it on a scan nobody has OCR'd would open a query that

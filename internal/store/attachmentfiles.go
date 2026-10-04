@@ -216,3 +216,23 @@ func scanAttachmentFile(scan func(...any) error) (*AttachmentFile, error) {
 	}
 	return f, nil
 }
+
+// AttachmentStorageCounts reports how many distinct files are recorded and how
+// many of those have no bytes on disk.
+//
+// Counted over the content address rather than over rows, so the same document
+// on five messages is one file — the same identity `in:attachments` uses, and
+// the only one where "how many files do I have" has a stable answer.
+//
+// The missing count is the actionable half. A file recorded but absent reads as
+// an ordinary row until something says otherwise, and the usual causes — a
+// part too large to keep, mail imported before extraction existed — are worth
+// knowing about rather than discovering on a click.
+func AttachmentStorageCounts() (recorded, missing int64, err error) {
+	err = db.QueryRow(`
+		SELECT COUNT(DISTINCT COALESCE(NULLIF(content_hash, ''), id)),
+		       COUNT(DISTINCT CASE WHEN storage_path IS NULL OR storage_path = ''
+		                           THEN COALESCE(NULLIF(content_hash, ''), id) END)
+		FROM attachments`).Scan(&recorded, &missing)
+	return recorded, missing, err
+}

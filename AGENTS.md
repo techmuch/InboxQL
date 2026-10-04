@@ -91,6 +91,7 @@ A query is a **filter**, optionally followed by **pipeline stages** after `|`.
 | `account: folder: mailbox:` | where the message lives |
 | `is:` | `unread read starred deleted draft answered junk reply` |
 | `has:` | `attachment file label reply` |
+| `attached: carries:` | mail that carried *this* file, by content hash or name |
 | `after: before: on:` | `2026-08-15`, `2026-08`, `2026`, `today`, `7d` |
 | `larger: smaller:` | `5mb`, `500kb`, a byte count |
 | `label: unlabeled: conf>` | annotator results — see below |
@@ -531,6 +532,49 @@ A mailbox where nothing has been extracted returns nothing for `content:`, and
 that means *nobody has read them*, not *no file says that*. `iql doctor` says
 which, and the fix is `iql maintenance attachments` then
 `iql maintenance text`.
+
+### Going the other way: `attached:`
+
+`in:attachments` answers *which files*. `attached:` answers *which mail*, and it
+is an ordinary message term, so it composes with everything in the mail
+language:
+
+```
+iql --json query "attached:128072f0de5e"        the mail that carried this file
+iql --json query "attached:*.pdf after:7d"      mail with a PDF on it, last week
+iql --json query "attached:contract -from:me()" somebody sent me the contract
+```
+
+The value is a **content-hash prefix** when it looks like one — eight hex
+characters or more — and a **filename** otherwise, with `=` and `*` available as
+everywhere else. `carries:` is an alias.
+
+It is deliberately **not** called `file:`. That name already belongs to an
+attachment query, where it means the name a file arrived under, and one term
+quietly answering about two different kinds depending on an `in:` elsewhere in
+the expression is the kind of thing nobody debugs twice.
+
+Negation reads as it does for recipients: `-attached:x` is *no attachment of
+this message is x*, not *some attachment is not x*.
+
+### Sends are not rows
+
+A file's occurrences are the rows that reference it, and **a row is not a
+send**. The same part can be attached twice to one message — a signature image
+referenced once in the body and once as a trailer, a client that duplicates on
+forward — and counting rows would report a delivery that never happened.
+
+On a real mailbox, of the files appearing more than once, eight were in
+genuinely different messages and two were attached twice to a single one. So:
+
+- **count over distinct messages.** `messages:` on an attachment query, and the
+  `messages` field in the API, are distinct carrying messages.
+- **list over rows.** `/api/attachments/occurrences` returns every reference,
+  because each one is a real part of a real message with its own position and
+  its own name.
+
+The viewer names the difference only when the two disagree — *"1 message ·
+attached 2 times"* — so the common case stays quiet and the odd one is legible.
 
 ---
 

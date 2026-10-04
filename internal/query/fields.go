@@ -317,6 +317,22 @@ var Registry = []Field{
 		Summary: "this exact draft", Example: "in:drafts id:(a OR b)",
 	},
 
+	{
+		// Not `file:`, which already belongs to an attachment query and means
+		// the name it arrived under. Two different meanings on one word would
+		// make a bare `file:contract` silently change which kind of thing the
+		// query was about — which is precisely what it did before this was
+		// renamed.
+		Name: "attached", Entity: EntityMessage, Type: TypeIdent,
+		// A glob, because half the uses are a filename rather than a hash and
+		// `attached:*.pdf` is the obvious thing to reach for. A content hash
+		// does not need one — a prefix already matches.
+		Ops:     []Op{OpMatch, OpGlob, OpExact},
+		Aliases: []string{"carries"},
+		Summary: "mail that carried this file, by content hash or name",
+		Example: "attached:80202167 — every message that carried that file",
+	},
+
 	// --- logs --------------------------------------------------------------
 	//
 	// What the application did, as opposed to what arrived. The fields are the

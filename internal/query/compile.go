@@ -927,6 +927,9 @@ func (c *compiler) dispatch(t *Term, negated bool) (string, error) {
 	case "conf":
 		return c.confTerm(t, negated)
 
+	case "attached", "carries":
+		return c.attachedTerm(t, negated)
+
 	case "extract":
 		return c.extractTerm(t, negated)
 
@@ -1706,4 +1709,64 @@ func (c *compiler) logDurationTerm(t *Term, negated bool) (string, error) {
 		return "(l.duration_ms IS NOT NULL AND NOT (" + inner + "))", nil
 	}
 	return "(l.duration_ms IS NOT NULL AND " + inner + ")", nil
+}
+
+// attachedTerm selects the mail that carried a file.
+//
+// # Why this exists
+//
+// `in:attachments` lists each distinct file once, however many messages carried
+// it — that is the whole point of addressing them by content. But the other
+// direction had no spelling at all: a file row said "2 messages" and there was
+// no way to ask which two, from the language or from the interface.
+//
+// A content hash is the identity, and a prefix is enough: a full SHA-256 is
+// sixty-four characters and nobody types one. A value that is not hexadecimal
+// is read as a filename instead, because "every message that carried
+// contract.pdf" is the other question somebody asks here, and asking it with a
+// different field would be a second thing to learn.
+//
+// Deliberately not called `file:`. That name already belongs to an attachment
+// query, where it means the name a file arrived under — and giving one word two
+// meanings made a bare `file:contract` silently answer about files when the
+// caller meant mail.
+//
+// Negation is "no attachment of this message is that file", like every other
+// multi-valued field here. The opposite reading would match almost every
+// message with more than one attachment.
+func (c *compiler) attachedTerm(t *Term, negated bool) (string, error) {
+	value := strings.TrimSpace(t.Value)
+	if value == "" {
+		return "", fmt.Errorf("attached: needs a content hash or a filename")
+	}
+
+	var inner string
+	if isHashPrefix(value) {
+		// Prefix rather than equality, so a short hash from a listing works.
+		inner = "att.content_hash LIKE " + c.arg(strings.ToLower(value)+"%")
+	} else {
+		inner = c.stringPredicate("att.filename", t)
+	}
+
+	return wrap("EXISTS (SELECT 1 FROM attachments att WHERE att.message_id = m.id AND "+
+		inner+")", negated), nil
+}
+
+// isHashPrefix reports whether a value looks like the start of a content
+// address rather than a filename.
+//
+// Eight characters of hex, which is what a listing shows and what somebody
+// copies. Shorter than that is almost certainly a filename — "doc" is not a
+// hash prefix anybody meant — and a file genuinely called "deadbeef" is
+// reachable with attached:*deadbeef* rather than being unreachable.
+func isHashPrefix(v string) bool {
+	if len(v) < 8 || len(v) > 64 {
+		return false
+	}
+	for _, r := range v {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F') {
+			return false
+		}
+	}
+	return true
 }

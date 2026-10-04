@@ -205,6 +205,7 @@ func hasNonASCII(s string) bool {
 func registerAttachmentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/attachments/file", handleAttachmentFile)
 	mux.HandleFunc("GET /api/attachments/occurrences", handleAttachmentOccurrences)
+	mux.HandleFunc("GET /api/attachments/usage", handleAttachmentUsage)
 	mux.HandleFunc("GET /api/attachments/content", handleAttachmentContent)
 }
 
@@ -315,4 +316,32 @@ func handleAttachmentContent(w http.ResponseWriter, r *http.Request) {
 	// cannot re-derive a content type from the extension and overwrite the one
 	// chosen above.
 	http.ServeContent(w, r, "", info.ModTime(), f)
+}
+
+// handleAttachmentUsage reports what the file store is holding.
+//
+// Surfaced because it never has been: blobstore.Usage() existed and only the
+// CLI ever showed it, so "how much of this disk is mail attachments" was a
+// question the interface could not answer about its own Files view.
+//
+// The not-stored count is the actionable half. A file recorded but absent is
+// not a small file — it is one whose bytes were never kept, and it reads as an
+// ordinary row until something says so.
+func handleAttachmentUsage(w http.ResponseWriter, _ *http.Request) {
+	count, bytes, err := blobstore.New(importDataDir).Usage()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+
+	recorded, missing, err := store.AttachmentStorageCounts()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"files": count, "bytes": bytes,
+		"recorded": recorded, "notStored": missing,
+	})
 }

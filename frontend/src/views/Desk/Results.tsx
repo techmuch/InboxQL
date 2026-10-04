@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Inbox } from 'lucide-react';
+import { ArrowUpDown, Inbox } from 'lucide-react';
 import { openAttachment, openContact, openMessage, openTool, previewMessage } from '../../lib/tabs';
 import { navRow } from '../../lib/rovingFocus';
 import { refKey, useSelectionStore } from '../../lib/selection';
@@ -51,7 +51,20 @@ export const Results = ({ result, onDrillDown }: ResultsProps) => {
     case 'attachments': {
       const files = result.attachments ?? [];
       if (files.length === 0) return <NoFiles />;
-      return <AttachmentResult files={files} onDrillDown={onDrillDown} />;
+      return (
+        <>
+          <FileSilences onDrillDown={onDrillDown} />
+          <AttachmentResult
+            files={files}
+          onDrillDown={onDrillDown}
+          // Through the same composer every other drill-down uses, so the
+          // sort appears in the query bar as something that could have been
+          // typed — and so a second terminal stage replaces the first rather
+          // than stacking.
+            onSort={field => onDrillDown([], `sort ${field} desc`)}
+          />
+        </>
+      );
     }
     default:
       return <MessageResult result={result} />;
@@ -388,19 +401,24 @@ const NoFiles = () => {
  * opens the message. Clicking the type narrows to that kind of file, which is
  * the same drill-down an aggregate row offers.
  */
-const AttachmentResult = ({ files, onDrillDown }: {
+const AttachmentResult = ({ files, onDrillDown, onSort }: {
   files: AttachmentFile[];
   onDrillDown?: (term: string) => void;
+  /** Append a sort stage. Absent when the surface cannot rewrite the query. */
+  onSort?: (field: string) => void;
 }) => (
   <div className="overflow-auto h-full">
     <table className="w-full text-sm">
       <thead className="sticky top-0 bg-background border-b border-border">
         <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-          <th className="px-4 py-2 font-medium">Name</th>
+          <th className="px-4 py-2 font-medium"><SortHeader label="Name" field="filename" onSort={onSort} /></th>
           <th className="px-4 py-2 font-medium w-24">Type</th>
-          <th className="px-4 py-2 font-medium w-24 text-right">Size</th>
+          {/* "What is filling my disk" is the question a file list exists to
+              answer, and `| sort size desc` already worked — in a language you
+              had to know first. */}
+          <th className="px-4 py-2 font-medium w-24 text-right"><SortHeader label="Size" field="size" onSort={onSort} /></th>
           <th className="px-4 py-2 font-medium w-40">Reach</th>
-          <th className="px-4 py-2 font-medium w-28">Last seen</th>
+          <th className="px-4 py-2 font-medium w-28"><SortHeader label="Last seen" field="date" onSort={onSort} /></th>
         </tr>
       </thead>
       <tbody>
@@ -457,6 +475,125 @@ const AttachmentResult = ({ files, onDrillDown }: {
     </table>
   </div>
 );
+
+/**
+ * The states that look like absence.
+ *
+ * There are three separate silences in a file list and they mean different
+ * things: nobody has looked inside, somebody looked and it holds no text, and
+ * the bytes were never kept. Only the last reads as a problem; the first two
+ * read as "this file matched nothing", which is the opposite of true.
+ *
+ * So they are counted where somebody is already standing, with the query that
+ * finds them — because the alternative is knowing to type `is:scanned`, which
+ * is exactly the gap a rail and a results page exist to close.
+ */
+const FileSilences = ({ onDrillDown }: {
+  onDrillDown: (terms: string | string[], stage?: string) => void;
+}) => {
+  const [counts, setCounts] = useState<{ unread: number; scanned: number } | null>(null);
+  const [usage, setUsage] = useState<{ bytes: number; files: number; notStored: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetch('/api/query?q=' + encodeURIComponent('in:attachments is:unread') + '&limit=0'),
+      fetch('/api/query?q=' + encodeURIComponent('in:attachments is:scanned') + '&limit=0'),
+    ])
+      .then(rs => Promise.all(rs.map(r => (r.ok ? r.json() : null))))
+      .then(([u, s]) => {
+        if (cancelled) return;
+        setCounts({ unread: u?.count ?? 0, scanned: s?.count ?? 0 });
+      })
+      .catch(() => {
+        // Without them the list is what it was, which is never wrong.
+      });
+
+    // How much disk this is. The number existed and only the command line had
+    // ever shown it, so the Files view could not answer the most obvious
+    // question about its own contents.
+    fetch('/api/attachments/usage')
+      .then(r => (r.ok ? r.json() : null))
+      .then(u => { if (!cancelled && u) setUsage(u); })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
+  }, []);
+
+  const quiet = !counts || (counts.unread === 0 && counts.scanned === 0);
+  if (quiet && !usage) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-b border-border bg-muted/30 px-4 py-1.5 text-xs">
+      {usage && (
+        <span className="text-muted-foreground">
+          <span className="font-mono tabular-nums text-foreground">{formatBytes(usage.bytes)}</span>
+          {' in '}
+          <span className="font-mono tabular-nums text-foreground">{usage.files.toLocaleString()}</span>
+          {' files'}
+        </span>
+      )}
+      {usage && usage.notStored > 0 && (
+        <button
+          type="button"
+          onClick={() => onDrillDown('is:missing')}
+          title="Recorded, but the bytes were never kept — too large, or imported before extraction existed"
+          className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          <span className="font-mono tabular-nums text-foreground">{usage.notStored}</span>{' '}
+          not stored
+        </button>
+      )}
+      {counts && counts.unread > 0 && (
+        <button
+          type="button"
+          onClick={() => onDrillDown('is:unread')}
+          className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          <span className="font-mono tabular-nums text-foreground">{counts.unread}</span>{' '}
+          nobody has read
+        </button>
+      )}
+      {counts && counts.scanned > 0 && (
+        <button
+          type="button"
+          onClick={() => onDrillDown('is:scanned')}
+          title="Read, and holding no text — these are pictures of pages. iql ocr reads them."
+          className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          <span className="font-mono tabular-nums text-foreground">{counts.scanned}</span>{' '}
+          {counts.scanned === 1 ? 'is a scan' : 'are scans'} nothing can search
+        </button>
+      )}
+    </div>
+  );
+};
+
+/**
+ * A column heading that sorts.
+ *
+ * Writes a stage into the query rather than sorting the rows it was handed:
+ * the list is one page of a larger answer, so sorting what arrived would order
+ * fifty rows out of fifty thousand and look like it had worked.
+ */
+const SortHeader = ({ label, field, onSort }: {
+  label: string;
+  field: string;
+  onSort?: (field: string) => void;
+}) => {
+  if (!onSort) return <>{label}</>;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(field)}
+      className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground"
+      title={`Sort by ${label.toLowerCase()}`}
+    >
+      {label}
+      <ArrowUpDown className="w-3 h-3 opacity-50" />
+    </button>
+  );
+};
 
 const ContactResult = ({ contacts }: { contacts: Contact[] }) => {
   const selection = useSelectionStore(s => s.refs);

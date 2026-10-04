@@ -91,7 +91,7 @@ jobs:
         run: npm --prefix frontend ci
 
       - name: Typecheck
-        run: npm --prefix frontend exec tsc -- -b --noEmit
+        run: npm --prefix frontend run typecheck
 
       - name: Test
         run: npm --prefix frontend test -- --run

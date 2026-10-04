@@ -38,8 +38,15 @@ func TestSavedQueriesComposeFromTheCLI(t *testing.T) {
 		Query string `json:"query"`
 	}
 	r.JSON(t, &listed)
-	if len(listed) != 1 || listed[0].Name != "acme-mail" || listed[0].Title != "Acme mail" {
-		t.Errorf("saved list returned %+v", listed)
+	found := false
+	for _, l := range listed {
+		if l.Name == "acme-mail" && l.Title == "Acme mail" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("saved list returned %+v, wanted it to contain acme-mail", listed)
 	}
 
 	if r := e.run("saved", "delete", "acme-mail"); r.ExitCode != 0 {

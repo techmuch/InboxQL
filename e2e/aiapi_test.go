@@ -186,7 +186,7 @@ func TestAnnotatorsAreManageableOverTheAPI(t *testing.T) {
 	var rows []struct {
 		Name           string `json:"name"`
 		Engine         string `json:"engine"`
-		Scope          string `json:"scope"`
+		Reach          string `json:"reach"`
 		ConsentMissing bool   `json:"consentMissing"`
 		Progress       struct {
 			Total int64 `json:"total"`
@@ -203,16 +203,16 @@ func TestAnnotatorsAreManageableOverTheAPI(t *testing.T) {
 		switch a.Name {
 		case "receipts":
 			// The list says what running it would do, per annotator.
-			if a.Scope != "remote" {
-				t.Errorf("receipts is scoped %q, want remote", a.Scope)
+			if a.Reach != "remote" {
+				t.Errorf("receipts has reach %q, want remote", a.Reach)
 			}
 			if !a.ConsentMissing {
 				t.Error("receipts has no consent but the list does not say so")
 			}
 		case "billing":
-			if a.Scope != "" || a.ConsentMissing {
-				t.Errorf("a rule annotator reports scope=%q consentMissing=%v",
-					a.Scope, a.ConsentMissing)
+			if a.Reach != "" || a.ConsentMissing {
+				t.Errorf("a rule annotator reports reach=%q consentMissing=%v",
+					a.Reach, a.ConsentMissing)
 			}
 			if a.Progress.Total == 0 {
 				t.Error("progress reports no messages in scope")

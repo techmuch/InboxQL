@@ -298,7 +298,11 @@ func TestCandidateFilterAgreesWithMarkerTest(t *testing.T) {
 	openAttachmentFixture(t)
 
 	where, args := unextractedCandidates()
-	rows, err := db.Query(`SELECT m.id, m.header FROM messages m WHERE `+where, args...)
+	// Joined rather than selected from messages: v36 moved the raw message to
+	// its own table, which is the change the whole candidate filter had to
+	// follow.
+	rows, err := db.Query(
+		`SELECT m.id, r.raw FROM messages m JOIN message_raw r ON r.message_id = m.id WHERE `+where, args...)
 	if err != nil {
 		t.Fatalf("candidate query: %v", err)
 	}

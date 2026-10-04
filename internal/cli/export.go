@@ -116,6 +116,13 @@ func runExport(ctx *Context, args []string) error {
 			}
 		} else {
 			name = exportFilename(m)
+			// The raw is in its own table since v36 and is not read by an
+			// ordinary message query. Without this the export silently falls
+			// back to synthesised headers — a .eml that looks fine and is not
+			// what arrived.
+			if _, err := store.WithRaw(m); err != nil {
+				return Fail(ExitError, "reading the raw message for %s: %v", m.ID, err)
+			}
 			data = renderEML(m)
 		}
 

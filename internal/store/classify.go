@@ -128,13 +128,14 @@ func ClassifyContacts(dryRun bool) (*ClassifyResult, error) {
 		       (SELECT COUNT(*) FROM message_participants p
 		         JOIN messages m ON m.id = p.message_id
 		         WHERE p.address = c.address AND p.role = 'from'
-		           AND m.header IS NOT NULL
-		           AND (m.header LIKE '%List-Unsubscribe%'
-		             OR m.header LIKE '%List-Id:%'
-		             OR m.header LIKE '%Auto-Submitted%'
-		             OR m.header LIKE '%X-Auto-Response-Suppress%'
-		             OR m.header LIKE '%Precedence: bulk%'
-		             OR m.header LIKE '%Precedence: list%'))
+		           AND EXISTS (
+		             SELECT 1 FROM message_raw r WHERE r.message_id = m.id
+		               AND (r.raw LIKE '%List-Unsubscribe%'
+		                 OR r.raw LIKE '%List-Id:%'
+		                 OR r.raw LIKE '%Auto-Submitted%'
+		                 OR r.raw LIKE '%X-Auto-Response-Suppress%'
+		                 OR r.raw LIKE '%Precedence: bulk%'
+		                 OR r.raw LIKE '%Precedence: list%')))
 		FROM contacts c`)
 	if err != nil {
 		return nil, err

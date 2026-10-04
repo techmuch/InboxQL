@@ -456,27 +456,28 @@ func Progress(a *Annotator, filter string) (*AnnotatorProgress, error) {
 		return nil, err
 	}
 
-	countBy := func(extra string, more ...any) (int64, error) {
-		var n int64
-		q := `SELECT COUNT(DISTINCT m.id) FROM messages m
-			JOIN annotations a ON a.message_id = m.id
-			WHERE ` + where + ` AND a.annotator_id = ? AND a.annotator_version = ? ` + extra
-		full := append(append([]any{}, args...), a.ID, a.Version)
-		full = append(full, more...)
-		err := db.QueryRow(q, full...).Scan(&n)
-		return n, err
-	}
-
-	if p.Evaluated, err = countBy(""); err != nil {
-		return nil, err
-	}
-	if p.Matched, err = countBy("AND a.status = ?", StatusOK); err != nil {
-		return nil, err
-	}
-	if p.Empty, err = countBy("AND a.status = ?", StatusEmpty); err != nil {
-		return nil, err
-	}
-	if p.Failed, err = countBy("AND a.status = ?", StatusFailed); err != nil {
+	// One pass rather than four.
+	//
+	// This used to run a COUNT(DISTINCT) per status — evaluated, ok, empty,
+	// failed — each a separate scan of the same join. With the total above
+	// that is five queries per annotator, and the listing calls this for every
+	// one: sixty round trips over the whole mailbox to draw a page with twelve
+	// progress bars.
+	//
+	// Conditional aggregation gets all four from the join the first one had to
+	// do anyway. The DISTINCT is kept per status because a message with three
+	// records would otherwise count three times towards a number that claims
+	// to count messages.
+	full := append(append([]any{}, args...), a.ID, a.Version)
+	if err := db.QueryRow(`
+		SELECT COUNT(DISTINCT a.message_id),
+		       COUNT(DISTINCT CASE WHEN a.status = 'ok'     THEN a.message_id END),
+		       COUNT(DISTINCT CASE WHEN a.status = 'empty'  THEN a.message_id END),
+		       COUNT(DISTINCT CASE WHEN a.status = 'failed' THEN a.message_id END)
+		FROM messages m
+		JOIN annotations a ON a.message_id = m.id
+		WHERE `+where+` AND a.annotator_id = ? AND a.annotator_version = ?`,
+		full...).Scan(&p.Evaluated, &p.Matched, &p.Empty, &p.Failed); err != nil {
 		return nil, err
 	}
 

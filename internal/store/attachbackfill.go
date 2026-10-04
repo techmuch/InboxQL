@@ -156,7 +156,7 @@ func RecoverAttachments(blobs *blobstore.Store, maxBytes int64, dryRun bool) (*A
 
 	for _, id := range ids {
 		var raw []byte
-		if err := db.QueryRow("SELECT header FROM messages WHERE id = ?", id).Scan(&raw); err != nil {
+		if err := db.QueryRow("SELECT raw FROM message_raw WHERE message_id = ?", id).Scan(&raw); err != nil {
 			return out, err
 		}
 
@@ -207,12 +207,17 @@ func RecoverAttachments(blobs *blobstore.Store, maxBytes int64, dryRun bool) (*A
 func unextractedCandidates() (where string, args []any) {
 	tests := make([]string, 0, len(message.AttachmentMarkers))
 	for _, marker := range message.AttachmentMarkers {
-		tests = append(tests, "instr(m.header, ?) > 0")
+		tests = append(tests, "instr(r.raw, ?) > 0")
 		args = append(args, marker)
 	}
-	return `m.header IS NOT NULL AND LENGTH(m.header) > 0
-		  AND NOT EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)
-		  AND (` + strings.Join(tests, " OR ") + `)`, args
+	// One EXISTS over the raw table rather than a join: the alias has to be in
+	// scope for the marker tests, and the subquery stops as soon as a marker
+	// matches instead of carrying the blob out to the outer query.
+	return `EXISTS (
+			SELECT 1 FROM message_raw r
+			WHERE r.message_id = m.id AND LENGTH(r.raw) > 0
+			  AND (` + strings.Join(tests, " OR ") + `))
+		  AND NOT EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)`, args
 }
 
 // UnextractedAttachments counts messages carrying parts nothing ever recorded.
@@ -225,7 +230,7 @@ func unextractedCandidates() (where string, args []any) {
 // counts parts, it never decodes them.
 func UnextractedAttachments() (messages int64, err error) {
 	where, args := unextractedCandidates()
-	rows, err := db.Query(`SELECT m.header FROM messages m WHERE `+where, args...)
+	rows, err := db.Query(`SELECT r.raw FROM messages m JOIN message_raw r ON r.message_id = m.id WHERE `+where, args...)
 	if err != nil {
 		return 0, err
 	}

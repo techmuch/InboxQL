@@ -10,9 +10,17 @@ import (
 )
 
 // messageColumns is the canonical column list for scanMessage.
+// messageColumns is what a message row carries without its raw bytes.
+//
+// The raw message lives in `message_raw` and is fetched only by the paths that
+// need it — parsing, export, attachment extraction. It was 86.7% of this table
+// and every scan dragged it to read a subject line; see the v36 migration.
+//
+// So a Message read through here has a nil Header. [LoadRaw] fills it for the
+// callers that care, and they are few.
 const messageColumns = `id, account_id, uid, message_id, content_hash, normalized_body,
 	from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body,
-	header, flags, size, internal_date, mailbox`
+	flags, size, internal_date, mailbox`
 
 // scanMessage reads one row selected with messageColumns.
 func scanMessage(scan func(dest ...any) error) (*message.Message, error) {
@@ -23,7 +31,7 @@ func scanMessage(scan func(dest ...any) error) (*message.Message, error) {
 
 	if err := scan(&m.ID, &m.AccountID, &m.UID, &m.MessageID, &m.ContentHash,
 		&m.NormalizedBody, &m.From, &to, &cc, &bcc, &m.Subject, &date, &m.Body,
-		&m.HTMLBody, &m.Header, &flags, &m.Size, &internalDate, &mailbox); err != nil {
+		&m.HTMLBody, &flags, &m.Size, &internalDate, &mailbox); err != nil {
 		return nil, err
 	}
 	m.Mailbox = mailbox.String
@@ -237,4 +245,37 @@ func MessageExistsByMessageIDForAccount(accountID, messageID string) (bool, erro
 		"SELECT COUNT(*) FROM messages WHERE account_id = ? AND message_id = ?",
 		accountID, messageID).Scan(&n)
 	return n > 0, err
+}
+
+// LoadRaw fills in a message's raw bytes.
+//
+// Separate from reading the row because the raw message is 86.7% of what a
+// mailbox weighs and almost nothing needs it: parsing, export and attachment
+// extraction do, and a list of five hundred subjects does not. See the v36
+// migration for what reading it on every scan cost.
+//
+// A message with no stored raw is not an error. Mail imported before the raw
+// was kept, or a row whose blob was never written, simply has none — and the
+// callers that need it already have to cope with a message they cannot
+// re-parse.
+func LoadRaw(messageID string) ([]byte, error) {
+	var raw []byte
+	err := db.QueryRow("SELECT raw FROM message_raw WHERE message_id = ?", messageID).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return raw, err
+}
+
+// WithRaw returns the message with its raw bytes loaded.
+func WithRaw(m *message.Message) (*message.Message, error) {
+	if m == nil || len(m.Header) > 0 {
+		return m, nil
+	}
+	raw, err := LoadRaw(m.ID)
+	if err != nil {
+		return m, err
+	}
+	m.Header = raw
+	return m, nil
 }

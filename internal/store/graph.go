@@ -409,7 +409,31 @@ func HeaderNames(header []byte) map[string]string {
 //
 // Runs once, inside the v24 migration. Only fills empty names — a name already
 // recorded came from a live parse and is at least as good.
+// backfillParticipantNames is called only by the v24 migration.
+//
+// # Why it still reads messages.header
+//
+// v36 moved the raw message to its own table, and this reads the column v36
+// drops. That is correct: a migration runs against the schema as it was at its
+// own version, and when v24 runs the column is still there and message_raw is
+// twelve migrations away from existing.
+//
+// Pointing this at the new table broke every fresh database — v24 failed with
+// "no such table: message_raw" before v36 could create it. A helper shared
+// between a migration and live code is a helper that will be rewritten for live
+// code and silently break the replay; this one is for the migration alone.
 func backfillParticipantNames(db *sql.DB) error {
+	// Skipped rather than failed when the column is not there.
+	//
+	// v36 drops it, so a database that reaches v24 with the raw already moved
+	// — a test fixture built at a later schema, or a restore that replayed out
+	// of order — has nothing here to read. This is a best-effort recovery of
+	// names that were never lost, only unread; finding none is a reason to do
+	// nothing, not to refuse to open the database.
+	if !columnExists(db, "messages", "header") {
+		return nil
+	}
+
 	rows, err := db.Query(`
 		SELECT m.id, m.header FROM messages m
 		WHERE m.header IS NOT NULL AND m.header != ''
@@ -457,4 +481,27 @@ func backfillParticipantNames(db *sql.DB) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// columnExists reports whether a table has a column, for migrations that read
+// one a later migration removes.
+func columnExists(db *sql.DB, table, column string) bool {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return false
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }

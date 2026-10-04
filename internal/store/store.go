@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 35
+	SchemaVersion = 36
 )
 
 var (
@@ -283,6 +283,9 @@ func migrateDB(db *sql.DB) error {
 				date INTEGER NOT NULL,
 				body TEXT NOT NULL,
 				html_body TEXT NOT NULL,
+				-- Dropped by v36, which moves the raw message to its own
+				-- table. Kept here because migrations replay from zero: a
+				-- fresh database has to reach v35 looking the way v35 looked.
 				header BLOB NOT NULL,
 				flags TEXT NOT NULL,
 				size INTEGER NOT NULL,
@@ -1525,6 +1528,65 @@ func migrateDB(db *sql.DB) error {
 		currentVersion = 35
 	}
 
+	if currentVersion < 36 {
+		log.Println("Applying schema migration v36 (the raw message leaves the messages table)...")
+		// # Why this is the whole performance story
+		//
+		// `header` never held headers. It held the entire raw RFC822 message,
+		// base64 attachments and all — 106 KB on average on a real mailbox,
+		// 2.6 MB at worst, and 86.7% of everything in the table.
+		//
+		// SQLite keeps that in the same b-tree a scan walks, so every query an
+		// index could not answer dragged 106 KB per row in order to read a
+		// 40-byte subject. Measured on 100,000 generated messages, then on the
+		// same rows with the raw moved out:
+		//
+		//	subject LIKE       6.15 s -> 0.022 s
+		//	GROUP BY sender    6.18 s -> 0.033 s
+		//	flags LIKE         7.88 s -> 0.019 s
+		//	the table          1.9 GB -> 17 MB
+		//
+		// At a million messages that is the difference between a minute and a
+		// fifth of a second.
+		//
+		// A side table rather than a file store, for now: the speedup comes
+		// from the bytes leaving the b-tree, which this achieves, and it keeps
+		// the move inside one transaction and inside `iql backup`.
+		if _, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS message_raw (
+				message_id TEXT PRIMARY KEY,
+				raw        BLOB NOT NULL,
+				FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+			);`); err != nil {
+			return fmt.Errorf("v36 (raw messages): %w", err)
+		}
+		// Only when there is something to move. A database that already has no
+		// such column — a fixture built at a later schema, or a retry after
+		// this failed part way — must reach v36 rather than refuse to open. A
+		// migration that cannot be re-run is one repaired by hand.
+		if columnExists(db, "messages", "header") {
+			for _, stmt := range []string{
+				`INSERT OR IGNORE INTO message_raw (message_id, raw)
+				 SELECT id, header FROM messages WHERE header IS NOT NULL AND LENGTH(header) > 0;`,
+				// SQLite drops a column in place since 3.35, which avoids
+				// rebuilding a table that may be a hundred gigabytes.
+				`ALTER TABLE messages DROP COLUMN header;`,
+			} {
+				if _, err := db.Exec(stmt); err != nil {
+					return fmt.Errorf("v36 (raw messages): %w", err)
+				}
+			}
+		}
+		// The table keeps the space the blobs occupied until it is rebuilt, and
+		// the point of the exercise is that scans stop reading those pages. A
+		// VACUUM is the user's to run — `iql maintenance vacuum` — because on a
+		// large mailbox it needs exclusive access and a while.
+		if _, err := db.Exec("PRAGMA user_version = 36;"); err != nil {
+			return err
+		}
+		currentVersion = 36
+	}
+
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)
 	return nil
 }
@@ -1760,22 +1822,24 @@ func SaveMessage(m *message.Message) error {
 	bcc, _ := json.Marshal(m.Bcc)
 	flags, _ := json.Marshal(m.Flags)
 
-	// header is BLOB NOT NULL, and a nil []byte binds as NULL. Combined with
-	// INSERT OR IGNORE — which is here to make re-imports idempotent against
-	// the (account_id, content_hash) index — that turned a message with no
-	// header into a silent no-op: zero rows written, nil error returned. The
-	// duplicate case is the only one OR IGNORE should ever swallow.
-	header := m.Header
-	if header == nil {
-		header = []byte{}
-	}
-
 	res, err := db.Exec(`
-		INSERT OR IGNORE INTO messages (id, account_id, uid, message_id, content_hash, normalized_body, from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body, header, flags, size, internal_date, mailbox)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-	`, m.ID, m.AccountID, m.UID, m.MessageID, m.ContentHash, m.NormalizedBody, m.From, string(to), string(cc), string(bcc), m.Subject, m.Date.UnixMilli(), m.Body, m.HTMLBody, header, string(flags), m.Size, m.InternalDate.UnixMilli(), nullIfEmpty(m.Mailbox))
+		INSERT OR IGNORE INTO messages (id, account_id, uid, message_id, content_hash, normalized_body, from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body, flags, size, internal_date, mailbox)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	`, m.ID, m.AccountID, m.UID, m.MessageID, m.ContentHash, m.NormalizedBody, m.From, string(to), string(cc), string(bcc), m.Subject, m.Date.UnixMilli(), m.Body, m.HTMLBody, string(flags), m.Size, m.InternalDate.UnixMilli(), nullIfEmpty(m.Mailbox))
 	if err != nil {
 		return err
+	}
+
+	// The raw message goes to its own table, where a scan over `messages` will
+	// never touch it. Written after the insert and only when the insert took,
+	// so a duplicate collapsed by OR IGNORE does not write a second copy of
+	// bytes that are already stored against the row that won.
+	if n, _ := res.RowsAffected(); n > 0 && len(m.Header) > 0 {
+		if _, err := db.Exec(
+			"INSERT OR REPLACE INTO message_raw (message_id, raw) VALUES (?, ?)",
+			m.ID, m.Header); err != nil {
+			return err
+		}
 	}
 
 	// Only index a row that was actually written. OR IGNORE above collapses a
@@ -1825,7 +1889,16 @@ func GetMessageByID(id string) (*message.Message, error) {
 	m := &message.Message{}
 	var to, cc, bcc, flags string
 	var date, internalDate int64
-	err := db.QueryRow("SELECT id, account_id, uid, message_id, content_hash, normalized_body, from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body, header, flags, size, internal_date FROM messages WHERE id = ?", id).
+	// One message by id, with its raw bytes: this is the detail path, and the
+	// callers that reach for a single message are the ones that re-parse it.
+	// A list does not come through here.
+	err := db.QueryRow(`
+		SELECT m.id, m.account_id, m.uid, m.message_id, m.content_hash, m.normalized_body,
+		       m.from_addr, m.to_addrs, m.cc_addrs, m.bcc_addrs, m.subject, m.date,
+		       m.body, m.html_body, COALESCE(r.raw, x''), m.flags, m.size, m.internal_date
+		FROM messages m
+		LEFT JOIN message_raw r ON r.message_id = m.id
+		WHERE m.id = ?`, id).
 		Scan(&m.ID, &m.AccountID, &m.UID, &m.MessageID, &m.ContentHash, &m.NormalizedBody, &m.From, &to, &cc, &bcc, &m.Subject, &date, &m.Body, &m.HTMLBody, &m.Header, &flags, &m.Size, &internalDate)
 	if err == sql.ErrNoRows {
 		return nil, nil

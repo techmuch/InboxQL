@@ -4,6 +4,7 @@ import { openMessage, previewMessage } from '../../lib/tabs';
 import { movedByKeyboard, navRow } from '../../lib/rovingFocus';
 import { refKey, useSelectionStore } from '../../lib/selection';
 import { ariaCurrent, rowStateClasses, useIsCurrent } from '../../lib/rowState';
+import { ENTRY_CAP, isOpen, useThreadExpansionStore } from '../../lib/threadExpansion';
 import type { Thread, ThreadEntry } from './api';
 
 interface ThreadResultProps {
@@ -41,9 +42,8 @@ export const ThreadResult = ({ threads, onDrillDown, onScroll }: ThreadResultPro
           key={thread.key}
           thread={thread}
           /* One conversation on screen is already the thing you asked to
-             read, so it opens expanded. A page of them is a list, and a list
-             of fully expanded timelines is unscannable. */
-          defaultOpen={threads.length === 1}
+             read, so it opens whatever the preference says. */
+          alone={threads.length === 1}
           onDrillDown={onDrillDown}
         />
       ))}
@@ -53,17 +53,32 @@ export const ThreadResult = ({ threads, onDrillDown, onScroll }: ThreadResultPro
 
 const ThreadRow = ({
   thread,
-  defaultOpen,
+  alone,
   onDrillDown,
 }: {
   thread: Thread;
-  defaultOpen: boolean;
+  alone: boolean;
   onDrillDown: (terms: string | string[], stage?: string) => void;
 }) => {
   const selection = useSelectionStore(s => s.refs);
   const isSelected = Boolean(selection[refKey({ kind: 'thread', id: thread.key })]);
-  const [open, setOpen] = useState(defaultOpen);
+  const expansion = useThreadExpansionStore(s => s.expansion);
+  // What the user did to this row, or null for "nothing yet".
+  //
+  // Not `useState(defaultOpen)`, which is what this was. That reads its
+  // argument once, and rows are keyed by thread so they survive across queries
+  // — so a changed preference changed nothing on screen. The preference is now
+  // the source and a click is an override on top of it.
+  const [override, setOverride] = useState<boolean | null>(null);
+  const open = isOpen(override, alone, expansion);
+  // How far into a long conversation to render. Reset whenever it closes, so
+  // reopening a 1,088-message thread does not render all of it again.
+  const [shown, setShown] = useState(ENTRY_CAP);
   const Chevron = open ? ChevronDown : ChevronRight;
+  const toggle = () => {
+    setOverride(!open);
+    if (open) setShown(ENTRY_CAP);
+  };
 
   return (
     <div>
@@ -76,7 +91,7 @@ const ThreadRow = ({
         data-sel-field="thread"
         data-sel-label={thread.subject}
         aria-selected={isSelected}
-        onClick={() => setOpen(o => !o)}
+        onClick={toggle}
         aria-expanded={open}
         className={`w-full flex items-start gap-2 px-3 py-2 text-left transition-colors ${
           isSelected
@@ -119,10 +134,26 @@ const ThreadRow = ({
         // stylesheet, and still has no effect.
         <div className="relative ml-[26px] border-l border-border pb-2 pl-4 pr-3">
           <ol>
-            {thread.entries.map((entry, i) => (
+            {thread.entries.slice(0, shown).map((entry, i) => (
               <Entry key={`${entry.kind}-${entry.at}-${i}`} entry={entry} />
             ))}
           </ol>
+
+          {/* Named rather than silently cut. The largest conversation on a real
+              mailbox held 1,088 messages, and rendering all of them from one
+              click stalled the page; a list that simply stopped at 25 would
+              read as a conversation that ended there. */}
+          {thread.entries.length > shown && (
+            <button
+              type="button"
+              {...navRow}
+              onClick={() => setShown(thread.entries.length)}
+              className="block pt-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground
+                         hover:underline"
+            >
+              and {(thread.entries.length - shown).toLocaleString()} more — show all
+            </button>
+          )}
 
           <button
             type="button"

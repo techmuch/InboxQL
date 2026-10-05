@@ -16,6 +16,7 @@ import { openTool, openErrorLog, openQuery, useViewerStore, type ViewerMode } fr
 import { useAttachmentTargetStore, type AttachmentTarget } from './lib/attachmentTarget';
 import { Radio, RadioTower, ScrollText } from 'lucide-react';
 import { useThreadingStore, type Threading } from './lib/threading';
+import { ENTRY_CAP, useThreadExpansionStore, type ThreadExpansion } from './lib/threadExpansion';
 import { startWindowSession, useWindowsStore, WINDOWS_TAB } from './lib/windows';
 import { Windows } from './views/Windows';
 import { WindowNote } from './views/WindowNote';
@@ -436,6 +437,63 @@ const ThreadingSetting = () => {
       <p className="text-[11px] text-muted-foreground mt-3">
         Where the Desk starts. The Threads button still changes any one query, and a query
         that counts something, or that is about contacts or files, is left alone.
+      </p>
+    </section>
+  );
+};
+
+/**
+ * Whether conversations start open or closed.
+ *
+ * Shown under Inbox Layout because it only means anything when the inbox is one
+ * row per conversation — and it says so when it is not, rather than sitting
+ * there looking like it does something.
+ */
+const ThreadExpansionSetting = () => {
+  const expansion = useThreadExpansionStore(s => s.expansion);
+  const setExpansion = useThreadExpansionStore(s => s.setExpansion);
+  const threaded = useThreadingStore(s => s.threading) === 'threaded';
+
+  const options: { id: ThreadExpansion; label: string; detail: string }[] = [
+    {
+      id: 'collapsed',
+      label: 'Closed',
+      detail: 'One line each. Arrow keys move between conversations, which is what makes the list quick to scan.',
+    },
+    {
+      id: 'expanded',
+      label: 'Open',
+      detail: 'Every message, ticket and draft under its conversation. Arrow keys walk through all of them.',
+    },
+  ];
+
+  return (
+    <section>
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+        Conversations
+      </h3>
+      <div className={`grid grid-cols-2 gap-4 ${threaded ? '' : 'opacity-60'}`}>
+        {options.map(o => (
+          <button
+            key={o.id}
+            onClick={() => setExpansion(o.id)}
+            aria-pressed={expansion === o.id}
+            className={`relative p-4 border text-left flex flex-col gap-1.5 transition-all ${
+              expansion === o.id
+                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                : 'border-border hover:bg-accent'
+            }`}
+          >
+            <span className="text-sm font-medium">{o.label}</span>
+            <span className="text-xs text-muted-foreground leading-snug">{o.detail}</span>
+            {expansion === o.id && <Check className="w-3 h-3 text-primary absolute top-2 right-2" />}
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground mt-3">
+        {threaded
+          ? `A conversation you open or close by hand stays that way. A search that finds a single conversation always opens it, and a long one shows its first ${ENTRY_CAP} entries until you ask for the rest.`
+          : 'Applies when the inbox shows one row per conversation, above.'}
       </p>
     </section>
   );
@@ -1095,6 +1153,7 @@ const SettingsView = () => {
                 </section>
 
                 <ThreadingSetting />
+                <ThreadExpansionSetting />
                 <AttachmentTargetSetting />
                 <ViewerModeSetting />
                 <RailDefaults />

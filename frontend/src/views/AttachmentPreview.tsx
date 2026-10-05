@@ -332,12 +332,28 @@ export const AttachmentOccurrences = ({ file, currentMessageId }: {
   if (occurrences === null) {
     return <div className="text-xs text-muted-foreground px-3 py-2">Looking for other copies…</div>;
   }
-  // Gated on rows rather than on the message count, so a file attached twice
-  // to one message still shows both — they are both real parts of that mail.
-  if (occurrences.length <= 1) {
+  // A file recorded against no message that is still stored — an orphan from
+  // a removed account. This used to say "one message only", which was false.
+  if (occurrences.length === 0) {
     return (
       <div className="text-xs text-muted-foreground px-3 py-2">
-        This file appears on one message only.
+        Not on any stored message.
+      </div>
+    );
+  }
+  // One occurrence, and it is the message this panel is embedded in. A row
+  // here would link to the page it is on, so the sentence is the honest form.
+  //
+  // Anywhere else — the File tab above all — one occurrence is shown as a row
+  // like any other. It used to be replaced by "This file appears on one message
+  // only.", which threw away the one thing worth having: the way to the mail.
+  //
+  // Gated on rows rather than on the message count, so a file attached twice
+  // to one message still lists both — they are both real parts of that mail.
+  if (occurrences.length === 1 && occurrences[0].messageId === currentMessageId) {
+    return (
+      <div className="text-xs text-muted-foreground px-3 py-2">
+        Only on this message.
       </div>
     );
   }

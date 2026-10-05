@@ -110,8 +110,12 @@ describe('AttachmentViewer', () => {
   // The viewer embeds the occurrences panel, which fetches on mount. Every test
   // here waits for that to land before asserting, so a React state update never
   // arrives after the test has finished.
+  //
+  // Waits for the loading line to go rather than for any particular answer, so
+  // rewording what the panel says about a file does not break tests about the
+  // frame above it.
   const settled = async () =>
-    waitFor(() => expect(screen.getByText(/appears on one message only/)).toBeTruthy());
+    waitFor(() => expect(screen.queryByText(/Looking for other copies/)).toBeNull());
 
   // A PDF frame carries no sandbox attribute, because Chrome will not run its
   // PDF viewer inside one at all. That is a deliberate, documented exception
@@ -312,12 +316,51 @@ describe('AttachmentOccurrences', () => {
     expect(screen.getByText('Fwd: Invoice attached')).toBeTruthy();
   });
 
-  it('says plainly when a file is on one message only', async () => {
+  /**
+   * The reported gap.
+   *
+   * One occurrence used to be replaced by "This file appears on one message
+   * only." — discarding the occurrence that had just been fetched, which was the
+   * only way from the File tab to the mail the file came on.
+   */
+  it('links to the one message a file arrived on', async () => {
     mockOccurrences([occurrences[0]]);
-    render(<AttachmentOccurrences file={{ ...pdf, messages: 1, threads: 1 }} />);
+    render(<AttachmentOccurrences file={{ ...pdf, messages: 1, threads: 1, names: 1 }} />);
 
-    await waitFor(() =>
-      expect(screen.getByText('This file appears on one message only.')).toBeTruthy());
+    const row = await screen.findByRole('button', { name: /Invoice attached/ });
+    expect(screen.getByText(/1 message/)).toBeTruthy();
+    expect(screen.queryByText(/appears on one message only/)).toBeNull();
+
+    // And it opens that message, the same as any other occurrence.
+    fireEvent.click(row);
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith('/api/message?id=m1'));
+  });
+
+  // Inside the message's own viewer the one row would link to the page it is
+  // on, so a sentence is the honest form there.
+  it('says so rather than linking to itself, inside that message', async () => {
+    mockOccurrences([occurrences[0]]);
+    render(<AttachmentOccurrences file={{ ...pdf, messages: 1, threads: 1 }} currentMessageId="m1" />);
+
+    await waitFor(() => expect(screen.getByText('Only on this message.')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /Invoice attached/ })).toBeNull();
+  });
+
+  // Viewed from a *different* message, the one occurrence is somewhere else,
+  // so it is a link like any other.
+  it('still links when viewed from some other message', async () => {
+    mockOccurrences([occurrences[0]]);
+    render(<AttachmentOccurrences file={{ ...pdf, messages: 1, threads: 1 }} currentMessageId="m9" />);
+
+    expect(await screen.findByRole('button', { name: /Invoice attached/ })).toBeTruthy();
+  });
+
+  // Previously reported as "one message", which was false.
+  it('says when a file is on no stored message at all', async () => {
+    mockOccurrences([]);
+    render(<AttachmentOccurrences file={{ ...pdf, messages: 0, threads: 0 }} />);
+
+    await waitFor(() => expect(screen.getByText('Not on any stored message.')).toBeTruthy());
   });
 
   /**

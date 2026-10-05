@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -358,8 +360,19 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit, offset := clampPaging(r, 50, 1000)
-	res, err := store.RunQuery(r.URL.Query().Get("q"), limit, offset)
+	// The request's context, so closing the tab stops the query.
+	//
+	// Without it an abandoned request ran to completion inside SQLite, holding
+	// one of eight pool connections for as long as it took — and a handful of
+	// those empty the pool, so every later query waits before it starts. That
+	// is what the slowdown was, rather than any single query.
+	res, err := store.RunQueryContext(r.Context(), r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
+		// A cancelled request has nobody to answer, and its error is not a
+		// fault worth logging as one.
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		writeQueryError(w, err)
 		return
 	}

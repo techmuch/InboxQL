@@ -80,7 +80,7 @@ func fileTypeCandidates(prefix string) ([]query.Candidate, error) {
 	}
 
 	rows, err := db.Query(`
-		SELECT mime_type, COUNT(DISTINCT COALESCE(NULLIF(content_hash, ''), id)) AS n
+		SELECT mime_type, COUNT(DISTINCT content_hash) AS n
 		FROM attachments
 		WHERE COALESCE(mime_type, '') != '' AND (? = '' OR instr(LOWER(mime_type), ?) > 0)
 		GROUP BY mime_type ORDER BY n DESC, mime_type ASC LIMIT 20`, p, p)

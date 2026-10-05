@@ -32,6 +32,18 @@ func SaveAttachment(a *Attachment) error {
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = time.Now()
 	}
+	// The file's identity is its content hash, and every query that groups or
+	// joins files uses it as the key. It used to be read as
+	// `COALESCE(NULLIF(content_hash, ''), id)` at each of those sites, which is
+	// an expression over two columns and so defeats every index — one query
+	// built on it took 51 seconds on a 9,533-row table.
+	//
+	// Falling back here instead means the key is a plain column everywhere it
+	// is read. A file whose bytes were never hashed is identified by its own
+	// row, which is what the COALESCE said, only once and in writing.
+	if a.ContentHash == "" {
+		a.ContentHash = a.ID
+	}
 	_, err := db.Exec(`
 		INSERT INTO attachments (id, message_id, filename, mime_type, size,
 		                         content_hash, storage_path, inline, content_id,

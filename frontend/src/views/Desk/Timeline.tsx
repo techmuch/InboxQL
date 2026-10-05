@@ -8,6 +8,8 @@ import type { Thread, ThreadEntry } from './api';
 
 interface ThreadResultProps {
   threads: Thread[];
+  /** Fired by this list's own scroller, for infinite scroll. */
+  onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
   /** Narrow the query to one conversation. */
   onDrillDown: (terms: string | string[], stage?: string) => void;
 }
@@ -29,11 +31,11 @@ interface ThreadResultProps {
  * this project has answered one of those in TypeScript it has answered it
  * differently in three places. This file renders a list.
  */
-export const ThreadResult = ({ threads, onDrillDown }: ThreadResultProps) => {
+export const ThreadResult = ({ threads, onDrillDown, onScroll }: ThreadResultProps) => {
   if (threads.length === 0) return null;
 
   return (
-    <div className="overflow-auto h-full divide-y divide-border">
+    <div className="overflow-auto h-full divide-y divide-border" onScroll={onScroll}>
       {threads.map(thread => (
         <ThreadRow
           key={thread.key}

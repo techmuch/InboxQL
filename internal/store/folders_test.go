@@ -42,6 +42,18 @@ func openFolderFixture(t *testing.T) {
 		{ID: "gone", From: "old@x.com", Mailbox: "INBOX", Flags: []string{`\Deleted`}},
 		// Deleted mail leaves every other folder, including Starred and Spam.
 		{ID: "gone-starred", From: "old2@x.com", Mailbox: "INBOX", Flags: []string{`\Flagged`, `\Deleted`}},
+		// Filed away. Apple Mail's path shape, which is how it arrives from an
+		// import rather than a bare "Archive".
+		{ID: "filed", From: "dave@x.com", Mailbox: "9434D814-160E-4E72/Archive.mbox", Flags: []string{`\Seen`}},
+		// Gmail's All Mail is deliberately *not* archive: it contains the
+		// inbox too, so counting it as filed would empty the inbox of mail
+		// that really is in it.
+		{ID: "allmail", From: "erin@x.com", Mailbox: "8D7EBE5F/[Gmail].mbox/All Mail.mbox", Flags: nil},
+		// A folder that merely contains the word is not the archive.
+		{ID: "named", From: "frank@x.com", Mailbox: "Archived invoices", Flags: []string{`\Seen`}},
+		// Sent, and later filed. Both claims are true and the folders have to
+		// partition, so exactly one of them may have it.
+		{ID: "sent-then-filed", From: "me@example.com", Mailbox: "Archive", Flags: []string{`\Seen`}},
 	}
 	for _, m := range msgs {
 		m.AccountID = "acct"
@@ -82,9 +94,13 @@ func TestFolderMembership(t *testing.T) {
 	openFolderFixture(t)
 
 	want := map[string][]string{
-		FolderInbox:   {"i1", "i2", "star"},
+		// allmail and named stay in the remainder on purpose: Gmail's All Mail
+		// contains the inbox, and a folder merely named "Archived invoices" is
+		// not the archive.
+		FolderInbox:   {"allmail", "i1", "i2", "named", "star"},
 		FolderStarred: {"star"},
-		FolderSent:    {"sent-by-mailbox", "sent-by-sender"},
+		FolderSent:    {"sent-by-mailbox", "sent-by-sender", "sent-then-filed"},
+		FolderArchive: {"filed"},
 		FolderSpam:    {"junk"},
 		FolderTrash:   {"gone", "gone-starred"},
 	}
@@ -111,7 +127,7 @@ func TestFoldersDoNotOverlap(t *testing.T) {
 	openFolderFixture(t)
 
 	seen := map[string]string{}
-	for _, folder := range []string{FolderInbox, FolderSent, FolderSpam, FolderTrash} {
+	for _, folder := range []string{FolderInbox, FolderSent, FolderArchive, FolderSpam, FolderTrash} {
 		for _, id := range folderIDs(t, folder) {
 			if other, dup := seen[id]; dup {
 				t.Errorf("message %s is in both %s and %s", id, other, folder)
@@ -140,12 +156,14 @@ func TestStarredCrossesFoldersButNotTrash(t *testing.T) {
 
 // An unrecognised folder name must not quietly become "everything".
 func TestUnknownFolderIsRejected(t *testing.T) {
-	for _, name := range []string{"", FolderAll, FolderInbox, FolderDrafts} {
+	for _, name := range []string{"", FolderAll, FolderInbox, FolderDrafts, FolderArchive} {
 		if !ValidFolder(name) {
 			t.Errorf("ValidFolder(%q) = false, want true", name)
 		}
 	}
-	for _, name := range []string{"nonsense", "INBOX", "Sent", "archive"} {
+	// Names are lower-case identifiers, not the mailbox names they came from:
+	// "Archive" is the place on disk, `archive` is the folder in this language.
+	for _, name := range []string{"nonsense", "INBOX", "Sent", "Archive", "all mail"} {
 		if ValidFolder(name) {
 			t.Errorf("ValidFolder(%q) = true, want false", name)
 		}
@@ -165,17 +183,19 @@ func TestFolderCountsMatchMembership(t *testing.T) {
 		byName[c.Folder] = c
 	}
 
-	for _, folder := range []string{FolderInbox, FolderStarred, FolderSent, FolderSpam, FolderTrash} {
+	for _, folder := range []string{
+		FolderInbox, FolderStarred, FolderSent, FolderArchive, FolderSpam, FolderTrash,
+	} {
 		if got, want := byName[folder].Total, len(folderIDs(t, folder)); got != want {
 			t.Errorf("%s count = %d, but the folder lists %d messages", folder, got, want)
 		}
 	}
 
-	// i1 carries no flags and star carries only \Flagged, so both are unread;
-	// i2 is the only inbox message marked \Seen. Starred mail being unread is
-	// ordinary, not a special case.
-	if byName[FolderInbox].Unread != 2 {
-		t.Errorf("inbox unread = %d, want 2", byName[FolderInbox].Unread)
+	// i1 carries no flags, star carries only \Flagged, and allmail carries
+	// none — so three are unread; i2 and named are the inbox messages marked
+	// \Seen. Starred mail being unread is ordinary, not a special case.
+	if byName[FolderInbox].Unread != 3 {
+		t.Errorf("inbox unread = %d, want 3", byName[FolderInbox].Unread)
 	}
 }
 
@@ -266,4 +286,124 @@ func TestSaveMessageIsIdempotent(t *testing.T) {
 	if after := len(folderIDs(t, FolderAll)); after != before {
 		t.Errorf("a duplicate content hash was stored again: %d -> %d", before, after)
 	}
+}
+
+// FolderCounts runs its folders concurrently, so the order of the result is
+// not the order the goroutines finish in.
+//
+// The sidebar is laid out in Folders' order, so a result that came back sorted
+// by whichever count returned first would shuffle the rail on every refresh.
+func TestFolderCountsKeepTheirOrder(t *testing.T) {
+	openQueryFixture(t)
+
+	counts, err := FolderCounts("")
+	if err != nil {
+		t.Fatalf("FolderCounts: %v", err)
+	}
+	if len(counts) != len(Folders) {
+		t.Fatalf("got %d rows, want one per folder (%d)", len(counts), len(Folders))
+	}
+	for i, want := range Folders {
+		if counts[i].Folder != want {
+			t.Errorf("row %d is %q, want %q", i, counts[i].Folder, want)
+		}
+	}
+}
+
+// Concurrency must not change the answers, which is the whole point of
+// splitting the loop rather than rewriting the query.
+func TestFolderCountsAgreeWithCountingOneAtATime(t *testing.T) {
+	openQueryFixture(t)
+
+	together, err := FolderCounts("")
+	if err != nil {
+		t.Fatalf("FolderCounts: %v", err)
+	}
+	for i, folder := range Folders {
+		alone, err := countFolder(folder, "")
+		if err != nil {
+			t.Fatalf("countFolder(%s): %v", folder, err)
+		}
+		if together[i] != alone {
+			t.Errorf("%s: concurrent %+v, alone %+v", folder, together[i], alone)
+		}
+	}
+}
+
+// The defect this folder exists for.
+//
+// The inbox was the remainder — not sent, not deleted, not junk — which is tidy
+// until a mailbox is mostly archive. On a real one of 43,553 messages, zero
+// were in anything named INBOX and the rail still reported "Inbox 39,068",
+// every one of them read out of Archive.mbox. The number was right and the word
+// was wrong, and there was no way to ask for Archive as Archive.
+func TestArchivedMailIsNotTheInbox(t *testing.T) {
+	openFolderFixture(t)
+
+	inbox := folderMembers(t, FolderInbox)
+	if inbox["filed"] {
+		t.Error("archived mail is still being counted as inbox")
+	}
+
+	archive := folderMembers(t, FolderArchive)
+	if !archive["filed"] {
+		t.Error("the archived message is not in the archive folder")
+	}
+
+	// Gmail's All Mail holds the inbox, so it stays in the remainder. Claiming
+	// it as archive would hide mail that really is in the inbox.
+	if archive["allmail"] {
+		t.Error("Gmail's All Mail was claimed as archive")
+	}
+	if !inbox["allmail"] {
+		t.Error("All Mail left the inbox, which empties a Gmail account")
+	}
+
+	// Matched on the trailing segment, so a folder merely containing the word
+	// is not swept in.
+	if archive["named"] {
+		t.Error(`"Archived invoices" was treated as the archive`)
+	}
+	if !inbox["named"] {
+		t.Error(`"Archived invoices" fell out of the inbox too`)
+	}
+}
+
+// Deleted still wins, the way it does for every other folder.
+func TestDeletedArchivedMailLeavesTheArchive(t *testing.T) {
+	openFolderFixture(t)
+
+	if err := SaveMessage(&message.Message{
+		ID: "filed-gone", AccountID: "acct", From: "g@x.com",
+		Mailbox: "Archive", Flags: []string{`\Deleted`}, Date: time.Now(),
+	}); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	if folderMembers(t, FolderArchive)["filed-gone"] {
+		t.Error("deleted mail is still in the archive")
+	}
+}
+
+// folderMembers is the set of message ids a folder contains.
+func folderMembers(t *testing.T, folder string) map[string]bool {
+	t.Helper()
+	where := folderClause(folder)
+	if where == "" {
+		t.Fatalf("folder %q has no clause", folder)
+	}
+	rows, err := db.Query("SELECT id FROM messages WHERE " + where)
+	if err != nil {
+		t.Fatalf("querying %s: %v", folder, err)
+	}
+	defer rows.Close()
+
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		out[id] = true
+	}
+	return out
 }

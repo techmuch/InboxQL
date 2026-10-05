@@ -126,20 +126,20 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 	// 3. Conversation threads: query all messages belonging to threads touching this contact
 	rows, err := db.Query(`
 		WITH contact_threads AS (
-			SELECT DISTINCT COALESCE(m.thread_key, m.id) AS tkey
+			SELECT DISTINCT m.thread_key AS tkey
 			FROM messages m
 			JOIN message_participants p ON p.message_id = m.id
 			WHERE p.address = ?
 		)
 		SELECT
-			COALESCE(m.thread_key, m.id) AS tkey,
+			m.thread_key AS tkey,
 			m.id,
 			COALESCE(p_from.address, m.from_addr) AS sender,
 			m.subject,
 			m.date,
 			SUBSTR(COALESCE(NULLIF(m.normalized_body, ''), m.body), 1, 160) AS snippet
 		FROM messages m
-		JOIN contact_threads ct ON ct.tkey = COALESCE(m.thread_key, m.id)
+		JOIN contact_threads ct ON ct.tkey = m.thread_key
 		LEFT JOIN message_participants p_from ON p_from.message_id = m.id AND p_from.role = 'from'
 		ORDER BY tkey, m.date ASC`, addr)
 	if err != nil {

@@ -212,6 +212,8 @@ export const ErrorLog = () => {
         </div>
       )}
 
+      <MissingDenominator floor={floor} onLower={() => changeFloor('debug')} />
+
       {!loading && entries.length === 0 && !error && (
         <div className="flex flex-col items-center justify-center flex-1 gap-3 text-muted-foreground">
           <CheckCircle2 className="w-8 h-8 opacity-40" />
@@ -271,6 +273,56 @@ export const ErrorLog = () => {
 };
 
 /** Severity as colour. Info and debug are not failures and must not look it. */
+/**
+ * What this view cannot show you, said out loud.
+ *
+ * # The reading it exists to prevent
+ *
+ * Ordinary work is recorded at `debug`; only the exceptional is `warn`. So
+ * above a debug floor a category can *only* produce warnings, and the tab
+ * becomes a list of exceptions with no population behind them. Every query
+ * line is a slow or failed one, which reads as "every query is slow" — a
+ * conclusion the data neither supports nor contradicts, because the ordinary
+ * ones were never written down.
+ *
+ * # Why it does not show a denominator instead
+ *
+ * Because there isn't one. The rows that would make the proportion were never
+ * recorded, and a count assembled from the rows that *were* would be a number
+ * that means nothing — it would say 100% of queries are slow, forever. Saying
+ * which question the view cannot answer is the honest version, and the button
+ * is how you make it answerable.
+ */
+const MissingDenominator = ({ floor, onLower }: {
+  floor: Level | null;
+  onLower: () => void;
+}) => {
+  // Only above debug. At debug the baseline is present and the proportions in
+  // this view are real.
+  if (!floor || floor === 'debug') return null;
+
+  return (
+    <div className="mx-4 mt-3 flex items-start gap-2 border border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+      <ScrollText className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-60" />
+      <span className="flex-1">
+        Recording at <span className="font-mono text-foreground">{floor}</span>, so
+        ordinary work is not written down — a query, request or sync appears here
+        only when it was slow or it failed. These are the exceptions, not a sample:
+        there is nothing here to tell you how many of each there were.{' '}
+        <button
+          type="button"
+          onClick={onLower}
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          Record at debug
+        </button>{' '}
+        to see the whole picture — it is loud, and a sync writes thousands of
+        lines a minute.
+      </span>
+    </div>
+  );
+};
+
 function levelClass(level: Level): string {
   switch (level) {
     case 'error':

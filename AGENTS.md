@@ -88,7 +88,7 @@ A query is a **filter**, optionally followed by **pipeline stages** after `|`.
 |---|---|
 | `from: to: cc: bcc: anyone:` | addresses, substring by default |
 | `subject: body:` | words in the text |
-| `account: folder: mailbox:` | where the message lives |
+| `account: folder: mailbox:` | where the message lives — `folder:` is `inbox starred sent archive drafts spam trash all` |
 | `is:` | `unread read starred deleted draft answered junk reply` |
 | `has:` | `attachment file label reply` |
 | `attached: carries:` | mail that carried *this* file, by content hash or name |
@@ -110,6 +110,21 @@ none of them: **`status:` means tickets** unless the query says `in:drafts`.
 A field that exists for another kind says so rather than reporting itself
 unknown, and a field the kind cannot answer says why — a draft has no flags,
 attachments or thread, because it has never been mail.
+
+**The folders partition the mailbox**, so the six counts add up to it exactly
+and no message is in two. `inbox` is defined as the remainder — not sent, not
+archived, not deleted, not junk — which is worth knowing before reasoning from
+it.
+
+`folder:archive` is matched on the mailbox name's trailing segment: the
+RFC's special-use `Archive`, Apple Mail's `Archive.mbox`. **Gmail's "All Mail"
+is deliberately not archive** — it contains the inbox too, and Gmail archiving
+is the absence of the Inbox label, which InboxQL does not record. On a Gmail
+account, archived mail is therefore still in `folder:inbox`; say so rather than
+reporting an empty archive as "nothing is archived".
+
+Where a message physically sat is `mailbox:`, which is the raw folder name and
+not one of these seven.
 
 **Shorthands** worth knowing, because they save several terms each:
 

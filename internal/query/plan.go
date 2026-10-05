@@ -898,6 +898,13 @@ func (p *pipeline) buildTimeline() (*Plan, error) {
 	args := append([]any{}, p.args...)
 	args = append(args, limit)
 
+	// A message always has a thread_key — writeRefs falls back to its own id
+	// and schema v38 backfilled the rest — so the key is the bare indexed
+	// column, and the whole timeline is one index scan.
+	//
+	// A ticket or a draft can genuinely have none: one raised by hand belongs
+	// to no conversation and is named by its own id. That fallback stays, and
+	// costs nothing, because these are tables of tens of rows.
 	var sql string
 	switch p.entity {
 	case EntityTicket:
@@ -907,7 +914,7 @@ func (p *pipeline) buildTimeline() (*Plan, error) {
 		sql = "SELECT COALESCE(d.thread_key, d.id) AS k FROM drafts d WHERE " + p.where +
 			" GROUP BY k ORDER BY MAX(d.updated_at) DESC LIMIT ?"
 	default:
-		sql = "SELECT COALESCE(m.thread_key, m.id) AS k FROM messages m WHERE " + p.effectiveWhere() +
+		sql = "SELECT m.thread_key AS k FROM messages m WHERE " + p.effectiveWhere() +
 			" GROUP BY k ORDER BY MAX(m.date) DESC LIMIT ?"
 	}
 

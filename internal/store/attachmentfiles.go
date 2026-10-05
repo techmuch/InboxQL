@@ -93,7 +93,7 @@ func (f *AttachmentFile) Shared() bool { return f.Messages > 1 }
 // that guarantee — MIN(m.date) below is inside a subquery for exactly that
 // reason, not as a matter of taste.
 const attachmentFileColumns = `
-	COALESCE(NULLIF(a.content_hash, ''), a.id) AS file_key,
+	a.content_hash AS file_key,
 	COALESCE(a.content_hash, ''),
 	COALESCE(a.filename, ''),
 	COALESCE(a.mime_type, ''),
@@ -106,10 +106,10 @@ const attachmentFileColumns = `
 	COALESCE((SELECT p.address FROM message_participants p
 	          WHERE p.message_id = a.message_id AND p.role = 'from' LIMIT 1), ''),
 	COUNT(DISTINCT a.message_id) AS messages,
-	COUNT(DISTINCT COALESCE(m.thread_key, m.id)) AS threads,
+	COUNT(DISTINCT m.thread_key) AS threads,
 	COUNT(DISTINCT a.filename) AS names,
 	(SELECT MIN(m2.date) FROM attachments a2 JOIN messages m2 ON m2.id = a2.message_id
-	 WHERE COALESCE(NULLIF(a2.content_hash, ''), a2.id) = COALESCE(NULLIF(a.content_hash, ''), a.id)) AS first_seen,
+	 WHERE a2.content_hash = a.content_hash) AS first_seen,
 	COALESCE((SELECT e.status FROM attachment_extractions e
 	          WHERE e.content_hash = a.content_hash), '') AS text_status,
 	COALESCE((SELECT e.pages FROM attachment_extractions e
@@ -135,8 +135,8 @@ func GetAttachmentFile(key string) (*AttachmentFile, error) {
 	f, err := scanAttachmentFile(db.QueryRow(
 		"SELECT "+AttachmentSelectList+
 			" FROM attachments a JOIN messages m ON m.id = a.message_id"+
-			" WHERE COALESCE(NULLIF(a.content_hash, ''), a.id) = ?"+
-			" GROUP BY COALESCE(NULLIF(a.content_hash, ''), a.id)", key).Scan)
+			" WHERE a.content_hash = ?"+
+			" GROUP BY a.content_hash", key).Scan)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -170,13 +170,13 @@ type AttachmentOccurrence struct {
 // the join that produces it is the same join that produces the rows.
 func ListAttachmentOccurrences(key string) ([]*AttachmentOccurrence, error) {
 	rows, err := db.Query(`
-		SELECT a.id, a.message_id, COALESCE(m.thread_key, m.id),
+		SELECT a.id, a.message_id, m.thread_key,
 		       COALESCE(a.filename, ''), COALESCE(m.subject, ''),
 		       COALESCE((SELECT p.address FROM message_participants p
 		                 WHERE p.message_id = a.message_id AND p.role = 'from' LIMIT 1), ''),
 		       m.date, COALESCE(m.mailbox, ''), a.inline
 		FROM attachments a JOIN messages m ON m.id = a.message_id
-		WHERE COALESCE(NULLIF(a.content_hash, ''), a.id) = ?
+		WHERE a.content_hash = ?
 		ORDER BY m.date DESC`, key)
 	if err != nil {
 		return nil, err
@@ -230,9 +230,9 @@ func scanAttachmentFile(scan func(...any) error) (*AttachmentFile, error) {
 // knowing about rather than discovering on a click.
 func AttachmentStorageCounts() (recorded, missing int64, err error) {
 	err = db.QueryRow(`
-		SELECT COUNT(DISTINCT COALESCE(NULLIF(content_hash, ''), id)),
+		SELECT COUNT(DISTINCT content_hash),
 		       COUNT(DISTINCT CASE WHEN storage_path IS NULL OR storage_path = ''
-		                           THEN COALESCE(NULLIF(content_hash, ''), id) END)
+		                           THEN content_hash END)
 		FROM attachments`).Scan(&recorded, &missing)
 	return recorded, missing, err
 }

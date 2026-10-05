@@ -161,7 +161,7 @@ func (c *compiler) idColumn() string {
 // occurrences rather than two files that happen to look alike. This appears in
 // the compiler and again in the planner's GROUP BY; they must agree, so it is
 // written once.
-const attachmentKey = "COALESCE(NULLIF(a.content_hash, ''), a.id)"
+const attachmentKey = "a.content_hash"
 
 func (c *compiler) arg(v any) string {
 	c.args = append(c.args, v)
@@ -391,7 +391,7 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 				WHERE p_latest.address = c.address
 				  AND m_latest.date = (
 				      SELECT MAX(m_sub.date) FROM messages m_sub
-				      WHERE COALESCE(m_sub.thread_key, m_sub.id) = COALESCE(m_latest.thread_key, m_latest.id)
+				      WHERE m_sub.thread_key = m_latest.thread_key
 				  )
 			)`, negated), nil
 		case "them":
@@ -412,12 +412,12 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 			return wrap(`EXISTS (
 				SELECT 1 FROM messages m_latest
 				JOIN message_participants p_latest ON p_latest.message_id = m_latest.id AND p_latest.role = 'from'
-				JOIN messages m_contact ON COALESCE(m_contact.thread_key, m_contact.id) = COALESCE(m_latest.thread_key, m_latest.id)
+				JOIN messages m_contact ON m_contact.thread_key = m_latest.thread_key
 				JOIN message_participants p_contact ON p_contact.message_id = m_contact.id AND p_contact.address = c.address
 				WHERE p_latest.address IN (`+strings.Join(ph, ", ")+`)
 				  AND m_latest.date = (
 				      SELECT MAX(m_sub.date) FROM messages m_sub
-				      WHERE COALESCE(m_sub.thread_key, m_sub.id) = COALESCE(m_latest.thread_key, m_latest.id)
+				      WHERE m_sub.thread_key = m_latest.thread_key
 				  )
 			)`, negated), nil
 		default:
@@ -443,7 +443,7 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 				WHERE p_latest.address = c.address
 				  AND m_latest.date = (
 				      SELECT MAX(m_sub.date) FROM messages m_sub
-				      WHERE COALESCE(m_sub.thread_key, m_sub.id) = COALESCE(m_latest.thread_key, m_latest.id)
+				      WHERE m_sub.thread_key = m_latest.thread_key
 				  )
 			)`, negated), nil
 		}
@@ -462,15 +462,16 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 
 // attachmentSameFile tests whether two attachment rows are the same file.
 //
-// Written from the same key both sides, so a row always matches itself: a part
-// with no stored hash falls back to its own id, and comparing that to another
-// row's id is false — which is right, since nothing is known to be identical
-// to bytes that were never captured.
+// A bare column on both sides, which is the whole point. This used to read
+// `COALESCE(NULLIF(a.content_hash, ”), a.id)`, and because that is an
+// expression over two columns no index could serve it — the file list built
+// eight of these into one statement and took 51 seconds on 9,533 rows.
+//
+// The fallback still exists; it happens once, on write, in SaveAttachment. A
+// part whose bytes were never hashed is identified by its own id there, so a
+// row still always matches itself and still matches nothing else.
 func attachmentSameFile(occ, outer string) string {
-	key := func(alias string) string {
-		return "COALESCE(NULLIF(" + alias + ".content_hash, ''), " + alias + ".id)"
-	}
-	return key(occ) + " = " + key(outer)
+	return occ + ".content_hash = " + outer + ".content_hash"
 }
 
 // attachmentTerm compiles a term about a file.

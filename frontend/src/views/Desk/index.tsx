@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Mail, MoreVertical,
+  AlertOctagon, Archive, Bookmark, Code2, Eye, File, Inbox, Mail, MoreVertical,
   MessagesSquare, RefreshCw, Send, Sparkles, Star, Trash2,
 } from 'lucide-react';
 import { openMessage, openTool, previewMessage, useViewerStore } from '../../lib/tabs';
@@ -72,6 +72,25 @@ const resultNoun = (kind: string): string => {
     case 'attachments': return 'files';
     default: return kind;
   }
+};
+
+/**
+ * Which field holds a result's rows, for the kinds that page.
+ *
+ * A kind absent from this map does not page, and that is a statement about the
+ * kind rather than an omission: an aggregate has no stable next page, because
+ * paging a GROUP BY by row offset returns a different answer every time the
+ * underlying data moves. `Options.Offset` in the planner says the same thing
+ * from the other side.
+ */
+const PAGED_ROWS: Record<string, string | undefined> = {
+  messages: 'messages',
+  threads: 'threads',
+  contacts: 'contacts',
+  attachments: 'attachments',
+  tickets: 'tickets',
+  drafts: 'drafts',
+  logs: 'logs',
 };
 
 export const Desk = () => {
@@ -244,9 +263,20 @@ export const Desk = () => {
     try {
       const res = await runQuery(effectiveQuery, 50, currentOffset);
       if (seq !== runSeq.current) return;
-      if (res.kind !== 'messages') {
-        // An aggregate, a ticket list, a draft list. None of them page, so the
-        // scroll state is reset rather than left pointing at a message offset.
+      // Every list kind pages, not just messages.
+      //
+      // This used to return early for anything but a message list, with
+      // hasMore false — which was not "no infinite scroll", it was silent
+      // truncation. `in:contacts` on a real mailbox showed 50 of 57, with
+      // nothing on screen saying so and no way to reach the other seven. The
+      // planner has had OFFSET for every kind all along; only this stopped
+      // asking for it.
+      const rowsField = PAGED_ROWS[res.kind];
+      if (!rowsField) {
+        // An aggregate or a count, which genuinely has no next page: paging a
+        // GROUP BY by row offset gives a different answer each time the data
+        // moves, which is worse than no paging. The scroll state resets rather
+        // than pointing at an offset nothing will use.
         setResult(res);
         setMessages([]);
         setHasMore(false);
@@ -254,15 +284,20 @@ export const Desk = () => {
         return;
       }
 
-      const newMessages = res.messages ?? [];
-      setResult(res);
+      const incoming: any[] = (res as any)[rowsField] ?? [];
       if (isLoadMore) {
-        setMessages(prev => [...prev, ...newMessages]);
+        // Merged into the result, because the lists read their rows from it.
+        setResult(prev => {
+          const previous: any[] = prev ? (prev as any)[rowsField] ?? [] : [];
+          return { ...res, [rowsField]: [...previous, ...incoming] } as QueryResult;
+        });
+        setMessages(prev => (res.kind === 'messages' ? [...prev, ...incoming] : prev));
       } else {
-        setMessages(newMessages);
+        setResult(res);
+        setMessages(res.kind === 'messages' ? incoming : []);
       }
-      setOffset(currentOffset + newMessages.length);
-      setHasMore(newMessages.length === 50);
+      setOffset(currentOffset + incoming.length);
+      setHasMore(incoming.length === 50);
     } catch (e) {
       if (seq !== runSeq.current) return;
       if (e instanceof QueryFailed) {
@@ -328,6 +363,7 @@ export const Desk = () => {
     inbox:   { label: 'Inbox',   icon: Inbox,        empty: 'Nothing in the inbox. Sync an account or import mail to begin.' },
     starred: { label: 'Starred', icon: Star,         empty: 'No starred messages. Flagged mail collects here.' },
     sent:    { label: 'Sent',    icon: Send,         empty: 'No sent mail. Messages you sent — or imported from a Sent folder — appear here.' },
+    archive: { label: 'Archive', icon: Archive,      empty: 'Nothing archived. Mail filed away in your client — Archive, not All Mail — collects here.' },
     drafts:  { label: 'Drafts',  icon: File,         empty: 'No drafts. Composed but unsent messages wait here for approval.' },
     spam:    { label: 'Spam',    icon: AlertOctagon, empty: 'No spam. Mail flagged as junk lands here.' },
     trash:   { label: 'Trash',   icon: Trash2,       empty: 'Trash is empty. Deleted mail is kept here, not removed.' },
@@ -339,6 +375,8 @@ export const Desk = () => {
     { id: 'inbox',   label: 'Inbox',   icon: Inbox,        badge: counts.inbox?.unread },
     { id: 'starred', label: 'Starred', icon: Star,         badge: counts.starred?.total },
     { id: 'sent',    label: 'Sent',    icon: Send,         badge: counts.sent?.total },
+    // Total, not unread: filing something away is not a thing you act on.
+    { id: 'archive', label: 'Archive', icon: Archive,      badge: counts.archive?.total },
     { id: 'drafts',  label: 'Drafts',  icon: File,         badge: counts.drafts?.total },
     { id: 'spam',    label: 'Spam',    icon: AlertOctagon, badge: counts.spam?.unread },
     { id: 'trash',   label: 'Trash',   icon: Trash2,       badge: counts.trash?.total },
@@ -571,6 +609,10 @@ export const Desk = () => {
         {result && result.kind !== 'messages' ? (
           <div className="flex-1 min-h-0">
             <Results
+              // Handed to the list rather than wrapped around it: each one owns
+              // its own `overflow-auto` container, and the scroll event does not
+              // bubble, so a handler on this div would never fire.
+              onScroll={handleScroll}
               result={result}
               onDrillDown={async (terms, stage) => {
                 // One composer call per part rather than one assembled string:

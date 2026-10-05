@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sort"
@@ -79,8 +80,8 @@ type Thread struct {
 // and the last three times a decision like that lived in TypeScript it was
 // made three different ways and each of them was wrong. The client receives a
 // list it renders in order.
-func scanThreads(plan *query.Plan) ([]*Thread, error) {
-	keys, err := threadKeys(plan)
+func scanThreads(ctx context.Context, plan *query.Plan) ([]*Thread, error) {
+	keys, err := threadKeys(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -90,8 +91,8 @@ func scanThreads(plan *query.Plan) ([]*Thread, error) {
 	return LoadThreads(keys)
 }
 
-func threadKeys(plan *query.Plan) ([]string, error) {
-	rows, err := db.Query(plan.SQL, plan.Args...)
+func threadKeys(ctx context.Context, plan *query.Plan) ([]string, error) {
+	rows, err := planRows(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -147,18 +148,37 @@ func LoadThreads(keys []string) ([]*Thread, error) {
 	return order, nil
 }
 
-// threadMatch is the WHERE clause that resolves a key against a table.
+// threadMatch resolves a conversation key against messages.
 //
-// It mirrors the plan's COALESCE(thread_key, id) exactly. The id branch is
-// reachable only for rows whose key is NULL, so a conversation key can never
-// pull in an unrelated row that happens to share its id.
+// One indexed column, one IN. It used to carry a second branch for rows whose
+// thread_key was NULL — `OR (thread_key IS NULL AND id IN (…))` — which the
+// planner cannot satisfy from idx_messages_thread_key, so every thread load
+// became a scan.
+//
+// A message no longer needs it: writeRefs falls back to the message's own id
+// when there is no Message-ID and no References, and schema v38 backfilled the
+// rows written before it did. There is nothing left for a second branch to
+// match.
 func threadMatch(alias string, n int) string {
+	return "(" + alias + ".thread_key IN (" + placeholders(n) + "))"
+}
+
+// threadMatchOrOwn is the same question for tickets and drafts, which can
+// genuinely have no conversation.
+//
+// A ticket raised by hand belongs to no thread, and `threadKeyOf` names it by
+// its own id — so the fallback branch is reachable here in a way it is not for
+// messages, and dropping it loses every standalone ticket from the board.
+//
+// The cost that made it worth removing from messages does not apply: these are
+// tables of tens or hundreds of rows against a mailbox of tens of thousands.
+func threadMatchOrOwn(alias string, n int) string {
 	ph := placeholders(n)
 	return "(" + alias + ".thread_key IN (" + ph + ") OR (" + alias +
 		".thread_key IS NULL AND " + alias + ".id IN (" + ph + ")))"
 }
 
-// twice repeats the key list, since threadMatch binds it on both branches.
+// twice repeats the key list, since threadMatchOrOwn binds it on both branches.
 func twice(keys []string) []any {
 	args := anySlice(keys)
 	return append(args, anySlice(keys)...)
@@ -174,7 +194,7 @@ func threadKeyOf(key, id string) string {
 func loadThreadMessages(threads map[string]*Thread, keys []string) error {
 	rows, err := db.Query(`SELECT COALESCE(m.thread_key, ''), `+aliasedMessageColumns()+`
 		FROM messages m WHERE `+threadMatch("m", len(keys))+` ORDER BY m.date ASC`,
-		twice(keys)...)
+		anySlice(keys)...)
 	if err != nil {
 		return err
 	}
@@ -203,7 +223,7 @@ func loadThreadMessages(threads map[string]*Thread, keys []string) error {
 
 func loadThreadTickets(threads map[string]*Thread, keys []string) error {
 	rows, err := db.Query("SELECT COALESCE(t.thread_key, ''), "+ticketColumns+
-		" FROM tickets t WHERE "+threadMatch("t", len(keys)), twice(keys)...)
+		" FROM tickets t WHERE "+threadMatchOrOwn("t", len(keys)), twice(keys)...)
 	if err != nil {
 		return err
 	}
@@ -267,7 +287,7 @@ func loadThreadTickets(threads map[string]*Thread, keys []string) error {
 
 func loadThreadDrafts(threads map[string]*Thread, keys []string) error {
 	rows, err := db.Query("SELECT COALESCE(d.thread_key, ''), "+draftColumns+
-		" FROM drafts d WHERE "+threadMatch("d", len(keys))+" ORDER BY d.created_at ASC",
+		" FROM drafts d WHERE "+threadMatchOrOwn("d", len(keys))+" ORDER BY d.created_at ASC",
 		twice(keys)...)
 	if err != nil {
 		return err
@@ -317,7 +337,7 @@ func loadThreadAnnotations(threads map[string]*Thread, keys []string) error {
 		JOIN messages m   ON m.id = an.message_id
 		JOIN annotators a ON a.id = an.annotator_id AND a.version = an.annotator_version
 		WHERE `+threadMatch("m", len(keys))+` AND an.status = ?
-		ORDER BY an.created_at ASC`, append(twice(keys), StatusOK)...)
+		ORDER BY an.created_at ASC`, append(anySlice(keys), StatusOK)...)
 	if err != nil {
 		return err
 	}

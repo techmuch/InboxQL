@@ -14,6 +14,15 @@ import { ThreadResult } from './Timeline';
 interface ResultsProps {
   result: QueryResult;
   /**
+   * Fired by whichever list is on screen, for infinite scroll.
+   *
+   * Passed down rather than wrapped around, because each list owns its own
+   * `overflow-auto` container — so a handler on a parent would never fire. The
+   * scroll event does not bubble, and the element that scrolls is the one that
+   * has to report it.
+   */
+  onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
+  /**
    * Narrow the query to one row.
    *
    * The stage is separate from the term on purpose. Passing
@@ -32,25 +41,25 @@ interface ResultsProps {
  * that wrong would render an aggregate as an empty message list, which reads as
  * "nothing matched" rather than "you asked a different question".
  */
-export const Results = ({ result, onDrillDown }: ResultsProps) => {
+export const Results = ({ result, onDrillDown, onScroll }: ResultsProps) => {
   switch (result.kind) {
     case 'count':
       return <CountResult total={result.total ?? 0} />;
     case 'groups':
-      return <GroupResult result={result} onDrillDown={onDrillDown} />;
+      return <GroupResult result={result} onDrillDown={onDrillDown} onScroll={onScroll} />;
     case 'tickets':
-      return <TicketResult result={result} onDrillDown={onDrillDown} />;
+      return <TicketResult result={result} onDrillDown={onDrillDown} onScroll={onScroll} />;
     case 'drafts':
-      return <DraftResult result={result} />;
+      return <DraftResult result={result} onScroll={onScroll} />;
     case 'contacts': {
       const contacts = result.contacts ?? [];
       if (contacts.length === 0) return <Empty label="No contacts matched" />;
-      return <ContactResult contacts={contacts} />;
+      return <ContactResult contacts={contacts} onScroll={onScroll} />;
     }
     case 'threads': {
       const threads = result.threads ?? [];
       if (threads.length === 0) return <Empty label="No conversations matched" />;
-      return <ThreadResult threads={threads} onDrillDown={onDrillDown} />;
+      return <ThreadResult threads={threads} onDrillDown={onDrillDown} onScroll={onScroll} />;
     }
     case 'attachments': {
       const files = result.attachments ?? [];
@@ -60,6 +69,7 @@ export const Results = ({ result, onDrillDown }: ResultsProps) => {
           <FileSilences onDrillDown={onDrillDown} />
           <AttachmentResult
             files={files}
+            onScroll={onScroll}
           onDrillDown={onDrillDown}
           // Through the same composer every other drill-down uses, so the
           // sort appears in the query bar as something that could have been
@@ -71,7 +81,7 @@ export const Results = ({ result, onDrillDown }: ResultsProps) => {
       );
     }
     default:
-      return <MessageResult result={result} />;
+      return <MessageResult result={result} onScroll={onScroll} />;
   }
 };
 
@@ -91,7 +101,7 @@ const CountResult = ({ total }: { total: number }) => (
  * one dependency less, it stays legible at any row count, and it lines up with
  * the number it describes instead of sitting in a separate panel.
  */
-const GroupResult = ({ result, onDrillDown }: ResultsProps) => {
+const GroupResult = ({ result, onDrillDown, onScroll }: ResultsProps) => {
   const selection = useSelectionStore(s => s.refs);
   const groups = result.groups ?? [];
   if (groups.length === 0) return <Empty label="No groups" />;
@@ -100,7 +110,7 @@ const GroupResult = ({ result, onDrillDown }: ResultsProps) => {
   const isNumeric = groups.every(g => Number.isInteger(g.value));
 
   return (
-    <div className="overflow-auto h-full">
+    <div className="overflow-auto h-full" onScroll={onScroll}>
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-background border-b border-border">
           <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -199,13 +209,13 @@ const MessageRow = ({ message: m, selected }: { message: any; selected: boolean 
   );
 };
 
-const MessageResult = ({ result }: { result: QueryResult }) => {
+const MessageResult = ({ result, onScroll }: Pick<ResultsProps, 'result' | 'onScroll'>) => {
   const selection = useSelectionStore(s => s.refs);
   const messages = result.messages ?? [];
   if (messages.length === 0) return <Empty label="No messages matched" />;
 
   return (
-    <div className="overflow-auto h-full">
+    <div className="overflow-auto h-full" onScroll={onScroll}>
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-background border-b border-border">
           <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -234,13 +244,13 @@ const MessageResult = ({ result }: { result: QueryResult }) => {
  * The evidence column is not decoration: a ticket that cannot be traced back to
  * the message that made it is a task in a worse task manager.
  */
-const TicketResult = ({ result, onDrillDown }: ResultsProps) => {
+const TicketResult = ({ result, onDrillDown, onScroll }: ResultsProps) => {
   const selection = useSelectionStore(s => s.refs);
   const tickets = result.tickets ?? [];
   if (tickets.length === 0) return <Empty label="No tickets matched" />;
 
   return (
-    <div className="overflow-auto h-full">
+    <div className="overflow-auto h-full" onScroll={onScroll}>
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-background border-b border-border">
           <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -294,13 +304,13 @@ const TicketResult = ({ result, onDrillDown }: ResultsProps) => {
 };
 
 /** Unsent drafts, which are their own entity rather than mail. */
-const DraftResult = ({ result }: { result: QueryResult }) => {
+const DraftResult = ({ result, onScroll }: Pick<ResultsProps, 'result' | 'onScroll'>) => {
   const selection = useSelectionStore(s => s.refs);
   const drafts = result.drafts ?? [];
   if (drafts.length === 0) return <Empty label="No drafts matched" />;
 
   return (
-    <div className="overflow-auto h-full">
+    <div className="overflow-auto h-full" onScroll={onScroll}>
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-background border-b border-border">
           <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -487,13 +497,14 @@ const FileRow = ({ file: f, onDrillDown }: {
   );
 };
 
-const AttachmentResult = ({ files, onDrillDown, onSort }: {
+const AttachmentResult = ({ files, onDrillDown, onSort, onScroll }: {
   files: AttachmentFile[];
+  onScroll?: ResultsProps['onScroll'];
   onDrillDown?: (term: string) => void;
   /** Append a sort stage. Absent when the surface cannot rewrite the query. */
   onSort?: (field: string) => void;
 }) => (
-  <div className="overflow-auto h-full">
+  <div className="overflow-auto h-full" onScroll={onScroll}>
     <table className="w-full text-sm">
       <thead className="sticky top-0 bg-background border-b border-border">
         <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -697,10 +708,10 @@ const ContactRow = ({ contact: c, selected }: { contact: Contact; selected: bool
   );
 };
 
-const ContactResult = ({ contacts }: { contacts: Contact[] }) => {
+const ContactResult = ({ contacts, onScroll }: { contacts: Contact[] } & Pick<ResultsProps, 'onScroll'>) => {
   const selection = useSelectionStore(s => s.refs);
   return (
-    <div className="overflow-auto h-full">
+    <div className="overflow-auto h-full" onScroll={onScroll}>
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-background border-b border-border">
           <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">

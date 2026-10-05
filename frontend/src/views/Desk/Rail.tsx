@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   AlertOctagon, AlertTriangle, Bookmark, Bot, Check, ChevronDown, ChevronUp,
-  Clock, File, Folder, HelpCircle, Inbox, Layout, Paperclip, Pencil, Plus,
+  Archive, Clock, File, Folder, HelpCircle, Inbox, Layout, Paperclip, Pencil, Plus,
   Search, Send, Settings2, Star, Tag, Ticket, Trash2, Users, X,
 } from 'lucide-react';
 import type { SavedQuery } from './api';
@@ -41,7 +41,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 const FOLDER_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  inbox: Inbox, starred: Star, sent: Send, drafts: File,
+  inbox: Inbox, starred: Star, sent: Send, archive: Archive, drafts: File,
   spam: AlertOctagon, trash: Trash2,
 };
 

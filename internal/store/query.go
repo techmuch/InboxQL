@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"time"
 
 	"database/sql"
@@ -148,8 +149,36 @@ func ThreadMessageIDs(id string) ([]string, error) {
 	return ids, nil
 }
 
+// planRows executes a plan under a context.
+//
+// # Why every read goes through here
+//
+// QueryContext rather than Query, which is the whole point. database/sql hands
+// the context to mattn/go-sqlite3, which turns a cancellation into
+// sqlite3_interrupt — so a statement already running inside SQLite stops.
+//
+// Without it a query could not be cancelled at all. Closing the tab, pressing
+// Escape, navigating away: the HTTP handler returned and the statement kept
+// running to completion, holding one of eight pool connections and a core for
+// as long as it took. On a 43,553-message mailbox the worst of them took
+// 11.9 minutes, and a handful of abandoned ones emptied the pool — which is
+// what "everything is slow" turns out to be, rather than any one query.
+func planRows(ctx context.Context, plan *query.Plan) (*sql.Rows, error) {
+	return db.QueryContext(ctx, plan.SQL, plan.Args...)
+}
+
 // RunQuery parses, compiles and executes a query string.
-func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
+//
+// Uncancellable, for callers that have no context to give: a CLI command runs
+// to completion or the process dies with it, and a test wants neither. Anything
+// serving a request should call RunQueryContext instead.
+func RunQuery(src string, limit, offset int) (*QueryResult, error) {
+	return RunQueryContext(context.Background(), src, limit, offset)
+}
+
+// RunQueryContext parses, compiles and executes a query string, stopping if the
+// caller gives up.
+func RunQueryContext(ctx context.Context, src string, limit, offset int) (res *QueryResult, err error) {
 	// Timed here because this is the one place every query goes through, so
 	// there is no second path that quietly goes untimed. Deferred so a query
 	// that fails is recorded too — a query that did not compile is visible in
@@ -180,7 +209,7 @@ func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
 
 	switch plan.Kind {
 	case query.PlanTopics:
-		topics, err := scanContactTopics(plan)
+		topics, err := scanContactTopics(ctx, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -188,7 +217,7 @@ func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
 		return res, nil
 
 	case query.PlanContacts:
-		contacts, err := scanContacts(plan)
+		contacts, err := scanContacts(ctx, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -196,7 +225,7 @@ func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
 		return res, nil
 
 	case query.PlanAttachments:
-		files, err := scanAttachmentFiles(plan)
+		files, err := scanAttachmentFiles(ctx, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -204,7 +233,7 @@ func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
 		return res, nil
 
 	case query.PlanThreads:
-		threads, err := scanThreads(plan)
+		threads, err := scanThreads(ctx, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -212,7 +241,7 @@ func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
 		return res, nil
 
 	case query.PlanDrafts:
-		drafts, err := scanDrafts(plan)
+		drafts, err := scanDrafts(ctx, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -220,7 +249,7 @@ func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
 		return res, nil
 
 	case query.PlanLogs:
-		logs, err := scanLogs(plan)
+		logs, err := scanLogs(ctx, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -228,7 +257,7 @@ func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
 		return res, nil
 
 	case query.PlanTickets:
-		tickets, err := scanTickets(plan)
+		tickets, err := scanTickets(ctx, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -244,7 +273,7 @@ func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
 		return res, nil
 
 	case query.PlanGroups:
-		groups, err := scanGroups(plan)
+		groups, err := scanGroups(ctx, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -252,7 +281,7 @@ func RunQuery(src string, limit, offset int) (res *QueryResult, err error) {
 		return res, nil
 
 	default:
-		msgs, err := scanMessages(plan)
+		msgs, err := scanMessages(ctx, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -292,8 +321,8 @@ func aliasedMessageColumns() string {
 	return strings.Join(cols, ", ")
 }
 
-func scanDrafts(plan *query.Plan) ([]*Draft, error) {
-	rows, err := db.Query(plan.SQL, plan.Args...)
+func scanDrafts(ctx context.Context, plan *query.Plan) ([]*Draft, error) {
+	rows, err := planRows(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -316,8 +345,8 @@ func scanDrafts(plan *query.Plan) ([]*Draft, error) {
 // Share and lift are computed here from the counts it returned, so the numbers
 // shown are the ones the ordering used rather than a second calculation that
 // could disagree with it.
-func scanContactTopics(plan *query.Plan) ([]ContactTopic, error) {
-	rows, err := db.Query(plan.SQL, plan.Args...)
+func scanContactTopics(ctx context.Context, plan *query.Plan) ([]ContactTopic, error) {
+	rows, err := planRows(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -341,8 +370,8 @@ func scanContactTopics(plan *query.Plan) ([]ContactTopic, error) {
 	return out, rows.Err()
 }
 
-func scanAttachmentFiles(plan *query.Plan) ([]*AttachmentFile, error) {
-	rows, err := db.Query(plan.SQL, plan.Args...)
+func scanAttachmentFiles(ctx context.Context, plan *query.Plan) ([]*AttachmentFile, error) {
+	rows, err := planRows(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -359,8 +388,8 @@ func scanAttachmentFiles(plan *query.Plan) ([]*AttachmentFile, error) {
 	return out, rows.Err()
 }
 
-func scanContacts(plan *query.Plan) ([]*Contact, error) {
-	rows, err := db.Query(plan.SQL, plan.Args...)
+func scanContacts(ctx context.Context, plan *query.Plan) ([]*Contact, error) {
+	rows, err := planRows(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -383,8 +412,8 @@ func scanContacts(plan *query.Plan) ([]*Contact, error) {
 	return out, nil
 }
 
-func scanTickets(plan *query.Plan) ([]*Ticket, error) {
-	rows, err := db.Query(plan.SQL, plan.Args...)
+func scanTickets(ctx context.Context, plan *query.Plan) ([]*Ticket, error) {
+	rows, err := planRows(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -411,8 +440,8 @@ func scanTickets(plan *query.Plan) ([]*Ticket, error) {
 	return out, nil
 }
 
-func scanGroups(plan *query.Plan) ([]QueryGroup, error) {
-	rows, err := db.Query(plan.SQL, plan.Args...)
+func scanGroups(ctx context.Context, plan *query.Plan) ([]QueryGroup, error) {
+	rows, err := planRows(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -430,8 +459,8 @@ func scanGroups(plan *query.Plan) ([]QueryGroup, error) {
 	return groups, rows.Err()
 }
 
-func scanMessages(plan *query.Plan) ([]*message.Message, error) {
-	rows, err := db.Query(plan.SQL, plan.Args...)
+func scanMessages(ctx context.Context, plan *query.Plan) ([]*message.Message, error) {
+	rows, err := planRows(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -613,8 +642,8 @@ func similarMessageIDs(messageID string, threshold float64) ([]string, error) {
 }
 
 // scanLogs reads log rows in the order logSelectList declares them.
-func scanLogs(plan *query.Plan) ([]*LoggedError, error) {
-	rows, err := db.Query(plan.SQL, plan.Args...)
+func scanLogs(ctx context.Context, plan *query.Plan) ([]*LoggedError, error) {
+	rows, err := planRows(ctx, plan)
 	if err != nil {
 		return nil, err
 	}

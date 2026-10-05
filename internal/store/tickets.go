@@ -196,7 +196,7 @@ func ticketSources(ticketID string) ([]TicketSource, error) {
 	rows, err := db.Query(`
 		SELECT ts.message_id, COALESCE(ts.annotation_id, ''),
 		       COALESCE(m.subject, ''), COALESCE(m.from_addr, ''), COALESCE(m.date, 0),
-		       (SELECT COUNT(DISTINCT COALESCE(NULLIF(a.content_hash, ''), a.id))
+		       (SELECT COUNT(DISTINCT a.content_hash)
 		        FROM attachments a WHERE a.message_id = ts.message_id)
 		FROM ticket_sources ts
 		LEFT JOIN messages m ON m.id = ts.message_id
@@ -332,7 +332,7 @@ func ProposeTickets(annotatorName string, autoAccept float64, dryRun bool) (*Tic
 
 	rows, err := db.Query(`
 		SELECT an.id, an.message_id, an.data_json, an.confidence,
-		       COALESCE(m.thread_key, m.id), COALESCE(m.subject, '')
+		       m.thread_key, COALESCE(m.subject, '')
 		FROM annotations an
 		JOIN messages m ON m.id = an.message_id
 		WHERE an.annotator_id = ? AND an.annotator_version = ? AND an.status = ?

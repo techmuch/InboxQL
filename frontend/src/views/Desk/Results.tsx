@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpDown, Inbox } from 'lucide-react';
-import { openAttachment, openContact, openMessage, openTool, previewMessage } from '../../lib/tabs';
-import { navRow } from '../../lib/rovingFocus';
+import {
+  openAttachment, openContact, openMessage, openTool,
+  previewAttachment, previewContact, previewMessage,
+} from '../../lib/tabs';
+import { movedByKeyboard, navRow } from '../../lib/rovingFocus';
 import { refKey, useSelectionStore } from '../../lib/selection';
+import { ariaCurrent, rowStateClasses, useIsCurrent } from '../../lib/rowState';
 import { contactName, drillDownTerm, type AttachmentFile, type Contact, type QueryResult } from './api';
 import { fileTypeLabel, formatBytes } from '../AttachmentPreview';
 import { ThreadResult } from './Timeline';
@@ -150,6 +154,51 @@ const GroupResult = ({ result, onDrillDown }: ResultsProps) => {
   );
 };
 
+/**
+ * One message in the list.
+ *
+ * # Why the row is its own component
+ *
+ * It asks the viewer store whether it is the row on screen, and that is a hook —
+ * which cannot be called inside the parent's `.map()`. The three row kinds that
+ * are viewer subjects are each extracted for this reason; tickets and drafts are
+ * not, because neither opens in the viewer and so neither can be current.
+ */
+const MessageRow = ({ message: m, selected }: { message: any; selected: boolean }) => {
+  const current = useIsCurrent('message', m.id);
+  const unread = !(m.flags ?? []).includes('\\Seen');
+  return (
+    <tr
+      {...navRow}
+      data-sel-kind="message"
+      data-sel-id={m.id}
+      data-sel-field="id"
+      data-sel-label={m.subject}
+      aria-selected={selected}
+      aria-current={ariaCurrent(current)}
+      // Only on an arrow key. Focus also arrives when the list is tabbed back
+      // into, and previewing there would pull the viewer off whatever the user
+      // had just opened from somewhere else.
+      onFocus={() => { if (movedByKeyboard()) previewMessage(m); }}
+      onClick={(e) => {
+        if (e.shiftKey || e.metaKey || e.ctrlKey) return;
+        openMessage(m);
+      }}
+      className={`border-b border-border/50 cursor-pointer transition-colors ${
+        rowStateClasses({ selected, current })
+      }`}
+    >
+      <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
+        {new Date(m.date).toLocaleDateString()}
+      </td>
+      <td className="px-4 py-1.5 truncate max-w-0">{m.from}</td>
+      <td className={`px-4 py-1.5 truncate max-w-0 ${unread ? 'font-medium' : ''}`}>
+        {m.subject || <span className="text-muted-foreground">(no subject)</span>}
+      </td>
+    </tr>
+  );
+};
+
 const MessageResult = ({ result }: { result: QueryResult }) => {
   const selection = useSelectionStore(s => s.refs);
   const messages = result.messages ?? [];
@@ -166,39 +215,13 @@ const MessageResult = ({ result }: { result: QueryResult }) => {
           </tr>
         </thead>
         <tbody>
-          {messages.map(m => {
-            const unread = !(m.flags ?? []).includes('\\Seen');
-            const selected = Boolean(selection[refKey({ kind: 'message', id: m.id })]);
-            return (
-              <tr
-                key={m.id}
-                {...navRow}
-                data-sel-kind="message"
-                data-sel-id={m.id}
-                data-sel-field="id"
-                data-sel-label={m.subject}
-                aria-selected={selected}
-                onFocus={() => previewMessage(m)}
-                onClick={(e) => {
-                  if (e.shiftKey || e.metaKey || e.ctrlKey) return;
-                  openMessage(m);
-                }}
-                className={`border-b border-border/50 cursor-pointer transition-colors ${
-                  selected
-                    ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30'
-                    : 'hover:bg-accent/40'
-                }`}
-              >
-                <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
-                  {new Date(m.date).toLocaleDateString()}
-                </td>
-                <td className="px-4 py-1.5 truncate max-w-0">{m.from}</td>
-                <td className={`px-4 py-1.5 truncate max-w-0 ${unread ? 'font-medium' : ''}`}>
-                  {m.subject || <span className="text-muted-foreground">(no subject)</span>}
-                </td>
-              </tr>
-            );
-          })}
+          {messages.map(m => (
+            <MessageRow
+              key={m.id}
+              message={m}
+              selected={Boolean(selection[refKey({ kind: 'message', id: m.id })])}
+            />
+          ))}
         </tbody>
       </table>
     </div>
@@ -401,6 +424,69 @@ const NoFiles = () => {
  * opens the message. Clicking the type narrows to that kind of file, which is
  * the same drill-down an aggregate row offers.
  */
+const FileRow = ({ file: f, onDrillDown }: {
+  file: AttachmentFile;
+  onDrillDown?: (term: string) => void;
+}) => {
+  const current = useIsCurrent('file', f.key);
+  return (
+    <tr
+      {...navRow}
+      aria-current={ariaCurrent(current)}
+      // Preview on arrow, open on activation. Previously this list only had
+      // `openAttachment`, which selects the viewer's tab — so the first Down key
+      // switched away from Desk and the second went nowhere, because focus had
+      // left the list with it.
+      onFocus={() => { if (movedByKeyboard()) previewAttachment(f); }}
+      onClick={() => openAttachment(f)}
+      title={f.storagePath ? `Open ${f.filename}` : f.skipped || 'The bytes were not kept'}
+      className={`border-b border-border/50 cursor-pointer transition-colors ${
+        rowStateClasses({ selected: false, current })
+      }`}
+    >
+      <td className="px-4 py-2">
+        <span className={`truncate block ${f.storagePath ? '' : 'text-muted-foreground italic'}`}>
+          {f.filename}
+        </span>
+        {/* The mail it last came on, so a filename like "scan.pdf" is
+            identifiable without opening it. */}
+        {f.subject && (
+          <span className="truncate block text-xs text-muted-foreground">{f.subject}</span>
+        )}
+      </td>
+      <td className="px-4 py-2">
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onDrillDown?.(`type:${fileTypeLabel(f.mimeType)}`); }}
+          className="text-muted-foreground hover:text-primary"
+        >
+          {fileTypeLabel(f.mimeType)}
+        </button>
+      </td>
+      <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
+        {formatBytes(f.size)}
+      </td>
+      <td className="px-4 py-2 text-xs text-muted-foreground">
+        {f.messages > 1 && (
+          <>
+            {f.messages} messages
+            {f.threads > 1 && <> · {f.threads} threads</>}
+          </>
+        )}
+        {!f.storagePath && <span className="italic">not stored</span>}
+        {f.storagePath && f.textStatus === 'empty' && (
+          // Worth a word: without it a scan looks like a file whose
+          // contents did not match, rather than one nothing has read.
+          <span className="italic">scanned</span>
+        )}
+      </td>
+      <td className="px-4 py-2 text-xs text-muted-foreground">
+        {f.lastSeen ? new Date(f.lastSeen).toLocaleDateString() : ''}
+      </td>
+    </tr>
+  );
+};
+
 const AttachmentResult = ({ files, onDrillDown, onSort }: {
   files: AttachmentFile[];
   onDrillDown?: (term: string) => void;
@@ -423,53 +509,7 @@ const AttachmentResult = ({ files, onDrillDown, onSort }: {
       </thead>
       <tbody>
         {files.map(f => (
-          <tr
-            key={f.key}
-            {...navRow}
-            onClick={() => openAttachment(f)}
-            title={f.storagePath ? `Open ${f.filename}` : f.skipped || 'The bytes were not kept'}
-            className="border-b border-border/50 hover:bg-accent/40 cursor-pointer"
-          >
-            <td className="px-4 py-2">
-              <span className={`truncate block ${f.storagePath ? '' : 'text-muted-foreground italic'}`}>
-                {f.filename}
-              </span>
-              {/* The mail it last came on, so a filename like "scan.pdf" is
-                  identifiable without opening it. */}
-              {f.subject && (
-                <span className="truncate block text-xs text-muted-foreground">{f.subject}</span>
-              )}
-            </td>
-            <td className="px-4 py-2">
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); onDrillDown?.(`type:${fileTypeLabel(f.mimeType)}`); }}
-                className="text-muted-foreground hover:text-primary"
-              >
-                {fileTypeLabel(f.mimeType)}
-              </button>
-            </td>
-            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
-              {formatBytes(f.size)}
-            </td>
-            <td className="px-4 py-2 text-xs text-muted-foreground">
-              {f.messages > 1 && (
-                <>
-                  {f.messages} messages
-                  {f.threads > 1 && <> · {f.threads} threads</>}
-                </>
-              )}
-              {!f.storagePath && <span className="italic">not stored</span>}
-              {f.storagePath && f.textStatus === 'empty' && (
-                // Worth a word: without it a scan looks like a file whose
-                // contents did not match, rather than one nothing has read.
-                <span className="italic">scanned</span>
-              )}
-            </td>
-            <td className="px-4 py-2 text-xs text-muted-foreground">
-              {f.lastSeen ? new Date(f.lastSeen).toLocaleDateString() : ''}
-            </td>
-          </tr>
+          <FileRow key={f.key} file={f} onDrillDown={onDrillDown} />
         ))}
       </tbody>
     </table>
@@ -514,18 +554,32 @@ const FileSilences = ({ onDrillDown }: {
     // question about its own contents.
     fetch('/api/attachments/usage')
       .then(r => (r.ok ? r.json() : null))
-      .then(u => { if (!cancelled && u) setUsage(u); })
+      .then(u => {
+        if (cancelled || !u) return;
+        // Each field defaulted rather than the object trusted. A response
+        // missing one is not hypothetical — an older server, a proxy returning
+        // an empty body — and reading `.toLocaleString()` off undefined threw
+        // during render, which takes down the whole results pane and reads as
+        // "the file list is broken" rather than "the size is unknown".
+        setUsage({
+          bytes: Number(u.bytes) || 0,
+          files: Number(u.files) || 0,
+          notStored: Number(u.notStored) || 0,
+        });
+      })
       .catch(() => {});
 
     return () => { cancelled = true; };
   }, []);
 
   const quiet = !counts || (counts.unread === 0 && counts.scanned === 0);
-  if (quiet && !usage) return null;
+  // A usage of zero files is nothing to report, not "0 B in 0 files".
+  const known = usage && usage.files > 0;
+  if (quiet && !known) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-3 border-b border-border bg-muted/30 px-4 py-1.5 text-xs">
-      {usage && (
+      {known && usage && (
         <span className="text-muted-foreground">
           <span className="font-mono tabular-nums text-foreground">{formatBytes(usage.bytes)}</span>
           {' in '}
@@ -533,7 +587,7 @@ const FileSilences = ({ onDrillDown }: {
           {' files'}
         </span>
       )}
-      {usage && usage.notStored > 0 && (
+      {known && usage && usage.notStored > 0 && (
         <button
           type="button"
           onClick={() => onDrillDown('is:missing')}
@@ -595,41 +649,25 @@ const SortHeader = ({ label, field, onSort }: {
   );
 };
 
-const ContactResult = ({ contacts }: { contacts: Contact[] }) => {
-  const selection = useSelectionStore(s => s.refs);
+const ContactRow = ({ contact: c, selected }: { contact: Contact; selected: boolean }) => {
+  const current = useIsCurrent('contact', c.address);
   return (
-    <div className="overflow-auto h-full">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-background border-b border-border">
-          <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <th className="px-4 py-2 font-medium">Name</th>
-            <th className="px-4 py-2 font-medium w-64">Address</th>
-            <th className="px-4 py-2 font-medium w-28">Kind</th>
-            <th className="px-4 py-2 font-medium w-20 text-right">Messages</th>
-            <th className="px-4 py-2 font-medium w-28">Last seen</th>
-          </tr>
-        </thead>
-        <tbody>
-          {contacts.map(c => {
-            const selected = Boolean(selection[refKey({ kind: 'contact', id: c.address })]);
-            return (
               <tr
-                key={c.address}
                 {...navRow}
                 data-sel-kind="contact"
                 data-sel-id={c.address}
                 data-sel-field="email"
                 data-sel-label={contactName(c)}
                 aria-selected={selected}
+                aria-current={ariaCurrent(current)}
+                onFocus={() => { if (movedByKeyboard()) previewContact(c.address); }}
                 // Opens the card, the way clicking a message opens the message.
                 // Narrowing to their mail is an explicit action on the card —
                 // clicking a person's name should show you the person.
                 onClick={() => openContact(c.address)}
                 title="Open this contact"
                 className={`border-b border-border/50 cursor-pointer transition-colors ${
-                  selected
-                    ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30'
-                    : 'hover:bg-accent/40'
+                  rowStateClasses({ selected, current })
                 }`}
               >
             <td className="px-4 py-1.5 truncate max-w-0">{contactName(c)}</td>
@@ -656,10 +694,33 @@ const ContactResult = ({ contacts }: { contacts: Contact[] }) => {
               {c.lastSeen ? new Date(c.lastSeen).toLocaleDateString() : ''}
             </td>
           </tr>
-        );
-      })}
-    </tbody>
-  </table>
-</div>
-);
+  );
+};
+
+const ContactResult = ({ contacts }: { contacts: Contact[] }) => {
+  const selection = useSelectionStore(s => s.refs);
+  return (
+    <div className="overflow-auto h-full">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-background border-b border-border">
+          <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th className="px-4 py-2 font-medium">Name</th>
+            <th className="px-4 py-2 font-medium w-64">Address</th>
+            <th className="px-4 py-2 font-medium w-28">Kind</th>
+            <th className="px-4 py-2 font-medium w-20 text-right">Messages</th>
+            <th className="px-4 py-2 font-medium w-28">Last seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {contacts.map(c => (
+            <ContactRow
+              key={c.address}
+              contact={c}
+              selected={Boolean(selection[refKey({ kind: 'contact', id: c.address })])}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 };

@@ -12,6 +12,33 @@ export const navRow = { 'data-nav-row': '' } as const;
 const ROW_SELECTOR = '[data-nav-row]';
 
 /**
+ * True for the duration of a focus move this hook made in response to a key.
+ *
+ * # Why a row needs to know
+ *
+ * Rows preview their subject from `onFocus`, which is right for an arrow key and
+ * wrong for every other way focus arrives. The roving tab stop remembers a row,
+ * so tabbing back into a list fires focus on it — and a row that previewed there
+ * would yank the viewer away from whatever the user had just opened in another
+ * pane. Clicking a row fires it too, where the click handler is about to open
+ * the thing properly anyway.
+ *
+ * So the question is not "did focus land on me" but "did the user arrow onto
+ * me", and only the hook that moved the focus can answer it.
+ *
+ * # Why a module flag and not a timer
+ *
+ * `el.focus()` dispatches focusin synchronously, so React's onFocus handlers run
+ * inside the call. Setting the flag around it is exact: no window during which
+ * an unrelated focus could be mistaken for a keyboard move, and nothing to clean
+ * up if the handler throws.
+ */
+let keyboardMove = false;
+
+/** Whether the focus currently being handled came from an arrow key. */
+export const movedByKeyboard = (): boolean => keyboardMove;
+
+/**
  * Whether a row can be navigated to.
  *
  * Not `offsetParent !== null`, which is the usual shortcut: it is null for
@@ -129,7 +156,12 @@ export function useRovingFocus<T extends HTMLElement>() {
     // this same task — expanding a thread and pressing Down without yielding —
     // would still have no tabindex attribute, and focus would quietly not move.
     if (!el.hasAttribute('tabindex')) setTabStop(el, false);
-    el.focus();
+    keyboardMove = true;
+    try {
+      el.focus();
+    } finally {
+      keyboardMove = false;
+    }
     // Guarded because scrolling is a nicety and focusing is the point. jsdom
     // has no layout and so no scrollIntoView; an unguarded call threw *after*
     // the focus landed, which aborted the rest of the handler and would have

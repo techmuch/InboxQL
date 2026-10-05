@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { useViewerStore } from '../lib/tabs';
 import {
   AttachmentChip, AttachmentViewer, AttachmentOccurrences, AttachmentSection,
   attachmentURL, fileTypeLabel, formatBytes,
@@ -317,5 +318,80 @@ describe('AttachmentOccurrences', () => {
 
     await waitFor(() =>
       expect(screen.getByText('This file appears on one message only.')).toBeTruthy());
+  });
+
+  /**
+   * The cascade: a file is selected, and its messages are arrowed through.
+   *
+   * This panel is in a different FlexLayout tab from the Desk list, so it needs
+   * its own roving-focus root — the hook is scoped to one ref and cannot span
+   * two tabs.
+   */
+  describe('arrowing the messages', () => {
+    /** Occurrences first, then whatever a preview fetches for a message. */
+    const mockOccurrencesThenMessage = (list: AttachmentOccurrence[]) => {
+      globalThis.fetch = vi.fn().mockImplementation(async (input: unknown) => {
+        const url = String(input);
+        const body = url.startsWith('/api/attachments/occurrences') ? list : { id: 'm2' };
+        return { ok: true, json: async () => body } as Response;
+      }) as never;
+    };
+
+    const rows = () => Array.from(document.querySelectorAll('[data-nav-row]')) as HTMLElement[];
+
+    beforeEach(() => {
+      useViewerStore.setState({
+        message: null, messageId: null, contact: null, file: null,
+        previousMessage: null, selectedCount: 0, mode: 'split',
+      });
+    });
+
+    it('previews the message it lands on, in split mode', async () => {
+      mockOccurrencesThenMessage(occurrences);
+      render(<AttachmentOccurrences file={pdf} />);
+      await waitFor(() => expect(rows()).toHaveLength(2));
+
+      rows()[0].focus();
+      fireEvent.keyDown(rows()[0], { key: 'ArrowDown', bubbles: true });
+
+      expect(document.activeElement).toBe(rows()[1]);
+      await waitFor(() => expect(useViewerStore.getState().messageId).toBe('m2'));
+    });
+
+    /**
+     * In reuse mode one viewer tab holds one subject, so setting a message clears
+     * the file — which blanks the tab this panel is inside. Previewing on every
+     * arrow would delete the list out from under the user on the first keystroke.
+     *
+     * So the arrows still move and still highlight, and opening stays Enter's
+     * job: a deliberate act, where losing the file panel is the point.
+     */
+    it('moves without previewing in reuse mode, so the panel survives', async () => {
+      useViewerStore.setState({ mode: 'reuse' });
+      mockOccurrencesThenMessage(occurrences);
+      render(<AttachmentOccurrences file={pdf} />);
+      await waitFor(() => expect(rows()).toHaveLength(2));
+
+      rows()[0].focus();
+      fireEvent.keyDown(rows()[0], { key: 'ArrowDown', bubbles: true });
+
+      // Moved, and nothing was previewed.
+      expect(document.activeElement).toBe(rows()[1]);
+      expect(useViewerStore.getState().messageId).toBeNull();
+    });
+
+    // `openedFrom` says "this panel is embedded in that message's viewer" and
+    // reads as "this message"; the outline says "the viewer is showing it now".
+    // They coincide inline and diverge the moment somebody arrows.
+    it('outlines the message the viewer holds, apart from the one it was opened from', async () => {
+      mockOccurrencesThenMessage(occurrences);
+      useViewerStore.setState({ message: { id: 'm2' }, messageId: 'm2' });
+      render(<AttachmentOccurrences file={pdf} currentMessageId="m1" />);
+      await waitFor(() => expect(rows()).toHaveLength(2));
+
+      expect(screen.getByText('this message')).toBeTruthy();
+      expect(rows()[0]).not.toHaveAttribute('aria-current');
+      expect(rows()[1]).toHaveAttribute('aria-current', 'true');
+    });
   });
 });

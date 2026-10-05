@@ -13,6 +13,7 @@ import { ErrorLog } from './views/ErrorLog';
 import { Desk } from './views/Desk';
 import { Board } from './views/Board';
 import { openTool, openErrorLog, openQuery, useViewerStore, type ViewerMode } from './lib/tabs';
+import { useAttachmentTargetStore, type AttachmentTarget } from './lib/attachmentTarget';
 import { Radio, RadioTower, ScrollText } from 'lucide-react';
 import { useThreadingStore, type Threading } from './lib/threading';
 import { startWindowSession, useWindowsStore, WINDOWS_TAB } from './lib/windows';
@@ -436,6 +437,78 @@ const ThreadingSetting = () => {
         Where the Desk starts. The Threads button still changes any one query, and a query
         that counts something, or that is about contacts or files, is left alone.
       </p>
+    </section>
+  );
+};
+
+/**
+ * Where an attachment chip puts its preview.
+ *
+ * A file has two homes and the application used to answer for you: a chip on a
+ * message opened inline, the Desk's file list opened the viewer, and neither
+ * could be asked for from the other place.
+ *
+ * Three options rather than a checkbox pair, because "both" is a real answer
+ * and not the absence of a choice — and because what it means depends on the
+ * setting below it, which the note says out loud rather than leaving to be
+ * discovered.
+ */
+const AttachmentTargetSetting = () => {
+  const target = useAttachmentTargetStore(s => s.target);
+  const setTarget = useAttachmentTargetStore(s => s.setTarget);
+  const mode = useViewerStore(s => s.mode);
+
+  const options: { id: AttachmentTarget; label: string; detail: string }[] = [
+    {
+      id: 'message',
+      label: 'In the message',
+      detail: 'Below the attachment chips, with the mail it arrived on still around it.',
+    },
+    {
+      id: 'file',
+      label: 'In the File tab',
+      detail: 'The file on its own, with its size, every message it came on, and what is inside it.',
+    },
+    {
+      id: 'both',
+      label: 'Both at once',
+      detail: 'Inline for the context, and the File tab for the history, without clicking twice.',
+    },
+  ];
+
+  return (
+    <section>
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+        Attachment Previews
+      </h3>
+      <div className="grid grid-cols-3 gap-4">
+        {options.map(o => (
+          <button
+            key={o.id}
+            onClick={() => setTarget(o.id)}
+            aria-pressed={target === o.id}
+            className={`relative p-4 border text-left flex flex-col gap-1.5 transition-all ${
+              target === o.id
+                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                : 'border-border hover:bg-accent'
+            }`}
+          >
+            <span className="text-sm font-medium">{o.label}</span>
+            <span className="text-xs text-muted-foreground leading-snug">{o.detail}</span>
+            {target === o.id && <Check className="w-3 h-3 text-primary absolute top-2 right-2" />}
+          </button>
+        ))}
+      </div>
+      {/* The two settings interact, and silently doing something else would be
+          worse than saying so here. With one shared tab the file and the
+          message cannot both be in it. */}
+      {mode === 'reuse' && target !== 'message' && (
+        <p className="text-[11px] text-muted-foreground mt-3">
+          {target === 'file'
+            ? 'With one shared Viewer tab, opening a file replaces the message you were reading. Choose a tab for each kind below to keep both.'
+            : 'With one shared Viewer tab there is nowhere to put the second copy, so this behaves as “In the message”. Choose a tab for each kind below for both at once.'}
+        </p>
+      )}
     </section>
   );
 };
@@ -1022,6 +1095,7 @@ const SettingsView = () => {
                 </section>
 
                 <ThreadingSetting />
+                <AttachmentTargetSetting />
                 <ViewerModeSetting />
                 <RailDefaults />
               </div>

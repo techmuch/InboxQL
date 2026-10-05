@@ -13,7 +13,8 @@ import {
   AttachmentChip, AttachmentViewer, useAttachmentFile,
   type MessageAttachment,
 } from './AttachmentPreview';
-import { useViewerStore, openContact, type ViewerKind } from '../lib/tabs';
+import { useViewerStore, openContact, openAttachmentByKey, type ViewerKind } from '../lib/tabs';
+import { previewPlaces, useAttachmentTargetStore } from '../lib/attachmentTarget';
 
 /**
  * Extract a clean email address from an address header string.
@@ -117,6 +118,20 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [openFileKey, setOpenFileKey] = useState<string | null>(null);
   const openFile = useAttachmentFile(openFileKey);
+  // Where a chip puts its preview: inline, in the viewer's file slot, or both.
+  // Resolved against the viewer mode, because in reuse mode those two are one
+  // tab and cannot hold the message and the file at once.
+  const places = previewPlaces(useAttachmentTargetStore(s => s.target), mode);
+
+  // Forget which file was open inline once inline previews are switched off.
+  //
+  // The render already hides it, so this is not about what is on screen — it is
+  // about the chip staying a toggle. A key left behind means that switching to
+  // "In the File tab" and back makes the next click on that chip *close* a
+  // preview that is not visible, so nothing appears and the chip looks dead.
+  useEffect(() => {
+    if (!places.inline) setOpenFileKey(null);
+  }, [places.inline]);
   const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw' | 'spans'>('html');
   // Fetched alongside the message so the Values tab can say how many there
   // are before it is opened. A message with none is the normal case.
@@ -426,14 +441,26 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
                   size={a.size}
                   contentHash={a.contentHash}
                   skipped={a.skipped}
-                  // Clicking the open file closes it, so the chip is a toggle
-                  // rather than a one-way door with the close button as the
-                  // only way back.
-                  onOpen={() => setOpenFileKey(k => (k === a.contentHash ? null : a.contentHash ?? null))}
+                  onOpen={() => {
+                    // The viewer first. It is a fetch, and starting it before
+                    // the inline toggle means the two halves of "both" are not
+                    // serialised behind each other.
+                    //
+                    // Not a toggle: the viewer is a tab the user can see and
+                    // close, so clicking a second chip should move it rather
+                    // than empty it.
+                    if (places.viewer && a.contentHash) openAttachmentByKey(a.contentHash);
+                    // Clicking the open file closes it, so the chip is a toggle
+                    // rather than a one-way door with the close button as the
+                    // only way back.
+                    if (places.inline) {
+                      setOpenFileKey(k => (k === a.contentHash ? null : a.contentHash ?? null));
+                    }
+                  }}
                 />
               ))}
             </div>
-            {openFile && (
+            {places.inline && openFile && (
               <AttachmentViewer
                 file={openFile}
                 currentMessageId={message.id}

@@ -4,8 +4,9 @@ import {
   MessagesSquare, RefreshCw, Send, Sparkles, Star, Trash2,
 } from 'lucide-react';
 import { openMessage, openTool, previewMessage, useViewerStore } from '../../lib/tabs';
-import { navRow, useRovingFocus } from '../../lib/rovingFocus';
+import { movedByKeyboard, navRow, useRovingFocus } from '../../lib/rovingFocus';
 import { refKey, refOf, useSelectionStore } from '../../lib/selection';
+import { ariaCurrent } from '../../lib/rowState';
 import { SelectionBar } from './SelectionBar';
 import { Editor } from './Editor';
 import { Results } from './Results';
@@ -671,11 +672,21 @@ export const Desk = () => {
                 data-sel-label={msg.subject}
                 role="option"
                 aria-selected={selected}
-                // Preview follows focus, so arrowing updates an already-open
-                // viewer. It deliberately does not bring the viewer forward:
-                // doing that on every keypress is what made the first Down key
-                // switch tabs and the second one do nothing.
-                onFocus={() => previewMessage(msg)}
+                // What the viewer is showing, which outlives focus — this list
+                // has drawn it as a left bar since before `rowState` named the
+                // idea, and keeps its own denser styling because it also has
+                // unread and selected states to show in the same row.
+                aria-current={ariaCurrent(isOpen)}
+                // Preview follows an arrow key, so arrowing updates an
+                // already-open viewer. It deliberately does not bring the
+                // viewer forward: doing that on every keypress is what made the
+                // first Down key switch tabs and the second one do nothing.
+                //
+                // Gated on the key, not on focus arriving. Tabbing back into
+                // this list focuses the row the roving tab stop remembers, and
+                // previewing there would pull the viewer off whatever the user
+                // had just opened from another pane.
+                onFocus={() => { if (movedByKeyboard()) previewMessage(msg); }}
                 // Selection is handled by the pane, which does it the same way
                 // for every kind of row. This only has to say what a plain
                 // click on a message means, which is "read it".

@@ -398,14 +398,49 @@ export const openMessage = (message: any): void => {
  * leaves the user where they were rather than on an empty viewer.
  */
 export const openMessageByID = async (id: string): Promise<void> => {
+  const message = await fetchMessage(id);
+  if (message) openMessage(message);
+};
+
+/**
+ * Fetch one message, or undefined.
+ *
+ * A message that will not load is not worth an error state at either call site:
+ * the user asked to follow a link or moved onto a row, and the subject simply
+ * is not there.
+ */
+async function fetchMessage(id: string): Promise<any | undefined> {
   try {
     const response = await fetch(`/api/message?id=${encodeURIComponent(id)}`);
-    if (!response.ok) return;
-    openMessage(await response.json());
+    if (!response.ok) return undefined;
+    return await response.json();
   } catch {
-    // A message that will not load is not worth an error state here: the user
-    // asked to follow a link, and the link simply goes nowhere.
+    return undefined;
   }
+}
+
+/**
+ * Monotonic counter guarding the preview slot against an out-of-order fetch.
+ *
+ * Arrowing a list issues one request per keystroke and they can land in any
+ * order, so without this a slow response for a row the user has already left
+ * overwrites the one they are now on — and the viewer shows a message that is
+ * not the highlighted row. The newest request always wins.
+ */
+let previewSeq = 0;
+
+/**
+ * Point the viewer at a message the caller only knows the id of, without
+ * bringing it forward.
+ *
+ * `previewMessage` for a list that holds whole messages; this for one that does
+ * not — a file's occurrences know a message id and nothing else.
+ */
+export const previewMessageByID = async (id: string): Promise<void> => {
+  const seq = ++previewSeq;
+  const message = await fetchMessage(id);
+  if (!message || seq !== previewSeq) return;
+  useViewerStore.getState().setMessage(message);
 };
 
 /**
@@ -423,7 +458,32 @@ export const openMessageByID = async (id: string): Promise<void> => {
  * two different gestures rather than one that sometimes teleports you.
  */
 export const previewMessage = (message: any): void => {
+  previewSeq++; // A fetched preview in flight must not land on top of this one.
   useViewerStore.getState().setMessage(message);
+};
+
+/**
+ * Point the viewer at a contact without bringing it forward.
+ *
+ * The preview half of `openContact`, so arrowing a contact list updates an
+ * already-open card instead of switching tab on the first keystroke.
+ */
+export const previewContact = (address: string): void => {
+  useViewerStore.getState().setContact(address);
+};
+
+/**
+ * Point the viewer at a file without bringing it forward.
+ *
+ * # Why this was the gap that mattered
+ *
+ * `openAttachment` calls `openTool`, which selects the viewer's tab. Arrowing
+ * the file list through it would switch away from Desk on the first Down key and
+ * the second would go nowhere, because focus had left the list — the exact
+ * failure `previewMessage` above exists to fix, still live for files until now.
+ */
+export const previewAttachment = (file: any): void => {
+  useViewerStore.getState().setFile(file);
 };
 
 /** Show a contact in the viewer, opening the tab when it is not already there. */
@@ -438,6 +498,29 @@ export const openAttachment = (file: any): void => {
   useViewerStore.getState().setFile(file);
   const target = viewerTarget('file');
   openTool(target.id, target.label);
+};
+
+/**
+ * Show a file the caller only knows the content hash of.
+ *
+ * The same split as `openMessageByID`: a file list holds whole files, but an
+ * attachment chip on a message holds a filename and a hash — the entity's size,
+ * reach and history are not on the message, because they are not facts about
+ * this arrival of it.
+ *
+ * The viewer opens only once the file is in hand, so a hash that resolves to
+ * nothing leaves the user where they were rather than on an empty tab.
+ */
+export const openAttachmentByKey = async (key: string): Promise<void> => {
+  try {
+    const response = await fetch(`/api/attachments/file?key=${encodeURIComponent(key)}`);
+    if (!response.ok) return;
+    const file = await response.json();
+    if (file) openAttachment(file);
+  } catch {
+    // A file that will not load is not worth an error state: the user clicked
+    // a chip, and the chip simply goes nowhere.
+  }
 };
 
 interface ErrorLogState {

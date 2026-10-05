@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { CheckSquare, ChevronDown, ChevronRight, Mail, PenLine, Tag } from 'lucide-react';
 import { openMessage, previewMessage } from '../../lib/tabs';
-import { navRow } from '../../lib/rovingFocus';
+import { movedByKeyboard, navRow } from '../../lib/rovingFocus';
 import { refKey, useSelectionStore } from '../../lib/selection';
+import { ariaCurrent, rowStateClasses, useIsCurrent } from '../../lib/rowState';
 import type { Thread, ThreadEntry } from './api';
 
 interface ThreadResultProps {
@@ -147,6 +148,9 @@ const Entry = ({ entry }: { entry: ThreadEntry }) => {
   const selection = useSelectionStore(s => s.refs);
   const clickable = entry.kind === 'message' && entry.message;
   const isSelected = clickable && Boolean(selection[refKey({ kind: 'message', id: entry.message!.id })]);
+  // An entry that is not a message has no id to be current by, and the hook
+  // answers false for a null id rather than needing a branch here.
+  const current = useIsCurrent('message', clickable ? entry.message!.id : null);
 
   return (
     <li className="relative py-1">
@@ -171,7 +175,8 @@ const Entry = ({ entry }: { entry: ThreadEntry }) => {
         data-sel-field={clickable ? 'id' : undefined}
         data-sel-label={clickable ? entry.summary : undefined}
         aria-selected={isSelected || undefined}
-        onFocus={clickable ? () => previewMessage(entry.message!) : undefined}
+        aria-current={ariaCurrent(current)}
+        onFocus={clickable ? () => { if (movedByKeyboard()) previewMessage(entry.message!); } : undefined}
         onClick={clickable ? (e) => {
           // Same rule as the message list: a modified click selects, it does
           // not open the viewer over the list you are selecting in.
@@ -179,8 +184,8 @@ const Entry = ({ entry }: { entry: ThreadEntry }) => {
           openMessage(entry.message!);
         } : undefined}
         className={`flex items-baseline gap-2 text-sm px-2 py-0.5 rounded transition-colors ${
-          isSelected
-            ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30'
+          isSelected || current
+            ? rowStateClasses({ selected: Boolean(isSelected), current })
             : clickable
             ? 'cursor-pointer hover:text-primary'
             : ''

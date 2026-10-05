@@ -51,6 +51,21 @@ describe('Desk keyboard navigation', () => {
     },
   ];
 
+  const files = [
+    {
+      key: 'f1', contentHash: 'f1', filename: 'invoice.pdf', mimeType: 'application/pdf',
+      size: 63500, inline: false, storagePath: '/data/attachments/f1/f1',
+      messageId: 'm1', subject: 'Invoice attached', from: 'alice@acme.com',
+      messages: 2, threads: 2, names: 1, lastSeen: '2026-03-05T10:00:00Z',
+    },
+    {
+      key: 'f2', contentHash: 'f2', filename: 'contract.pdf', mimeType: 'application/pdf',
+      size: 12000, inline: false, storagePath: '/data/attachments/f2/f2',
+      messageId: 'm2', subject: 'Contract', from: 'bob@acme.com',
+      messages: 1, threads: 1, names: 1, lastSeen: '2026-03-06T10:00:00Z',
+    },
+  ];
+
   /** Routes every request Desk makes on mount, so only the result kind varies. */
   function mockServer(result: unknown) {
     vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
@@ -81,9 +96,13 @@ describe('Desk keyboard navigation', () => {
     const row = first.closest('[data-nav-row]') as HTMLElement;
     expect(row).toBeTruthy();
 
-    row.focus();
+    // Entered with a key, not with row.focus(). Preview is gated on the arrow
+    // rather than on focus arriving, so focusing a row directly — which is also
+    // what tabbing back into the list does — deliberately previews nothing.
+    pane().focus();
+    press('ArrowDown');
     expect(document.activeElement).toBe(row);
-    // Preview follows focus, so an already-open viewer keeps up.
+    // Preview follows the arrow, so an already-open viewer keeps up.
     expect(useViewerStore.getState().messageId).toBe('m1');
 
     press('ArrowDown');
@@ -201,6 +220,80 @@ describe('Desk keyboard navigation', () => {
     pane().focus();
     press('ArrowDown');
     expect(document.activeElement).toHaveAttribute('data-sel-id', 'm1');
+  });
+
+  /**
+   * The outline is a fact about the viewer, not about focus.
+   *
+   * Focus was the only thing marking the row being read, and exactly one element
+   * in the document has it — so clicking into the viewer to read the message left
+   * the list showing nothing, and there was no way back to where you were.
+   */
+  it('keeps the row outlined after focus leaves the list', async () => {
+    mockServer({ query: 'folder:inbox', kind: 'messages', count: 2, messages });
+    render(<Desk />);
+    await screen.findByText('Quarterly invoice');
+
+    pane().focus();
+    press('ArrowDown');
+    const row = document.activeElement as HTMLElement;
+    expect(row).toHaveAttribute('aria-current', 'true');
+
+    // Somewhere else entirely, the way clicking into the viewer pane is.
+    row.blur();
+    document.body.focus();
+    expect(document.activeElement).not.toBe(row);
+    expect(row).toHaveAttribute('aria-current', 'true');
+  });
+
+  /**
+   * Preview belongs to the arrow key, not to focus arriving.
+   *
+   * The roving tab stop remembers a row, so tabbing back into the list focuses
+   * it — and a row that previewed there would pull the viewer off whatever the
+   * user had just opened in another pane, which is precisely what the cascade
+   * asks them to do.
+   */
+  it('does not preview when the list merely regains focus', async () => {
+    mockServer({ query: 'folder:inbox', kind: 'messages', count: 2, messages });
+    render(<Desk />);
+    const row = (await screen.findByText('Quarterly invoice'))
+      .closest('[data-nav-row]') as HTMLElement;
+
+    // Standing in for a message opened from somewhere else — a file's
+    // occurrence list, a ticket's evidence.
+    useViewerStore.getState().setMessage({ id: 'elsewhere' });
+
+    row.focus();
+    expect(document.activeElement).toBe(row);
+    expect(useViewerStore.getState().messageId).toBe('elsewhere');
+
+    // And an arrow key does move it, so the gate has not simply switched
+    // previewing off.
+    press('ArrowDown');
+    await waitFor(() => expect(useViewerStore.getState().messageId).toBe('m2'));
+  });
+
+  /**
+   * Files had `openAttachment` and nothing else.
+   *
+   * Because that selects the viewer's tab, arrowing this list would have switched
+   * away from Desk on the first Down key and the second would have gone nowhere —
+   * the exact failure `previewMessage` was written to fix, still live for files.
+   */
+  it('arrows the file list and previews the file', async () => {
+    mockServer({ query: 'in:attachments', kind: 'attachments', count: 2, attachments: files });
+    useQueryStore.getState().set('in:attachments');
+    render(<Desk />);
+    await screen.findByText('invoice.pdf');
+
+    pane().focus();
+    press('ArrowDown');
+    await waitFor(() => expect(useViewerStore.getState().file?.key).toBe('f1'));
+    expect(document.activeElement).toHaveAttribute('aria-current', 'true');
+
+    press('ArrowDown');
+    await waitFor(() => expect(useViewerStore.getState().file?.key).toBe('f2'));
   });
 });
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useLayoutStore } from 'nexus-shell';
 import {
   openMessage, openContact, openAttachment,
+  previewMessage, previewContact, previewAttachment, previewMessageByID,
   useViewerStore, VIEWER_TABS,
 } from './tabs';
 
@@ -176,5 +177,126 @@ describe('switching mode', () => {
 
     useViewerStore.getState().setMode('reuse');
     expect(localStorage.getItem('inboxql.viewerMode')).toBe('reuse');
+  });
+});
+
+/**
+ * Preview points the viewer at something; open also brings it forward.
+ *
+ * The distinction is the whole reason arrowing a list works at all. A list that
+ * called `open` on every keystroke would select the viewer's tab, so the first
+ * Down key switched away from the list and the second went nowhere — focus had
+ * left with the tab. Files and contacts had only `open` until now.
+ */
+describe('preview, as distinct from open', () => {
+  beforeEach(() => reset('split'));
+
+  it('sets the slot without adding a tab', () => {
+    const { addTab, doAction } = emptyLayout();
+
+    previewMessage({ id: 'm1' });
+    previewContact('alice@acme.com');
+    previewAttachment({ key: 'abc', filename: 'invoice.pdf' });
+
+    const s = useViewerStore.getState();
+    expect(s.message).toEqual({ id: 'm1' });
+    expect(s.contact).toBe('alice@acme.com');
+    expect(s.file).toEqual({ key: 'abc', filename: 'invoice.pdf' });
+
+    expect(addTab).not.toHaveBeenCalled();
+    expect(doAction).not.toHaveBeenCalled();
+  });
+
+  // An already-open viewer is what preview is for: it keeps up with the arrows
+  // without the list losing focus.
+  it('updates a viewer that is already open, still without touching the layout', () => {
+    const { addTab, doAction } = layoutWith([VIEWER_TABS.file.id]);
+
+    previewAttachment({ key: 'def' });
+
+    expect(useViewerStore.getState().file).toEqual({ key: 'def' });
+    expect(addTab).not.toHaveBeenCalled();
+    expect(doAction).not.toHaveBeenCalled();
+  });
+
+  it('and open does bring it forward', () => {
+    const { addTab } = emptyLayout();
+    openAttachment({ key: 'abc' });
+    expect(addTab).toHaveBeenCalledWith(VIEWER_TABS.file.id, 'File');
+  });
+});
+
+/**
+ * A fetched preview must not land on top of a newer one.
+ *
+ * Arrowing a list of occurrences issues one request per keystroke and they can
+ * land in any order, so without the sequence guard a slow response for a row the
+ * user has already left overwrites the row they are now on — and the viewer
+ * shows a message that is not the highlighted one.
+ */
+describe('previewMessageByID', () => {
+  beforeEach(() => {
+    reset('split');
+    emptyLayout();
+  });
+
+  it('shows the message it fetched', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ id: 'm9', subject: 'Found' }),
+    }) as never;
+
+    await previewMessageByID('m9');
+    expect(useViewerStore.getState().messageId).toBe('m9');
+  });
+
+  it('lets the newest request win when an older one lands late', async () => {
+    const resolvers: Array<(v: any) => void> = [];
+    globalThis.fetch = vi.fn().mockImplementation(
+      () => new Promise(resolve => { resolvers.push(resolve); }),
+    ) as never;
+
+    const slow = previewMessageByID('m-slow');
+    const fast = previewMessageByID('m-fast');
+
+    // The second request answers first, as a smaller message would.
+    resolvers[1]({ ok: true, json: async () => ({ id: 'm-fast' }) });
+    await fast;
+    expect(useViewerStore.getState().messageId).toBe('m-fast');
+
+    // Then the first one finally lands, and is dropped.
+    resolvers[0]({ ok: true, json: async () => ({ id: 'm-slow' }) });
+    await slow;
+    expect(useViewerStore.getState().messageId).toBe('m-fast');
+  });
+
+  // A message that will not load leaves the viewer where it was, rather than
+  // blanking it — the user arrowed onto a row, they did not ask for an error.
+  it('leaves the viewer alone when the fetch fails', async () => {
+    useViewerStore.setState({ message: { id: 'kept' }, messageId: 'kept' });
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 404 }) as never;
+
+    await previewMessageByID('gone');
+    expect(useViewerStore.getState().messageId).toBe('kept');
+  });
+
+  /**
+   * A direct preview also bumps the guard.
+   *
+   * Otherwise arrowing a file's occurrences and then arrowing the message list
+   * would let the occurrence fetch land afterwards and overwrite the row the
+   * user is now on — the same race, crossing between two lists.
+   */
+  it('cannot overwrite a direct preview issued after it', async () => {
+    const resolvers: Array<(v: any) => void> = [];
+    globalThis.fetch = vi.fn().mockImplementation(
+      () => new Promise(resolve => { resolvers.push(resolve); }),
+    ) as never;
+
+    const inFlight = previewMessageByID('m-fetched');
+    previewMessage({ id: 'm-direct' });
+
+    resolvers[0]({ ok: true, json: async () => ({ id: 'm-fetched' }) });
+    await inFlight;
+    expect(useViewerStore.getState().messageId).toBe('m-direct');
   });
 });

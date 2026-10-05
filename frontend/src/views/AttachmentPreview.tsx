@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Paperclip, Download, X, FileText, Image as ImageIcon, Mail, MessagesSquare, Sparkles } from 'lucide-react';
-import { openMessageByID, openQuery, openTool } from '../lib/tabs';
+import { openMessageByID, openQuery, openTool, previewMessageByID, useViewerStore } from '../lib/tabs';
+import { movedByKeyboard, navRow, useRovingFocus } from '../lib/rovingFocus';
+import { ariaCurrent, useIsCurrent } from '../lib/rowState';
 
 export interface AttachmentFile {
   key: string;
@@ -234,6 +236,55 @@ export const AttachmentChip = ({
 };
 
 /**
+ * One message a file arrived on.
+ *
+ * `openedFrom` and `aria-current` look alike and are not the same thing.
+ * `openedFrom` means *this panel is embedded in that message's viewer*, which is
+ * why it reads "this message"; the outline means *the viewer is showing it now*,
+ * which changes as the user arrows. They coincide in the inline case and diverge
+ * the moment somebody moves, which is exactly when the distinction is worth
+ * having.
+ */
+const OccurrenceRow = ({ occurrence: o, fileName, openedFrom, previews }: {
+  occurrence: AttachmentOccurrence;
+  fileName: string;
+  openedFrom: boolean;
+  previews: boolean;
+}) => {
+  const current = useIsCurrent('message', o.messageId);
+  return (
+    <li>
+      <button
+        type="button"
+        {...navRow}
+        aria-current={ariaCurrent(current)}
+        // Safari does not focus a button on click, so an onFocus-only preview
+        // would be dead to the mouse there. The click handler below is what
+        // actually opens, in every browser.
+        onFocus={() => { if (previews && movedByKeyboard()) previewMessageByID(o.messageId); }}
+        onClick={() => openMessageByID(o.messageId)}
+        className={`w-full text-left px-3 py-2 text-xs hover:bg-accent transition-colors flex items-start gap-2 ${
+          current ? 'ring-2 ring-inset ring-primary' : openedFrom ? 'bg-accent/50' : ''
+        }`}
+      >
+        <Mail className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium">{o.subject || '(no subject)'}</span>
+          <span className="block truncate text-muted-foreground">
+            {o.from}
+            {o.date && <> · {new Date(o.date).toLocaleDateString()}</>}
+            {/* The name it arrived under here, when that is not the
+                name the file is listed under. */}
+            {o.filename && o.filename !== fileName && <> · as {o.filename}</>}
+          </span>
+        </span>
+        {openedFrom && <span className="shrink-0 text-muted-foreground italic">this message</span>}
+      </button>
+    </li>
+  );
+};
+
+/**
  * AttachmentOccurrences lists every message a file arrived on.
  *
  * # Why threads and messages are counted separately
@@ -251,6 +302,22 @@ export const AttachmentOccurrences = ({ file, currentMessageId }: {
   currentMessageId?: string;
 }) => {
   const [occurrences, setOccurrences] = useState<AttachmentOccurrence[] | null>(null);
+  // Its own root. The hook is scoped to one ref and the Desk list has its own;
+  // this panel lives in a different FlexLayout tab, so arrowing here has to be
+  // a separate list rather than a continuation of that one.
+  const { ref, onKeyDown } = useRovingFocus<HTMLUListElement>();
+  /**
+   * Previewing from here is a split-mode gesture.
+   *
+   * In reuse mode one viewer tab holds one subject, so setting a message clears
+   * the file — which blanks the tab this panel is inside. Arrowing would delete
+   * the list from under the user on the first keystroke.
+   *
+   * So the arrows still move and still highlight, and opening is Enter's job —
+   * a deliberate act, where losing the file panel is the point rather than a
+   * surprise. The cascade proper is what split mode buys.
+   */
+  const previews = useViewerStore(s => s.mode) === 'split';
 
   useEffect(() => {
     let cancelled = false;
@@ -299,34 +366,16 @@ export const AttachmentOccurrences = ({ file, currentMessageId }: {
           {file.names > 1 && <> · {file.names} names</>}
         </span>
       </div>
-      <ul className="max-h-56 overflow-y-auto">
-        {occurrences.map(o => {
-          const here = o.messageId === currentMessageId;
-          return (
-            <li key={o.attachmentId}>
-              <button
-                type="button"
-                onClick={() => openMessageByID(o.messageId)}
-                className={`w-full text-left px-3 py-2 text-xs hover:bg-accent transition-colors flex items-start gap-2 ${
-                  here ? 'bg-accent/50' : ''
-                }`}
-              >
-                <Mail className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{o.subject || '(no subject)'}</span>
-                  <span className="block truncate text-muted-foreground">
-                    {o.from}
-                    {o.date && <> · {new Date(o.date).toLocaleDateString()}</>}
-                    {/* The name it arrived under here, when that is not the
-                        name the file is listed under. */}
-                    {o.filename && o.filename !== file.filename && <> · as {o.filename}</>}
-                  </span>
-                </span>
-                {here && <span className="shrink-0 text-muted-foreground italic">this message</span>}
-              </button>
-            </li>
-          );
-        })}
+      <ul className="max-h-56 overflow-y-auto" ref={ref} onKeyDown={onKeyDown}>
+        {occurrences.map(o => (
+          <OccurrenceRow
+            key={o.attachmentId}
+            occurrence={o}
+            fileName={file.filename}
+            openedFrom={o.messageId === currentMessageId}
+            previews={previews}
+          />
+        ))}
       </ul>
     </div>
   );

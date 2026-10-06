@@ -13,15 +13,56 @@ type PendingThread struct {
 	Subject       string    `json:"subject"`
 	LastMessageAt time.Time `json:"lastMessageAt"`
 	Snippet       string    `json:"snippet,omitempty"`
+	// LastMessageID is the message the snippet came from, so a list row can
+	// open it rather than only running a query for the whole conversation.
+	LastMessageID string `json:"lastMessageId,omitempty"`
+	// Judged is whether the `loops` label has looked at this conversation and
+	// said it is open. False means it is listed on who-sent-last alone.
+	Judged bool `json:"judged"`
+}
+
+// LoopsAnnotator is the label the open-loop lists read.
+//
+// Named rather than configured: it is the starter that exists for this, and a
+// setting that pointed the lists at any label would be a way to point them at
+// the wrong one. Delete or rename it and the lists fall back to who sent last.
+const LoopsAnnotator = "loops"
+
+// loopVerdict is what the `loops` label says about a conversation's newest
+// message: open, closed, or nil when nothing has said either.
+//
+// A person's ruling wins over the model's, as it does everywhere else.
+func loopVerdict(messageID string) *bool {
+	var status string
+	err := db.QueryRow(`
+		SELECT an.status FROM annotations an
+		JOIN annotators a ON a.id = an.annotator_id
+		WHERE a.name = ? AND an.message_id = ? AND an.status IN (?, ?)
+		  AND (an.source = ? OR an.annotator_version = a.version)
+		ORDER BY CASE WHEN an.source = ? THEN 0 ELSE 1 END, an.seq
+		LIMIT 1`,
+		LoopsAnnotator, messageID, StatusOK, StatusEmpty, SourceHuman, SourceHuman).Scan(&status)
+	if err != nil {
+		return nil
+	}
+	open := status == StatusOK
+	return &open
 }
 
 // ContactResponsiveness holds communication dynamics and latency metrics for a contact.
 type ContactResponsiveness struct {
-	Address                   string          `json:"address"`
-	MyMedianReplySecs         *int64          `json:"myMedianReplySecs"`
-	TheirMedianReplySecs      *int64          `json:"theirMedianReplySecs"`
-	AwaitingMyReplyCount      int             `json:"awaitingMyReplyCount"`
-	AwaitingTheirReplyCount   int             `json:"awaitingTheirReplyCount"`
+	Address                 string `json:"address"`
+	MyMedianReplySecs       *int64 `json:"myMedianReplySecs"`
+	TheirMedianReplySecs    *int64 `json:"theirMedianReplySecs"`
+	AwaitingMyReplyCount    int    `json:"awaitingMyReplyCount"`
+	AwaitingTheirReplyCount int    `json:"awaitingTheirReplyCount"`
+	// LoopsJudged is whether a `loops` label exists to judge these lists. When
+	// it does not, both lists are who-sent-last alone — which counts every
+	// newsletter as waiting on you.
+	LoopsJudged bool `json:"loopsJudged"`
+	// ClosedByJudgement counts conversations who-sent-last would have listed
+	// that the label (or you) said are closed — "Thanks, sounds good!".
+	ClosedByJudgement         int             `json:"closedByJudgement"`
 	AwaitingMyReplyThreads    []PendingThread `json:"awaitingMyReplyThreads"`
 	AwaitingTheirReplyThreads []PendingThread `json:"awaitingTheirReplyThreads"`
 	ToCount                   int64           `json:"toCount"`
@@ -59,7 +100,11 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 		selfMap[strings.ToLower(strings.TrimSpace(m))] = true
 	}
 
+	var loops int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM annotators WHERE name = ?`, LoopsAnnotator).Scan(&loops)
+
 	resp := &ContactResponsiveness{
+		LoopsJudged:               loops > 0,
 		Address:                   addr,
 		AwaitingMyReplyThreads:    []PendingThread{},
 		AwaitingTheirReplyThreads: []PendingThread{},
@@ -207,8 +252,21 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 			}
 		}
 
-		// Open loop check: look at the last message in the thread
+		// Open loop check: who sent the last message decides which way a loop
+		// points; the `loops` label, where it has looked, decides whether it
+		// is open at all.
 		lastMsg := msgs[len(msgs)-1]
+		judged := false
+		if v := loopVerdict(lastMsg.id); v != nil {
+			if !*v {
+				if (pendingThemTimestamp > 0 && !selfMap[lastMsg.sender]) ||
+					(pendingMeTimestamp > 0 && selfMap[lastMsg.sender]) {
+					resp.ClosedByJudgement++
+				}
+				continue
+			}
+			judged = true
+		}
 		if pendingThemTimestamp > 0 && !selfMap[lastMsg.sender] {
 			// Thread ended with contact waiting for my reply
 			resp.AwaitingMyReplyThreads = append(resp.AwaitingMyReplyThreads, PendingThread{
@@ -216,6 +274,8 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 				Subject:       lastMsg.subject,
 				LastMessageAt: millisToTime(lastMsg.date),
 				Snippet:       lastMsg.snippet,
+				LastMessageID: lastMsg.id,
+				Judged:        judged,
 			})
 		} else if pendingMeTimestamp > 0 && selfMap[lastMsg.sender] {
 			// Thread ended with user waiting for contact's reply
@@ -224,6 +284,8 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 				Subject:       lastMsg.subject,
 				LastMessageAt: millisToTime(lastMsg.date),
 				Snippet:       lastMsg.snippet,
+				LastMessageID: lastMsg.id,
+				Judged:        judged,
 			})
 		}
 	}

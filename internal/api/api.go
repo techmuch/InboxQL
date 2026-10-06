@@ -51,6 +51,9 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/messages/counts", auth.Middleware(http.HandlerFunc(handleFolderCounts)))
 	mux.Handle("/api/messages/flags", auth.Middleware(http.HandlerFunc(handleMessageFlags)))
 	mux.Handle("/api/contacts", auth.Middleware(http.HandlerFunc(handleContacts)))
+	// Labels on a contact. /tags is the old name, kept so a page loaded before
+	// the rename still works.
+	mux.Handle("/api/contacts/labels", auth.Middleware(http.HandlerFunc(handleContactTags)))
 	mux.Handle("/api/contacts/tags", auth.Middleware(http.HandlerFunc(handleContactTags)))
 	mux.Handle("/api/contacts/notes", auth.Middleware(http.HandlerFunc(handleContactNotes)))
 	mux.Handle("/api/contacts/responsiveness", auth.Middleware(http.HandlerFunc(handleContactResponsiveness)))
@@ -121,6 +124,8 @@ func Router() (http.Handler, error) {
 	// prefix does not disturb.
 	spanMux := http.NewServeMux()
 	registerSpanRoutes(spanMux)
+	// Label verdicts and rulings share the prefix, so they share the mux.
+	registerLabelRoutes(spanMux)
 	mux.Handle("/api/messages/", auth.Middleware(spanMux))
 
 	// The starter pack. Its own routes rather than part of the annotator
@@ -144,6 +149,7 @@ func Router() (http.Handler, error) {
 		"/api/query/complete", "/api/query/values",
 		"/api/query/terms", "/api/query/compose",
 		"/api/queries", "/api/annotators", "/api/annotators/run",
+		"/api/annotators/review", "/api/annotators/score",
 		"/api/tickets", "/api/tickets/board",
 	} {
 		mux.Handle(route, auth.Middleware(queryMux))
@@ -249,7 +255,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.80",
+	Version: "0.0.81",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.
@@ -911,7 +917,7 @@ func handleContacts(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Tags != nil {
 		for _, t := range req.Tags {
-			_ = store.AddContactTag(req.Address, t)
+			_ = store.AddContactLabel(req.Address, t)
 		}
 	}
 
@@ -931,24 +937,29 @@ func handleContactTags(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Address string `json:"address"`
-		Tag     string `json:"tag"`
-		Action  string `json:"action"` // "add" or "remove"
+		Label   string `json:"label"`
+		// Tag is the old name for Label, accepted from older callers.
+		Tag    string `json:"tag"`
+		Action string `json:"action"` // "add" or "remove"
 	}
 	if err := decodeJSON(w, r, &req); err != nil {
 		return
 	}
+	if req.Tag == "" {
+		req.Tag = req.Label
+	}
 	if strings.TrimSpace(req.Address) == "" || strings.TrimSpace(req.Tag) == "" {
-		writeError(w, http.StatusBadRequest, "address and tag are required")
+		writeError(w, http.StatusBadRequest, "address and label are required")
 		return
 	}
 	switch req.Action {
 	case "add", "":
-		if err := store.AddContactTag(req.Address, req.Tag); err != nil {
+		if err := store.AddContactLabel(req.Address, req.Tag); err != nil {
 			writeError(w, http.StatusInternalServerError, "%v", err)
 			return
 		}
 	case "remove":
-		if err := store.RemoveContactTag(req.Address, req.Tag); err != nil {
+		if err := store.RemoveContactLabel(req.Address, req.Tag); err != nil {
 			writeError(w, http.StatusInternalServerError, "%v", err)
 			return
 		}
@@ -956,7 +967,7 @@ func handleContactTags(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "action must be 'add' or 'remove'")
 		return
 	}
-	tags, err := store.GetContactTags(req.Address)
+	tags, err := store.GetContactLabels(req.Address)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "%v", err)
 		return
@@ -964,7 +975,11 @@ func handleContactTags(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"address": req.Address,
-		"tags":    tags,
+		"labels":  tags,
+		// The old key, beside the new one: a page loaded before the rename
+		// reads `tags`, and an empty list there would look like the label
+		// was not saved.
+		"tags": tags,
 	})
 }
 

@@ -467,36 +467,68 @@ a draft has no id in the message store, so do not pass one to `read`.
 
 ---
 
-## `contact` / `in:contacts` — people, systems, notes, tags & responsiveness
+## `contact` / `in:contacts` — people, systems, notes, labels & responsiveness
 
 A contact is an address you have corresponded with. Every message creates one
 for every address it touches. Counts (messages, sent, received, first and last
 seen) are derived on every read from participant edges, never cached.
 
 ```
-iql --json contact list [--query "tag:client"]
+iql --json contact list [--query "in:contacts label:client"]
 iql --json contact show <address>
-iql --json contact tag <address> <tag>
-iql --json contact untag <address> <tag>
+iql --json contact label <address> <label>
+iql --json contact unlabel <address> <label>
 iql --json contact note <address> [text]
 iql --json contact responsiveness <address>
-iql --json query "in:contacts tag:vip awaiting:me"
+iql --json contact classify [--model laya] [--limit n] [--dry-run]
+iql --json query "in:contacts label:vip awaiting:me"
 iql --json query "in:contacts has:notes"
 ```
 
 | Term | Matches |
 |---|---|
 | `kind:` | `person organization system unknown` |
-| `tag:` | custom tag assigned to contact |
-| `has:` | `phone name org notes tag awaiting` |
+| `label:` | a label on the contact — needs `in:contacts` |
+| `tag:` | the same, under its old name, and it implies `in:contacts` on its own |
+| `has:` | `phone name org notes label awaiting` |
 | `notes:` | prose search in private contact notes |
 | `awaiting:` | `me` (contact sent last message) or `them` (user sent last message) |
 | `messages:` `sent:` `received:` | interaction thresholds, e.g. `messages>10` |
+
+**Contact tags are labels now.** Same word as on mail, stored with who set it.
+`tag`, `untag`, `tag:` and `/api/contacts/tags` still work. One thing to get
+right: **`label:` without `in:` is a message label**, as it always was — a name
+two kinds claim names neither, so the query stays about mail. Write
+`in:contacts label:vip`, or the old `tag:vip`.
+
+### People and systems
+
+`contact classify` sets `kind` from evidence, cheapest first: the free header
+pass (`List-Unsubscribe`, `Auto-Submitted`, `noreply@` and so on), then with
+`--model laya` the decision model for senders the headers left unknown, reading
+each one's address and last three subject lines.
+
+- **Only senders are judged.** A contact that never sent anything has no text of
+  its own; on a real mailbox that was 7,410 of 10,591. They stay `unknown`.
+- **The model writes a kind only when decisive**, and leaves the rest unknown.
+  Its cut-offs rank rather than measure, and on its first real run it called a
+  travel company's mailer a person. Say so if the user asks how reliable it is;
+  their ruling on the contact card wins.
+- `--dry-run` with `--model` over-counts: nothing from the header pass is
+  written, so the model is shown senders the headers would have settled.
 
 `contact responsiveness <address>` returns communication dynamics including
 median reply turnaround time for me vs. them, open loops (`awaitingMyReplyCount`
 and `awaitingTheirReplyCount` with pending thread subjects and snippets), role
 ratio (`toRatio`), and a 24-hour histogram of incoming messages.
+
+**Open loops read the `loops` label where it has looked.** Who sent the last
+message says which way a loop points; the label says whether it is open at all.
+`loopsJudged` says whether the label exists, `closedByJudgement` how many
+conversations who-sent-last would have listed that it (or the user) closed, and
+each thread's `judged` whether it was looked at. Without the label the lists are
+who-sent-last alone, which counts every newsletter as waiting on the user — say
+that rather than presenting the list as a to-do list.
 
 ---
 
@@ -770,22 +802,22 @@ iql --json annotate disable <name>
 
 ### Somewhere to start
 
-`annotate starters` is a pack of eleven worth beginning from, meant to be
-edited. It reports how much of *this* mailbox each one reaches, so a rule that
-matches nothing here is visible before it is installed.
+`annotate starters` is a pack of seven worth beginning from, meant to be
+edited. It reports how much of *this* mailbox each one reaches before it is
+installed.
 
-**The mix is the lesson.** Every span extractor ships paired with a cheap rule
-label that gates it — `receipts` is scoped to `label:money`, which is a query
-and therefore free. Copy that pattern rather than making everything an
-extractor: the label narrows a 20-second-per-message job to the mail that
-could possibly match.
+**The mix is the lesson.** Every span extractor ships behind a cheaper
+judgement that gates it — `receipts` is scoped to `label:purchased`, a decision
+label at about three seconds a message. Copy that pattern rather than making
+everything an extractor: the gate narrows a 20-second-per-message job to the
+mail that could possibly match.
 
 Creating them runs nothing. They arrive with coverage at zero.
 
 ### Scope lives on the annotator
 
 `--scope` still wins when given, but an annotator remembers its own, so
-`iql annotate run receipts` covers `label:money` without being told. That is
+`iql annotate run receipts` covers `label:purchased` without being told. That is
 also what a triggered run reads, since nobody is there to pass a flag.
 
 ### Triggers say when, never what
@@ -854,10 +886,12 @@ So `label:purchased@0.9` is a **ranking cut**, not "ninety percent of these are
 right". Do not tell the user otherwise, and do not present a high score as
 evidence the answer is right.
 
-`iql laya calibrate <name>` fits a temperature from the user's own corrections
-and makes the number mean what it looks like. It needs at least 20 rulings and
-refuses below that. Until it has run, say that the scores order and do not
-measure. `iql laya status` reports the state.
+`iql laya calibrate <name>` fits a temperature from the user's **reviewed**
+rulings and makes the number mean what it looks like. It needs at least 20 and
+refuses below that. Rulings made while reading do not count: they are mostly
+corrections, and a set of corrections says the model is never right.
+`--include-inflow` overrides that on the record. Until it has run, say that the
+scores order and do not measure. `iql laya status` reports the state.
 
 Calibration cannot change an answer — a temperature divides the logits, which
 cannot reorder them — so it never makes the model more accurate, only more
@@ -993,8 +1027,8 @@ An annotator carries `enabled`. Off means **it will not run**: triggers skip it,
 the message viewer stops offering it, and `annotate run` on it exits 1 with the
 command to switch it back on. Nothing else changes.
 
-**Everything it has already said still counts.** `label:money` keeps matching
-while `money` is off, and `extract:receipts.amount` keeps returning records.
+**Everything it has already said still counts.** `label:purchased` keeps
+matching while `purchased` is off, and `extract:receipts.amount` keeps returning records.
 Those are facts about messages that really were observed — the same reason a
 version bump keeps the old answers rather than deleting them. So a negative
 label still means *evaluated, no*, and coverage still reads as it did; do not
@@ -1020,12 +1054,64 @@ Quote the second when you are telling somebody what deleting would cost.
 `enabled` is not `trigger`. `trigger: manual` means *only when told*; off means
 *not even then*.
 
-### Corrections
+### Corrections, rulings and scores
 
-`annotate correct <name> <message-id> --yes|--no` records a human ruling. It
-outranks the machine result, survives version bumps and re-runs, and removes
-that message from the pending queue. You may suggest corrections; the user
-makes them.
+`annotate correct <name> <message-id> --yes|--no|--level <l>|--clear` records a
+human ruling. It outranks the machine result, survives version bumps and
+re-runs, and removes that message from the pending queue. You may suggest
+corrections; the user makes them.
+
+**A ruling says how it was made**, and the two kinds are different evidence:
+
+| `via` | Made | Used for |
+|---|---|---|
+| `inflow` | while reading — usually because something looked wrong | outranking the machine on that message |
+| `review` | on a random draw from the review queue | that, plus accuracy and calibration |
+
+`correct` defaults to `inflow`. **Do not pass `--via review`** for a ruling the
+user did not make from the review queue: it launders a correction into the set
+the model is measured on.
+
+In the interface, a label on a message is a chip with a context menu — Right,
+Wrong, or for a levelled label *Should be …* — and the Annotators tab has
+**Review**, which draws ten messages across the whole score range and hides the
+model's answer until the user has given theirs.
+
+```
+iql --json annotate score <name>
+```
+
+reports accuracy on reviewed rulings only, and for a yes/no label the cut-off
+that would have been right most often — an uncalibrated model can rank
+correctly and still put 0.5 in the wrong place. **Two annotators asking the same
+question on different engines, scored on the same rulings, is how an engine is
+chosen for a question.** Below 20 reviewed rulings the number is shown with a
+warning; repeat it.
+
+### Conversations and levels
+
+A label can judge a **whole conversation** (`"unit":"thread"` in its schema). It
+is evaluated once, on the newest message, and a reply makes the conversation
+pending again. The decision model reads a one-line summary of the conversation
+— how many messages, who sent the last, whether the user has replied — then the
+newest message; the LLM engine reads the whole conversation. Either way the
+stored record carries `lastFromMe`, which is what says which way an open loop
+points.
+
+A label can have **levels** (`"levels":[{"label":…,"describe":…}]`, best first).
+It then answers which level rather than yes or no — the decision model as a
+score question, the LLM by picking one — and an invented level is refused.
+
+The starter pack is built around two of these: `loops` (does the newest message
+expect a reply) and `importance` (important / normal / low / ignorable), both
+scoped to the last 90 days. It ships **no rule labels**; rules can still be
+written, the pack just does not start anyone on them.
+
+### Deleting a gate
+
+`annotate delete <name>` is refused when another annotator's scope reads it
+(`label:<name>`), because a broken scope makes a run cover the whole mailbox.
+`--disable-dependents` switches those off in the same step — off, not deleted.
 
 ---
 

@@ -217,8 +217,18 @@ export const setAnnotatorEnabled = (name: string, enabled: boolean) =>
     body: JSON.stringify({ enabled }),
   });
 
-export const deleteAnnotator = (name: string) =>
-  request<unknown>(`/api/annotators?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+/**
+ * Delete an annotator.
+ *
+ * Refused with a 409 when another annotator's scope reads it; the message names
+ * them. `disableDependents` switches those off in the same step — off, not
+ * deleted, so what they found is kept.
+ */
+export const deleteAnnotator = (name: string, disableDependents = false) =>
+  request<{ removed: string; disabled?: string[] }>(
+    `/api/annotators?name=${encodeURIComponent(name)}${disableDependents ? '&disableDependents=1' : ''}`,
+    { method: 'DELETE' },
+  );
 
 export interface RunOutcome {
   annotator: string;

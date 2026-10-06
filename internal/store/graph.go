@@ -505,3 +505,11 @@ func columnExists(db *sql.DB, table, column string) bool {
 	}
 	return false
 }
+
+// tableExists reports whether a table is present, for migrations that must
+// survive being replayed on a database where a later one already removed it.
+func tableExists(db *sql.DB, table string) bool {
+	var n int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n)
+	return n > 0
+}

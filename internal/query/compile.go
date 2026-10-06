@@ -370,13 +370,16 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 		}
 		return wrap(col+" "+op+" "+c.arg(n), negated), nil
 
-	case "tag":
+	// A contact's labels. `tag:` is the name from before contact tags became
+	// labels, and the one that implies `in:contacts` on its own — `label:`
+	// without `in:` means a message label, as it always has.
+	case "tag", "label":
 		tagVal := strings.ToLower(strings.TrimSpace(t.Value))
 		if t.Op == OpGlob {
 			pattern := strings.ReplaceAll(tagVal, "*", "%")
-			return wrap("EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.address = c.address AND ct.tag LIKE "+c.arg(pattern)+")", negated), nil
+			return wrap("EXISTS (SELECT 1 FROM contact_labels ct WHERE ct.address = c.address AND ct.label LIKE "+c.arg(pattern)+")", negated), nil
 		}
-		return wrap("EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.address = c.address AND ct.tag = "+c.arg(tagVal)+")", negated), nil
+		return wrap("EXISTS (SELECT 1 FROM contact_labels ct WHERE ct.address = c.address AND ct.label = "+c.arg(tagVal)+")", negated), nil
 
 	case "notes", "note":
 		return wrap(c.stringPredicate("COALESCE(c.notes, '')", t), negated), nil
@@ -434,8 +437,8 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 			return wrap("COALESCE(c.org, '') != ''", negated), nil
 		case "notes", "note":
 			return wrap("COALESCE(c.notes, '') != ''", negated), nil
-		case "tag", "tags":
-			return wrap("EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.address = c.address)", negated), nil
+		case "tag", "tags", "label", "labels":
+			return wrap("EXISTS (SELECT 1 FROM contact_labels ct WHERE ct.address = c.address)", negated), nil
 		case "awaiting":
 			return wrap(`EXISTS (
 				SELECT 1 FROM messages m_latest

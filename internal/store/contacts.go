@@ -68,7 +68,7 @@ type Contact struct {
 	EnrichedBy  string   `json:"enrichedBy,omitempty"`
 	Confidence  *float64 `json:"confidence,omitempty"`
 	Notes       string   `json:"notes,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
 
 	// --- derived, never stored
 	Messages  int64     `json:"messages"`
@@ -177,11 +177,11 @@ func GetContact(address string) (*Contact, error) {
 		return nil, err
 	}
 	if c != nil {
-		tags, err := GetContactTags(c.Address)
+		tags, err := GetContactLabels(c.Address)
 		if err != nil {
 			return nil, err
 		}
-		c.Tags = tags
+		c.Labels = tags
 	}
 	return c, nil
 }
@@ -269,8 +269,8 @@ func SetContactNotes(address, notes string) error {
 	return err
 }
 
-// AddContactTag adds a custom tag to a contact.
-func AddContactTag(address, tag string) error {
+// AddContactLabel adds a custom tag to a contact.
+func AddContactLabel(address, tag string) error {
 	addr, _ := NormaliseAddress(address)
 	if addr == "" {
 		addr = strings.ToLower(strings.TrimSpace(address))
@@ -289,15 +289,15 @@ func AddContactTag(address, tag string) error {
 		return err
 	}
 	_, err = db.Exec(`
-		INSERT INTO contact_tags (address, tag, created_at)
+		INSERT INTO contact_labels (address, label, created_at)
 		VALUES (?, ?, ?)
-		ON CONFLICT(address, tag) DO NOTHING`,
+		ON CONFLICT(address, label) DO NOTHING`,
 		addr, tag, now)
 	return err
 }
 
-// RemoveContactTag removes a custom tag from a contact.
-func RemoveContactTag(address, tag string) error {
+// RemoveContactLabel removes a custom tag from a contact.
+func RemoveContactLabel(address, tag string) error {
 	addr, _ := NormaliseAddress(address)
 	if addr == "" {
 		addr = strings.ToLower(strings.TrimSpace(address))
@@ -306,17 +306,17 @@ func RemoveContactTag(address, tag string) error {
 	if addr == "" || tag == "" {
 		return fmt.Errorf("address and tag are required")
 	}
-	_, err := db.Exec(`DELETE FROM contact_tags WHERE address = ? AND tag = ?`, addr, tag)
+	_, err := db.Exec(`DELETE FROM contact_labels WHERE address = ? AND label = ?`, addr, tag)
 	return err
 }
 
-// GetContactTags returns all tags assigned to a contact in alphabetical order.
-func GetContactTags(address string) ([]string, error) {
+// GetContactLabels returns all tags assigned to a contact in alphabetical order.
+func GetContactLabels(address string) ([]string, error) {
 	addr, _ := NormaliseAddress(address)
 	if addr == "" {
 		addr = strings.ToLower(strings.TrimSpace(address))
 	}
-	rows, err := db.Query(`SELECT tag FROM contact_tags WHERE address = ? ORDER BY tag ASC`, addr)
+	rows, err := db.Query(`SELECT label FROM contact_labels WHERE address = ? ORDER BY label ASC`, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -332,9 +332,9 @@ func GetContactTags(address string) ([]string, error) {
 	return tags, rows.Err()
 }
 
-// ListAllTags returns every unique contact tag in use.
-func ListAllTags() ([]string, error) {
-	rows, err := db.Query(`SELECT DISTINCT tag FROM contact_tags ORDER BY tag ASC`)
+// ListAllContactLabels returns every unique contact tag in use.
+func ListAllContactLabels() ([]string, error) {
+	rows, err := db.Query(`SELECT DISTINCT label FROM contact_labels ORDER BY label ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -350,15 +350,15 @@ func ListAllTags() ([]string, error) {
 	return tags, rows.Err()
 }
 
-// PopulateContactTags populates the Tags slice on a list of contacts.
-func PopulateContactTags(contacts []*Contact) error {
+// PopulateContactLabels populates the Labels slice on a list of contacts.
+func PopulateContactLabels(contacts []*Contact) error {
 	if len(contacts) == 0 {
 		return nil
 	}
 	contactMap := make(map[string]*Contact, len(contacts))
 	addrs := make([]string, 0, len(contacts))
 	for _, c := range contacts {
-		c.Tags = []string{}
+		c.Labels = []string{}
 		contactMap[c.Address] = c
 		addrs = append(addrs, c.Address)
 	}
@@ -371,9 +371,9 @@ func PopulateContactTags(contacts []*Contact) error {
 	}
 
 	rows, err := db.Query(`
-		SELECT address, tag FROM contact_tags
+		SELECT address, label FROM contact_labels
 		WHERE address IN (`+strings.Join(ph, ", ")+`)
-		ORDER BY tag ASC`, args...)
+		ORDER BY label ASC`, args...)
 	if err != nil {
 		return err
 	}
@@ -385,7 +385,7 @@ func PopulateContactTags(contacts []*Contact) error {
 			return err
 		}
 		if c, ok := contactMap[a]; ok {
-			c.Tags = append(c.Tags, t)
+			c.Labels = append(c.Labels, t)
 		}
 	}
 	return rows.Err()

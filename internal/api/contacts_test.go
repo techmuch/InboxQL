@@ -78,13 +78,18 @@ func TestContactsAPI(t *testing.T) {
 	}
 	var tagResp struct {
 		Address string   `json:"address"`
-		Tags    []string `json:"tags"`
+		Labels  []string `json:"labels"`
+		// The old key, still sent for pages loaded before the rename.
+		Tags []string `json:"tags"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &tagResp); err != nil {
 		t.Fatalf("unmarshal tags response: %v", err)
 	}
+	if len(tagResp.Labels) != 1 || tagResp.Labels[0] != "vip" {
+		t.Errorf("labels = %v, want [vip]", tagResp.Labels)
+	}
 	if len(tagResp.Tags) != 1 || tagResp.Tags[0] != "vip" {
-		t.Errorf("tags = %v, want [vip]", tagResp.Tags)
+		t.Errorf("tags = %v, want [vip] for older pages", tagResp.Tags)
 	}
 
 	// 2. POST /api/contacts/notes -> set note

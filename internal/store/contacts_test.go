@@ -2,7 +2,9 @@ package store
 
 import (
 	"testing"
+	"time"
 
+	"github.com/user/inboxql/internal/account"
 	"github.com/user/inboxql/internal/message"
 )
 
@@ -163,16 +165,16 @@ func TestContactNotesAndTags(t *testing.T) {
 	}
 
 	// Add tags
-	if err := AddContactTag("alice@acme.com", "vip"); err != nil {
-		t.Fatalf("AddContactTag(vip): %v", err)
+	if err := AddContactLabel("alice@acme.com", "vip"); err != nil {
+		t.Fatalf("AddContactLabel(vip): %v", err)
 	}
-	if err := AddContactTag("alice@acme.com", "client"); err != nil {
-		t.Fatalf("AddContactTag(client): %v", err)
+	if err := AddContactLabel("alice@acme.com", "client"); err != nil {
+		t.Fatalf("AddContactLabel(client): %v", err)
 	}
 
-	tags, err := GetContactTags("alice@acme.com")
+	tags, err := GetContactLabels("alice@acme.com")
 	if err != nil {
-		t.Fatalf("GetContactTags: %v", err)
+		t.Fatalf("GetContactLabels: %v", err)
 	}
 	if len(tags) != 2 || tags[0] != "client" || tags[1] != "vip" {
 		t.Errorf("tags = %v, want [client vip]", tags)
@@ -183,24 +185,24 @@ func TestContactNotesAndTags(t *testing.T) {
 	if err != nil || c2 == nil {
 		t.Fatalf("GetContact: %v", err)
 	}
-	if len(c2.Tags) != 2 || c2.Tags[0] != "client" || c2.Tags[1] != "vip" {
-		t.Errorf("c2.Tags = %v, want [client vip]", c2.Tags)
+	if len(c2.Labels) != 2 || c2.Labels[0] != "client" || c2.Labels[1] != "vip" {
+		t.Errorf("c2.Labels = %v, want [client vip]", c2.Labels)
 	}
 
 	// List all tags
-	allTags, err := ListAllTags()
+	allTags, err := ListAllContactLabels()
 	if err != nil {
-		t.Fatalf("ListAllTags: %v", err)
+		t.Fatalf("ListAllContactLabels: %v", err)
 	}
 	if len(allTags) != 2 {
 		t.Errorf("allTags = %v, want 2 tags", allTags)
 	}
 
 	// Remove a tag
-	if err := RemoveContactTag("alice@acme.com", "vip"); err != nil {
-		t.Fatalf("RemoveContactTag: %v", err)
+	if err := RemoveContactLabel("alice@acme.com", "vip"); err != nil {
+		t.Fatalf("RemoveContactLabel: %v", err)
 	}
-	tagsAfter, _ := GetContactTags("alice@acme.com")
+	tagsAfter, _ := GetContactLabels("alice@acme.com")
 	if len(tagsAfter) != 1 || tagsAfter[0] != "client" {
 		t.Errorf("tagsAfter = %v, want [client]", tagsAfter)
 	}
@@ -213,8 +215,8 @@ func TestContactNotesAndTags(t *testing.T) {
 	if len(res.Contacts) != 1 || res.Contacts[0].Address != "alice@acme.com" {
 		t.Fatalf("expected 1 contact alice@acme.com, got %v", res.Contacts)
 	}
-	if len(res.Contacts[0].Tags) != 1 || res.Contacts[0].Tags[0] != "client" {
-		t.Errorf("expected tags populated on query result, got %v", res.Contacts[0].Tags)
+	if len(res.Contacts[0].Labels) != 1 || res.Contacts[0].Labels[0] != "client" {
+		t.Errorf("expected tags populated on query result, got %v", res.Contacts[0].Labels)
 	}
 
 	// Query: in:contacts -tag:client
@@ -271,5 +273,77 @@ func TestContactNotesAndTags(t *testing.T) {
 	}
 	if len(resHasAwaiting.Contacts) == 0 {
 		t.Errorf("expected contacts with has:awaiting")
+	}
+}
+
+// `label:` on contacts reads contact labels; without `in:` it still means a
+// message label, which is what every query written before this meant by it.
+func TestContactLabelsAreQueriedAsLabels(t *testing.T) {
+	if _, err := InitDB(t.TempDir()); err != nil {
+		t.Fatalf("InitDB: %v", err)
+	}
+	t.Cleanup(CloseDB)
+	if err := SaveContact(&Contact{Address: "alice@acme.com"}, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddContactLabel("alice@acme.com", "vip"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, q := range []string{"in:contacts label:vip", "tag:vip", "in:contacts has:label"} {
+		res, err := RunQuery(q, 50, 0)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if res.Kind != "contacts" || len(res.Contacts) != 1 {
+			t.Errorf("%s: kind %q, %d contacts; want one contact", q, res.Kind, len(res.Contacts))
+		}
+	}
+
+	res, err := RunQuery("label:vip", 50, 0)
+	if err == nil && res.Kind == "contacts" {
+		t.Error("`label:` without `in:` became a contact query; it must stay about mail")
+	}
+}
+
+// Only unknown contacts that have sent something are judged: a recipient-only
+// contact has no text of its own, and one already classified is not asked
+// again — by a person especially.
+func TestUnknownSendersAreOnlyTheOnesWithSomethingToRead(t *testing.T) {
+	if _, err := InitDB(t.TempDir()); err != nil {
+		t.Fatalf("InitDB: %v", err)
+	}
+	t.Cleanup(CloseDB)
+	if err := SaveAccount(&account.Account{ID: "acct", Name: "Me", Email: "me@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().Add(-time.Hour)
+	for i, m := range []*message.Message{
+		{ID: "a1", From: "shop@x.com", To: []string{"me@example.com"}, Subject: "Your order has shipped"},
+		{ID: "a2", From: "shop@x.com", To: []string{"me@example.com"}, Subject: "Your receipt"},
+		{ID: "b1", From: "bob@x.com", To: []string{"carol@x.com"}, Subject: "Re: dinner"},
+	} {
+		m.AccountID, m.ContentHash, m.MessageID, m.Mailbox = "acct", m.ID, "<"+m.ID+"@x>", "INBOX"
+		m.Date = base.Add(time.Duration(i) * time.Minute)
+		m.InternalDate = m.Date
+		if err := SaveMessage(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := SetContactKind("bob@x.com", KindPerson, "human"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := UnknownSenders(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != "shop@x.com" {
+		t.Errorf("unknown senders %v; want only shop@x.com — carol never sent, bob is ruled", got)
+	}
+
+	subjects, _ := RecentSubjects("shop@x.com", 3)
+	if len(subjects) != 2 || subjects[0] != "Your receipt" {
+		t.Errorf("subjects %v, want newest first", subjects)
 	}
 }

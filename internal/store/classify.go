@@ -211,3 +211,63 @@ func ClassifyContacts(dryRun bool) (*ClassifyResult, error) {
 	}
 	return out, nil
 }
+
+// UnknownSenders are contacts nothing has classified yet that have sent at
+// least one message — the only ones there is anything of their own to read.
+//
+// Contacts that only ever received mail are left out on purpose. Of 10,591
+// contacts on a real mailbox, 7,410 had never sent anything; there is no text
+// of theirs for a model to judge, and "you wrote to them, so they are a person"
+// is wrong for every mailing list you have written to.
+func UnknownSenders(limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 1 << 30
+	}
+	rows, err := db.Query(`
+		SELECT c.address FROM contacts c
+		WHERE c.kind = ?
+		  AND EXISTS (SELECT 1 FROM message_participants p
+		              WHERE p.address = c.address AND p.role = 'from')
+		ORDER BY c.address LIMIT ?`, KindUnknown, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// RecentSubjects returns the subject lines of the newest messages an address
+// sent, newest first.
+//
+// Subjects rather than a body because they are the densest evidence of what an
+// address is: "Your order has shipped", "Your statement is ready" and "Re:
+// dinner Friday?" say more about a sender than any one of their messages does,
+// in about forty tokens.
+func RecentSubjects(address string, n int) ([]string, error) {
+	rows, err := db.Query(`
+		SELECT COALESCE(m.subject, '') FROM messages m
+		JOIN message_participants p ON p.message_id = m.id AND p.role = 'from'
+		WHERE p.address = ?
+		ORDER BY m.date DESC LIMIT ?`, address, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}

@@ -28,10 +28,11 @@ are the same mechanism, so they version, re-run and query the same way.
   list      show annotators and how far each has got
   show      one annotator, its instruction and its progress
   create    define or update one
-  delete    remove it and everything it produced
+  delete    remove it and everything it produced (--disable-dependents)
   run       apply it to messages that still need it
   plan      report what a run would do, without doing it
   correct   record a human ruling, which outranks the machine
+  score     how often it agrees with your reviewed rulings
   starters  a pack of annotators worth starting from
   enable    switch one on
   disable   switch one off, keeping everything it produced
@@ -136,6 +137,8 @@ func runAnnotate(ctx *Context, args []string) error {
 		return annotateSweep(ctx, rest)
 	case "correct":
 		return annotateCorrect(ctx, rest)
+	case "score":
+		return annotateScore(ctx, rest)
 	case "embed":
 		return annotateEmbed(ctx, rest)
 
@@ -525,22 +528,36 @@ func annotateCreate(ctx *Context, args []string) error {
 }
 
 func annotateDelete(ctx *Context, args []string) error {
-	name, _ := subcommand(args)
+	name, rest := subcommand(args)
 	if name == "" {
 		return Fail(ExitUsage, "which annotator?")
+	}
+	fs := flag.NewFlagSet("annotate delete", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	disable := fs.Bool("disable-dependents", false,
+		"switch off annotators scoped on this one, in the same step")
+	if err := parseArgs(fs, rest); err != nil {
+		return Fail(ExitUsage, "invalid flags")
 	}
 	if err := ctx.OpenStore(); err != nil {
 		return err
 	}
 	defer store.CloseDB()
 
-	if err := store.DeleteAnnotator(name); err != nil {
-		return Fail(ExitNotFound, "%v", err)
+	if a, _ := store.GetAnnotator(name); a == nil {
+		return Fail(ExitNotFound, "no annotator named %q", name)
+	}
+	disabled, err := store.DeleteAnnotatorChecked(name, *disable)
+	if err != nil {
+		return Fail(ExitUsage, "%v", err)
 	}
 	if ctx.JSON {
-		return ctx.EmitJSON(map[string]any{"deleted": name})
+		return ctx.EmitJSON(map[string]any{"deleted": name, "disabled": disabled})
 	}
 	ctx.Printf("Deleted %s and every result it produced.\n", name)
+	for _, d := range disabled {
+		ctx.Printf("Switched off %s, which was scoped on it. Everything it found is kept.\n", d)
+	}
 	return nil
 }
 
@@ -902,18 +919,29 @@ func annotateCorrect(ctx *Context, args []string) error {
 	name, rest := subcommand(args)
 	messageID, rest := subcommand(rest)
 	if name == "" || messageID == "" {
-		return Fail(ExitUsage, "usage: iql annotate correct <name> <message-id> --yes|--no")
+		return Fail(ExitUsage, "usage: iql annotate correct <name> <message-id> --yes|--no|--level <l>|--clear [--via inflow|review]")
 	}
 
 	fs := flag.NewFlagSet("annotate correct", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	yes := fs.Bool("yes", false, "this message does match")
 	no := fs.Bool("no", false, "this message does not match")
+	level := fs.String("level", "", "the right level, for a levelled label")
+	clear := fs.Bool("clear", false, "remove your ruling, so the annotator's answer stands again")
+	// Defaulting to inflow is the conservative choice: a ruling only counts
+	// towards accuracy and calibration when it is known to be a random draw.
+	via := fs.String("via", store.RuledInflow, "how the ruling was made: inflow or review")
 	if err := parseArgs(fs, rest); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
-	if *yes == *no {
-		return Fail(ExitUsage, "pass exactly one of --yes or --no")
+	chosen := 0
+	for _, b := range []bool{*yes, *no, *level != "", *clear} {
+		if b {
+			chosen++
+		}
+	}
+	if chosen != 1 {
+		return Fail(ExitUsage, "pass exactly one of --yes, --no, --level or --clear")
 	}
 
 	if err := ctx.OpenStore(); err != nil {
@@ -921,13 +949,26 @@ func annotateCorrect(ctx *Context, args []string) error {
 	}
 	defer store.CloseDB()
 
-	if err := store.SetHumanAnnotation(name, messageID, *yes, nil); err != nil {
+	if *clear {
+		if err := store.ClearRuling(name, messageID); err != nil {
+			return Fail(ExitNotFound, "%v", err)
+		}
+		if ctx.JSON {
+			return ctx.EmitJSON(map[string]any{"annotator": name, "message": messageID, "cleared": true})
+		}
+		ctx.Printf("Cleared. The annotator's own answer stands again.\n")
+		return nil
+	}
+
+	r := store.Ruling{Matched: *yes || *level != "", Level: *level, Via: *via}
+	if err := store.RecordRuling(name, messageID, r); err != nil {
 		return Fail(ExitNotFound, "%v", err)
 	}
 
 	if ctx.JSON {
 		return ctx.EmitJSON(map[string]any{
-			"annotator": name, "message": messageID, "matched": *yes, "source": store.SourceHuman,
+			"annotator": name, "message": messageID, "matched": r.Matched, "level": r.Level,
+			"via": r.Via, "source": store.SourceHuman,
 		})
 	}
 	ctx.Printf("Recorded. This ruling outranks the annotator and survives every re-run.\n")
@@ -1042,6 +1083,52 @@ func embedAttachments(ctx *Context, profile string, limit int, dryRun, allowRemo
 		ctx.Printf("%s\n", p.Dim(sprintf(
 			"%d file(s) have not been read yet and cannot be embedded; run `iql maintenance text`.",
 			progress.Pending)))
+	}
+	return nil
+}
+
+// annotateScore reports how often an annotator agrees with reviewed rulings.
+//
+// Two annotators asking the same question on different engines, scored on the
+// same rulings, is how an engine is chosen for a question — by measurement
+// rather than by how many messages a conversation has, or by intuition.
+func annotateScore(ctx *Context, args []string) error {
+	name, _ := subcommand(args)
+	if name == "" {
+		return Fail(ExitUsage, "usage: iql annotate score <name>")
+	}
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+
+	s, err := store.ScoreAnnotator(name)
+	if err != nil {
+		return Fail(ExitNotFound, "%v", err)
+	}
+	if ctx.JSON {
+		return ctx.EmitJSON(s)
+	}
+
+	p := ctx.Printer()
+	ctx.Printf("%s %s\n", p.Bold(s.Annotator), p.Dim("("+s.Engine+")"))
+	if s.Reviewed == 0 {
+		ctx.Printf("  No reviewed rulings yet. Review some in the Annotators tab.\n")
+		if s.Inflow > 0 {
+			ctx.Printf("  %d ruling(s) made while reading are not scored: they are mostly corrections.\n", s.Inflow)
+		}
+		return nil
+	}
+	ctx.Printf("  %-14s %d of %d (%.0f%%)\n", p.Dim("as answered"), s.Right, s.Reviewed, s.Accuracy*100)
+	if s.Cutoff != nil {
+		ctx.Printf("  %-14s %d of %d at a cutoff of %.2f\n", p.Dim("best cutoff"), s.AtCutoff, s.Reviewed, *s.Cutoff)
+	}
+	if s.Reviewed < store.MinScoreRulings {
+		ctx.Printf("  %s\n", p.Yellow(fmt.Sprintf("Only %d reviewed rulings — too few to trust; %d or more is better.",
+			s.Reviewed, store.MinScoreRulings)))
+	}
+	if s.Inflow > 0 {
+		ctx.Printf("  %s\n", p.Dim(fmt.Sprintf("%d ruling(s) made while reading are not scored.", s.Inflow)))
 	}
 	return nil
 }

@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"strings"
 
+	"github.com/user/inboxql/internal/annotate"
 	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/store"
 )
@@ -32,7 +34,7 @@ func init() {
 		Name:    "contact",
 		Aliases: []string{"contacts"},
 		Summary: "the people and systems in your mailbox",
-		Usage: `iql contact <list|show|set|tag|untag|note|responsiveness|classify> [flags]
+		Usage: `iql contact <list|show|set|label|unlabel|note|responsiveness|classify> [flags]
 
 A contact is an address you have corresponded with. Every message creates one
 for every address it touches, so this is a view of the mailbox rather than an
@@ -41,8 +43,8 @@ address book you have to maintain.
   list            contacts matching a query (default: everyone, busiest first)
   show            one contact, with what is known and where it came from
   set             correct a contact by hand; a human ruling outranks every rule
-  tag             add a custom tag to a contact
-  untag           remove a custom tag from a contact
+  label           add a label to a contact (tag is the old name)
+  unlabel         remove a label from a contact (untag is the old name)
   note            set private notes for a contact
   responsiveness  communication dynamics, reply turnaround times and open loops
   classify        mark contacts as person or system from headers and addressing
@@ -131,8 +133,8 @@ func runContact(ctx *Context, args []string) error {
 		row("org", c.Org)
 		row("title", c.Title)
 		row("header name", c.HeaderName)
-		if len(c.Tags) > 0 {
-			row("tags", strings.Join(c.Tags, ", "))
+		if len(c.Labels) > 0 {
+			row("labels", strings.Join(c.Labels, ", "))
 		}
 		if c.Notes != "" {
 			row("notes", c.Notes)
@@ -167,36 +169,38 @@ func runContact(ctx *Context, args []string) error {
 		ctx.Printf("\n%s\n", p.Dim("Their mail:  iql query \"anyone:"+c.Address+"\""))
 		return nil
 
-	case "tag":
+	// label and unlabel are the names; tag and untag are kept from before the
+	// rename, so scripts written against them still run.
+	case "label", "tag":
 		address, rest2 := subcommand(rest)
 		tag, _ := subcommand(rest2)
 		if address == "" || tag == "" {
-			return Fail(ExitUsage, "usage: iql contact tag <address> <tag>")
+			return Fail(ExitUsage, "usage: iql contact label <address> <label>")
 		}
-		if err := store.AddContactTag(address, tag); err != nil {
+		if err := store.AddContactLabel(address, tag); err != nil {
 			return Fail(ExitError, "%v", err)
 		}
-		tags, _ := store.GetContactTags(address)
+		tags, _ := store.GetContactLabels(address)
 		if ctx.JSON {
-			return ctx.EmitJSON(map[string]any{"address": address, "tags": tags})
+			return ctx.EmitJSON(map[string]any{"address": address, "labels": tags})
 		}
-		ctx.Printf("Added tag %q to %s.\n", tag, address)
+		ctx.Printf("Labelled %s %q.\n", address, tag)
 		return nil
 
-	case "untag":
+	case "unlabel", "untag":
 		address, rest2 := subcommand(rest)
 		tag, _ := subcommand(rest2)
 		if address == "" || tag == "" {
-			return Fail(ExitUsage, "usage: iql contact untag <address> <tag>")
+			return Fail(ExitUsage, "usage: iql contact unlabel <address> <label>")
 		}
-		if err := store.RemoveContactTag(address, tag); err != nil {
+		if err := store.RemoveContactLabel(address, tag); err != nil {
 			return Fail(ExitError, "%v", err)
 		}
-		tags, _ := store.GetContactTags(address)
+		tags, _ := store.GetContactLabels(address)
 		if ctx.JSON {
-			return ctx.EmitJSON(map[string]any{"address": address, "tags": tags})
+			return ctx.EmitJSON(map[string]any{"address": address, "labels": tags})
 		}
-		ctx.Printf("Removed tag %q from %s.\n", tag, address)
+		ctx.Printf("Removed label %q from %s.\n", tag, address)
 		return nil
 
 	case "note", "notes":
@@ -293,15 +297,38 @@ func runContact(ctx *Context, args []string) error {
 		fs := flag.NewFlagSet("contact classify", flag.ContinueOnError)
 		fs.SetOutput(ctx.Stderr)
 		dryRun := fs.Bool("dry-run", false, "report what would change and write nothing")
+		model := fs.String("model", "", "after the free header pass, judge the senders it left unknown: laya")
+		limit := fs.Int("limit", 0, "with --model, judge at most this many senders")
 		if err := parseArgs(fs, rest); err != nil {
 			return Fail(ExitUsage, "invalid flags")
+		}
+		if *model != "" && *model != "laya" {
+			return Fail(ExitUsage, "--model takes laya; it is the only engine that judges contacts")
 		}
 		out, err := store.ClassifyContacts(*dryRun)
 		if err != nil {
 			return Fail(ExitError, "%v", err)
 		}
+		var judged *annotate.KindResult
+		if *model == "laya" {
+			judged, err = annotate.ClassifyContactsWithLaya(context.Background(), ctx.DataDir, *dryRun, *limit)
+			if err != nil {
+				return Fail(ExitError, "%v", err)
+			}
+		}
 		if ctx.JSON {
+			if judged != nil {
+				return ctx.EmitJSON(map[string]any{"headers": out, "model": judged})
+			}
 			return ctx.EmitJSON(out)
+		}
+		if judged != nil {
+			defer func() {
+				ctx.Printf("Then the model: %d system, %d person, %d left unknown, of %d senders judged.\n",
+					judged.System, judged.Person, judged.Undecided, judged.Examined)
+				ctx.Printf("%s\n", ctx.Printer().Dim(
+					"Its cut-offs rank rather than measure. Correct any on the contact card; your ruling wins."))
+			}()
 		}
 		verb := "Marked"
 		if *dryRun {

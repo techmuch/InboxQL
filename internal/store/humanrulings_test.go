@@ -182,3 +182,113 @@ func TestACorrectionKeepsWhatItCorrected(t *testing.T) {
 			machine.Status, human.Status)
 	}
 }
+
+// A ruling says how it was made, because the two kinds are different evidence.
+//
+// One made while reading is usually a correction — people rule on what looks
+// wrong — so a set of them says the model is never right. One made from the
+// review queue is a random draw. Calibration and accuracy may only be measured
+// on the second.
+func TestARulingKeepsHowItWasMade(t *testing.T) {
+	a := rulingFixture(t)
+	for _, m := range []string{"m1", "m2"} {
+		if err := SaveAnnotations(a.ID, a.Version, m, []*Annotation{{
+			Status: StatusOK, Source: SourceLLM, Confidence: score(0.9),
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := RecordRuling("purchased", "m1", Ruling{Matched: true, Via: RuledReview}); err != nil {
+		t.Fatal(err)
+	}
+	// The old entry point, which is what `annotate correct` used: inflow.
+	if err := SetHumanAnnotation("purchased", "m2", false, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := HumanRulings(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]HumanRuling{}
+	for _, r := range got {
+		by[r.MessageID] = r
+	}
+	if !by["m1"].Unbiased() {
+		t.Error("a review ruling was not counted as unbiased")
+	}
+	if by["m2"].Unbiased() {
+		t.Error("a ruling made while reading was counted as unbiased")
+	}
+}
+
+// Agreeing is a ruling too. If only disagreement could be recorded, every
+// ruling would be a mistake and the model would measure as never right.
+func TestAgreeingCountsAsAgreement(t *testing.T) {
+	a := rulingFixture(t)
+	if err := SaveAnnotations(a.ID, a.Version, "m1", []*Annotation{{
+		Status: StatusOK, Source: SourceLLM, Confidence: score(0.9),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordRuling("purchased", "m1", Ruling{Matched: true, Via: RuledReview}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := HumanRulings(a.ID)
+	if len(got) != 1 || !got[0].Agrees() {
+		t.Fatalf("a ruling that matched the machine did not agree with it: %+v", got)
+	}
+}
+
+// For a levelled label, both said "yes" but a different level is a
+// disagreement — "important" ruled "low" is wrong, not right.
+func TestADifferentLevelIsADisagreement(t *testing.T) {
+	a := rulingFixture(t)
+	if err := SaveAnnotations(a.ID, a.Version, "m1", []*Annotation{{
+		Status: StatusOK, Source: SourceLLM, Confidence: score(0.7),
+		DataJSON: `{"level":"important"}`,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordRuling("purchased", "m1", Ruling{Matched: true, Level: "low", Via: RuledReview}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := HumanRulings(a.ID)
+	if len(got) != 1 {
+		t.Fatalf("got %d rulings", len(got))
+	}
+	if got[0].SaidLevel != "important" || got[0].RuledLevel != "low" {
+		t.Errorf("levels read as %q and %q", got[0].SaidLevel, got[0].RuledLevel)
+	}
+	if got[0].Agrees() {
+		t.Error("a different level was counted as agreement")
+	}
+}
+
+func TestARulingCanBeCleared(t *testing.T) {
+	a := rulingFixture(t)
+	if err := SaveAnnotations(a.ID, a.Version, "m1", []*Annotation{{
+		Status: StatusOK, Source: SourceLLM, Confidence: score(0.9),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordRuling("purchased", "m1", Ruling{Matched: false, Via: RuledInflow}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearRuling("purchased", "m1"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := HumanRulings(a.ID); len(got) != 0 {
+		t.Errorf("%d rulings remain after clearing", len(got))
+	}
+}
+
+func TestAnUnknownWayOfRulingIsRefused(t *testing.T) {
+	rulingFixture(t)
+	if err := RecordRuling("purchased", "m1", Ruling{Matched: true, Via: "guess"}); err == nil {
+		t.Error("a ruling with no recognised provenance was accepted")
+	}
+}
+
+// score is a confidence, as a pointer the way Annotation carries one.
+func score(v float64) *float64 { return &v }

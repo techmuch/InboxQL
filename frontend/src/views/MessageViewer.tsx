@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ContactCard } from './ContactCard';
 import { SpanPanel } from './SpanPanel';
+import { LabelChips } from './LabelChips';
 import { useMessageSpans } from './MarkedText';
 import { RunAnnotator, useMessageOffers } from './RunAnnotator';
 import { SimilarButton } from './SimilarButton';
@@ -423,6 +424,9 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
             />
             <RecipientList prefix="cc" recipients={message.cc} />
             <RecipientList prefix="bcc" recipients={message.bcc} />
+            {/* What annotators said about this message, each one rulable from
+                here: where you are when you notice a label is wrong. */}
+            {!isDraft && message.id && <LabelChips messageId={message.id} />}
           </div>
           <div className="flex gap-2 shrink-0">
             {!isDraft && <button className="p-2 hover:bg-accent transition-colors" title="Reply"><CornerUpLeft className="w-4 h-4" /></button>}

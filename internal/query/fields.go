@@ -174,7 +174,7 @@ var Registry = []Field{
 		Name: "has", Entity: EntityMessage, Type: TypeEnum,
 		Enum: []string{
 			"attachment", "file", "label", "reply", "to", "cc", "bcc",
-			"phone", "name", "org", "notes", "note", "tag", "tags", "awaiting",
+			"phone", "name", "org", "notes", "note", "tag", "tags", "label", "labels", "awaiting",
 		},
 		Summary: "what the entity carries", Example: "has:attachment",
 	},
@@ -431,9 +431,16 @@ var Registry = []Field{
 		Summary: "this exact contact", Example: "in:contacts id:(a OR b)",
 	},
 	{
+		// Not Primary, so `label:` alone still means a message label: a name
+		// two kinds claim names neither, and the query stays about mail.
+		Name: "label", Entity: EntityContact, Type: TypeText,
+		Ops:     matchOps,
+		Summary: "a label on this contact", Example: "in:contacts label:client",
+	},
+	{
 		Name: "tag", Entity: EntityContact, Type: TypeText,
 		Ops:     matchOps,
-		Summary: "a custom tag on this contact", Example: "in:contacts tag:client",
+		Summary: "a label on this contact — the old name, which implies in:contacts", Example: "tag:client",
 	},
 	{
 		Name: "notes", Entity: EntityContact, Type: TypeText,

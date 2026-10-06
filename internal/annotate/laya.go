@@ -28,13 +28,13 @@ import (
 // distribution over them, so an answer outside the option set is not something
 // it can produce. Roughly two seconds a message against about forty.
 //
-// # Labels only, for now
+// # Labels, plain or levelled
 //
 // A noul question with a threshold is exactly a label: yes, no, and a
-// probability, which is what the annotation row already stores. `choice` and
-// `score` return something that is neither, and giving them a home is a schema
-// question rather than an engine one — so they wait rather than holding this
-// up.
+// probability. A score question is a levelled label — importance from
+// "important" to "ignorable" — stored as a match carrying the level, with the
+// level's probability as its score. Choice questions are still unused: nothing
+// yet needs an unordered pick that a set of yes/no labels would not say better.
 //
 // # The confidence is an ordering, not a frequency
 //
@@ -75,7 +75,9 @@ func runLaya(ctx context.Context, a *store.Annotator, opt Options, out *Outcome,
 		return err
 	}
 
-	q := laya.Question{Kind: "noul", Instructions: a.Instructions}
+	q := layaQuestion(a)
+	levelled := len(a.Levels()) > 0
+	thread := a.Unit() == store.UnitThread
 
 	// A fitted temperature, when somebody has made one. Applied here rather
 	// than inside the model because it belongs to this annotator's question,
@@ -122,7 +124,18 @@ func runLaya(ctx context.Context, a *store.Annotator, opt Options, out *Outcome,
 				return err
 			}
 
-			d, derr := m.Decide(layaText(msg), q)
+			text := layaText(msg)
+			// For a conversation, the facts the database knows go first, in a
+			// line, so the model judges only what the newest message says.
+			var digest *store.ThreadDigest
+			if thread {
+				if dg, err := store.DigestThread(msg.ID); err == nil {
+					digest = dg
+					text = digestLine(dg) + "\n\n" + text
+				}
+			}
+
+			d, derr := m.Decide(text, q)
 			if derr == nil && temp != nil {
 				d.Calibrate(temp)
 			}
@@ -139,6 +152,19 @@ func runLaya(ctx context.Context, a *store.Annotator, opt Options, out *Outcome,
 					Model: m.Name(), Error: derr.Error(),
 				})
 
+			case levelled:
+				// A level is always an answer — there is no "no" — so the row
+				// is a match carrying which level, and the probability of that
+				// level as its score.
+				out.Matched++
+				out.Records++
+				score := d.Probability
+				anns = append(anns, &store.Annotation{
+					Status: store.StatusOK, Source: store.SourceLLM,
+					DataJSON:   layaPayload(a, d, digest, d.Label),
+					Confidence: &score, Model: m.Name(),
+				})
+
 			case d.Label != "true" || d.Probability < layaThreshold:
 				// "Looked, and the answer is no" — a different thing from "not
 				// evaluated", and what makes -label:x honest.
@@ -152,6 +178,7 @@ func runLaya(ctx context.Context, a *store.Annotator, opt Options, out *Outcome,
 				score := d.Probabilities[len(d.Probabilities)-1]
 				anns = append(anns, &store.Annotation{
 					Status: store.StatusEmpty, Source: store.SourceLLM,
+					DataJSON:   layaPayload(a, d, digest, ""),
 					Confidence: &score, Model: m.Name(),
 				})
 
@@ -159,13 +186,10 @@ func runLaya(ctx context.Context, a *store.Annotator, opt Options, out *Outcome,
 				out.Matched++
 				out.Records++
 				score := d.Probability
-				payload, _ := json.Marshal(map[string]any{
-					"label":    a.Name,
-					"escalate": d.Escalate,
-				})
 				anns = append(anns, &store.Annotation{
 					Status: store.StatusOK, Source: store.SourceLLM,
-					DataJSON: string(payload), Confidence: &score, Model: m.Name(),
+					DataJSON:   layaPayload(a, d, digest, ""),
+					Confidence: &score, Model: m.Name(),
 				})
 			}
 
@@ -179,6 +203,63 @@ func runLaya(ctx context.Context, a *store.Annotator, opt Options, out *Outcome,
 		}
 	}
 	return nil
+}
+
+// layaQuestion is the question an annotator asks of the decision model.
+//
+// A yes/no label is a noul. A levelled one is a score question: the model
+// returns a distribution over the levels, so one pass says which level and how
+// sure — rather than one yes/no question per level, which would be four passes
+// whose answers need not agree.
+//
+// Levels are stored best first, because that is how a person reads them, and
+// the model numbers them from the bottom up ("level 0" is the least), so they
+// are reversed on the way in. The answer comes back by label, not by position,
+// so nothing else needs to know.
+func layaQuestion(a *store.Annotator) laya.Question {
+	levels := a.Levels()
+	if len(levels) == 0 {
+		return laya.Question{Kind: "noul", Instructions: a.Instructions}
+	}
+	opts := make([]laya.Option, 0, len(levels))
+	for i := len(levels) - 1; i >= 0; i-- {
+		opts = append(opts, laya.Option{Label: levels[i].Label, Describe: levels[i].Describe})
+	}
+	return laya.Question{Kind: "score", Instructions: a.Instructions, Options: opts}
+}
+
+// layaPayload is what is stored beside a decision.
+//
+// For a conversation it includes which way it points — whether the newest
+// message is yours — because that is what turns "this expects a reply" into
+// "waiting on you" or "waiting on them", and it is a fact about the moment of
+// the decision: a later reply makes a new newest message and a new decision.
+func layaPayload(a *store.Annotator, d *laya.Decision, digest *store.ThreadDigest, level string) string {
+	v := map[string]any{"label": a.Name, "escalate": d.Escalate}
+	if level != "" {
+		v["level"] = level
+	}
+	if digest != nil {
+		v["lastFromMe"] = digest.LastFromMe
+		v["messages"] = digest.Messages
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// digestLine states a conversation's shape in one line, ahead of its newest
+// message, in words rather than fields because the model reads text.
+func digestLine(d *store.ThreadDigest) string {
+	who := "from them"
+	if d.LastFromMe {
+		who = "from you"
+	}
+	replied := "you have not replied"
+	if d.YouReplied {
+		replied = "you have replied"
+	}
+	return fmt.Sprintf("Conversation: %d message(s), %d people, newest %s; %s.",
+		d.Messages, d.Participants, who, replied)
 }
 
 // layaText is what the model is shown.

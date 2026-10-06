@@ -218,8 +218,23 @@ func layaRemove(ctx *Context, yes bool) error {
 //
 // That is the difference between `label:x@0.9` being a threshold and being a
 // ranking cut with a misleading name.
+//
+// # Only rulings from review
+//
+// A ruling made while reading is usually a correction: people rule on what
+// looks wrong. A set of those says the model is never right, and a temperature
+// fitted to it squashes every score toward 50%. So the fit uses rulings from
+// the review queue, which are a random draw, and refuses rather than quietly
+// fitting to the biased ones. --include-inflow overrides that, on the record.
 func layaCalibrate(ctx *Context, args []string) error {
-	name, _ := subcommand(args)
+	fs := flag.NewFlagSet("laya calibrate", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	includeInflow := fs.Bool("include-inflow", false,
+		"also fit on rulings made while reading, which over-represent mistakes")
+	if err := parseArgs(fs, args); err != nil {
+		return Fail(ExitUsage, "invalid flags")
+	}
+	name := fs.Arg(0)
 	if name == "" {
 		return Fail(ExitUsage, "which annotator? `iql laya calibrate <name>`")
 	}
@@ -246,15 +261,34 @@ func layaCalibrate(ctx *Context, args []string) error {
 		return Fail(ExitError, "%v", err)
 	}
 
+	var review, inflow int
+	for _, r := range rulings {
+		if r.Unbiased() {
+			review++
+		} else {
+			inflow++
+		}
+	}
+	if !*includeInflow && review < laya.MinCalibrationSamples {
+		return Fail(ExitNotConfigured,
+			"%s has %d rulings from review and %d made while reading; calibration needs %d from review.\n"+
+				"Rulings made while reading are mostly corrections, and fitting on them would say the model is never right.\n"+
+				"Review some: open the Annotators tab and choose Review, or pass --include-inflow to fit on everything anyway.",
+			a.Name, review, inflow, laya.MinCalibrationSamples)
+	}
+
 	obs := make([]laya.Observation, 0, len(rulings))
 	for _, r := range rulings {
+		if !*includeInflow && !r.Unbiased() {
+			continue
+		}
 		// The quantity being calibrated is the confidence in the answer that
 		// was given, so a "no" at 0.2 reported true is a 0.8 confident "no".
 		p := r.Confidence
 		if !r.Said {
 			p = 1 - p
 		}
-		obs = append(obs, laya.Observation{Probability: p, Correct: r.Said == r.Ruled})
+		obs = append(obs, laya.Observation{Probability: p, Correct: r.Agrees()})
 	}
 
 	t, err := laya.FitTemperature(obs)

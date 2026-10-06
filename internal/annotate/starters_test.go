@@ -38,9 +38,13 @@ func TestEveryExtractorIsGatedBySomethingCheap(t *testing.T) {
 			t.Errorf("%s is gated by %q, which is not in the pack", s.Name, s.Needs)
 			continue
 		}
-		if gate.Engine != store.EngineRule {
-			t.Errorf("%s is gated by %s, which is a %s — the gate has to be free",
-				s.Name, gate.Name, gate.Engine)
+		// The gate has to be cheaper than what it gates, or it is not a gate.
+		// It used to have to be a rule — free — and the pack no longer ships
+		// rules; the decision model at ~3 s a message still narrows a span
+		// extractor at 15–20 s.
+		if engineCost(gate.Engine) >= engineCost(s.Engine) {
+			t.Errorf("%s is gated by %s, which runs on %s and is no cheaper than %s",
+				s.Name, gate.Name, gate.Engine, s.Engine)
 		}
 		if want := "label:" + s.Needs; s.Scope != want {
 			t.Errorf("%s scope = %q, want %q", s.Name, s.Scope, want)
@@ -144,24 +148,28 @@ func TestStartersUseAnEngineThatCanDoTheirKind(t *testing.T) {
 //
 // The decision labels are not gates. They are the questions a query cannot ask,
 // and they stand alone.
-func TestEveryGateIsARule(t *testing.T) {
-	byName := map[string]Starter{}
+// The pack ships no rule labels. They can still be written — a rule is the
+// right engine for anything a query can say — but nothing here starts you on
+// one, because the questions worth gating on are not queries.
+func TestThePackShipsNoRules(t *testing.T) {
 	for _, s := range Starters {
-		byName[s.Name] = s
+		if s.Engine == store.EngineRule {
+			t.Errorf("%s is a rule label; the pack no longer ships any", s.Name)
+		}
 	}
-	for _, s := range Starters {
-		if s.Needs == "" {
-			continue
-		}
-		gate, ok := byName[s.Needs]
-		if !ok {
-			t.Errorf("%s is gated by %q, which is not in the pack", s.Name, s.Needs)
-			continue
-		}
-		if gate.Engine != store.EngineRule {
-			t.Errorf("%s is gated by %s, which runs on the %s engine; a gate has to be free",
-				s.Name, gate.Name, gate.Engine)
-		}
+}
+
+// engineCost orders engines by what a message costs to evaluate.
+func engineCost(engine string) int {
+	switch engine {
+	case store.EngineRule:
+		return 0
+	case store.EngineLaya:
+		return 1
+	case store.EngineGLiNER:
+		return 2
+	default:
+		return 3
 	}
 }
 
@@ -268,12 +276,12 @@ func TestInstallLeavesExistingAnnotatorsAlone(t *testing.T) {
 func TestInstallOnlyWhatWasAskedFor(t *testing.T) {
 	openAnnotateFixture(t)
 
-	made, _, err := InstallStarters([]string{"money"})
+	made, _, err := InstallStarters([]string{"purchased"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(made) != 1 || made[0] != "money" {
-		t.Fatalf("created %v, want just money", made)
+	if len(made) != 1 || made[0] != "purchased" {
+		t.Fatalf("created %v, want just purchased", made)
 	}
 	if a, _ := store.GetAnnotator("receipts"); a != nil {
 		t.Error("receipts was created without being asked for")

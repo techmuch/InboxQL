@@ -503,14 +503,14 @@ func TestContactNotesTagsAndResponsiveness(t *testing.T) {
 	var alice struct {
 		Address string   `json:"address"`
 		Notes   string   `json:"notes"`
-		Tags    []string `json:"tags"`
+		Labels    []string `json:"labels"`
 	}
 	r.JSON(t, &alice)
 	if alice.Notes != "Important partner lead" {
 		t.Errorf("alice.Notes = %q, want %q", alice.Notes, "Important partner lead")
 	}
-	if len(alice.Tags) != 1 || alice.Tags[0] != "client" {
-		t.Errorf("alice.Tags = %v, want [client]", alice.Tags)
+	if len(alice.Labels) != 1 || alice.Labels[0] != "client" {
+		t.Errorf("alice.Labels = %v, want [client]", alice.Labels)
 	}
 
 	// Query: in:contacts tag:client

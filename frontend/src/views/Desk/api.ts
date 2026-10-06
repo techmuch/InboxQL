@@ -114,7 +114,8 @@ export interface Contact {
   kindSource?: string;
   enrichedBy?: string;
   notes?: string;
-  tags?: string[];
+  /** Labels on the contact — what used to be called tags. */
+  labels?: string[];
   messages: number;
   sent: number;
   received: number;
@@ -127,6 +128,10 @@ export interface PendingThread {
   subject: string;
   lastMessageAt: string;
   snippet?: string;
+  /** The newest message, so a row can open it. */
+  lastMessageId?: string;
+  /** Whether the `loops` label has looked and said this is open. */
+  judged?: boolean;
 }
 
 export interface ContactResponsiveness {
@@ -135,6 +140,10 @@ export interface ContactResponsiveness {
   theirMedianReplySecs?: number;
   awaitingMyReplyCount: number;
   awaitingTheirReplyCount: number;
+  /** Whether a `loops` label exists to judge the lists. */
+  loopsJudged?: boolean;
+  /** Conversations who-sent-last would list that the label said are closed. */
+  closedByJudgement?: number;
   awaitingMyReplyThreads: PendingThread[];
   awaitingTheirReplyThreads: PendingThread[];
   toCount: number;
@@ -370,19 +379,19 @@ export async function setContactNotes(address: string, notes: string): Promise<{
   return body;
 }
 
-/** Add or remove a custom tag for a contact. */
-export async function modifyContactTag(
+/** Add or remove a label on a contact. */
+export async function modifyContactLabel(
   address: string,
-  tag: string,
+  label: string,
   action: 'add' | 'remove',
-): Promise<{ address: string; tags: string[] }> {
-  const res = await fetch('/api/contacts/tags', {
+): Promise<{ address: string; labels: string[] }> {
+  const res = await fetch('/api/contacts/labels', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address, tag, action }),
+    body: JSON.stringify({ address, label, action }),
   });
   const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.error ?? 'could not update contact tag');
+  if (!res.ok) throw new Error(body?.error ?? 'could not update the contact label');
   return body;
 }
 

@@ -31,6 +31,8 @@ func registerQueryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/queries", handleSavedQueries)
 	mux.HandleFunc("/api/annotators", handleAnnotators)
 	mux.HandleFunc("POST /api/annotators/run", handleAnnotatorRun)
+	mux.HandleFunc("GET /api/annotators/review", handleAnnotatorReview)
+	mux.HandleFunc("GET /api/annotators/score", handleAnnotatorScore)
 	mux.HandleFunc("/api/tickets", handleTickets)
 	mux.HandleFunc("/api/tickets/board", handleBoard)
 }
@@ -691,12 +693,19 @@ func deleteAnnotator(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	if err := store.DeleteAnnotator(name); err != nil {
-		writeError(w, http.StatusNotFound, "%v", err)
+	if a, _ := store.GetAnnotator(name); a == nil {
+		writeError(w, http.StatusNotFound, "no annotator named %q", name)
+		return
+	}
+	// 409 rather than deleting: something is scoped on it, and the interface
+	// should say what before anything is switched off.
+	disabled, err := store.DeleteAnnotatorChecked(name, r.URL.Query().Get("disableDependents") == "1")
+	if err != nil {
+		writeError(w, http.StatusConflict, "%v", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"removed": name})
+	json.NewEncoder(w).Encode(map[string]any{"removed": name, "disabled": disabled})
 }
 
 // writeQueryError reports a malformed query as a 400 carrying the position.

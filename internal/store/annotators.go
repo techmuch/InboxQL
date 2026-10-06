@@ -405,7 +405,7 @@ func PendingMessages(a *Annotator, filter string, limit int) ([]*message.Message
 	}
 
 	sql := `SELECT ` + aliasedMessageColumns() + ` FROM messages m
-		WHERE ` + where + `
+		WHERE ` + where + unitClause(a) + `
 		  AND NOT EXISTS (
 			SELECT 1 FROM annotations x
 			WHERE x.message_id = m.id AND x.annotator_id = ?
@@ -452,7 +452,7 @@ func Progress(a *Annotator, filter string) (*AnnotatorProgress, error) {
 	}
 
 	p := &AnnotatorProgress{Name: a.Name, Version: a.Version}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM messages m WHERE `+where, args...).Scan(&p.Total); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM messages m WHERE `+where+unitClause(a), args...).Scan(&p.Total); err != nil {
 		return nil, err
 	}
 
@@ -476,7 +476,7 @@ func Progress(a *Annotator, filter string) (*AnnotatorProgress, error) {
 		       COUNT(DISTINCT CASE WHEN a.status = 'failed' THEN a.message_id END)
 		FROM messages m
 		JOIN annotations a ON a.message_id = m.id
-		WHERE `+where+` AND a.annotator_id = ? AND a.annotator_version = ?`,
+		WHERE `+where+unitClause(a)+` AND a.annotator_id = ? AND a.annotator_version = ?`,
 		full...).Scan(&p.Evaluated, &p.Matched, &p.Empty, &p.Failed); err != nil {
 		return nil, err
 	}
@@ -554,6 +554,39 @@ func ApplyRule(a *Annotator, filter string) (matched, empty int64, err error) {
 // SetHumanAnnotation records a person's ruling, which outranks every machine
 // result and survives version bumps.
 func SetHumanAnnotation(name, messageID string, matched bool, data map[string]any) error {
+	return RecordRuling(name, messageID, Ruling{Matched: matched, Data: data, Via: RuledInflow})
+}
+
+// How a ruling came to be made.
+const (
+	// RuledInflow is a ruling made while reading — usually because something
+	// looked wrong. It is evidence about that message and a biased sample of
+	// the model: people correct what they notice.
+	RuledInflow = "inflow"
+	// RuledReview is a ruling on a message drawn at random for review. These are
+	// the ones accuracy and calibration may be measured on.
+	RuledReview = "review"
+)
+
+// Ruling is a person's verdict on one message for one annotator.
+type Ruling struct {
+	// Matched is yes or no. For a levelled label it is true, and Level says
+	// which level.
+	Matched bool
+	// Level is the right answer for a levelled label — "important", "low" —
+	// or empty for a plain yes/no one.
+	Level string
+	// Data is any further payload, as corrections to an extractor carry.
+	Data map[string]any
+	// Via is RuledInflow or RuledReview.
+	Via string
+}
+
+// RecordRuling stores a person's verdict, replacing any earlier one by them.
+//
+// It outranks the machine result rather than overwriting it, so a re-run keeps
+// both and the two can be compared — which is what accuracy is.
+func RecordRuling(name, messageID string, r Ruling) error {
 	a, err := GetAnnotator(name)
 	if err != nil {
 		return err
@@ -561,7 +594,17 @@ func SetHumanAnnotation(name, messageID string, matched bool, data map[string]an
 	if a == nil {
 		return fmt.Errorf("no annotator named %q", name)
 	}
+	if r.Via != RuledInflow && r.Via != RuledReview {
+		return fmt.Errorf("a ruling is made %q or %q, not %q", RuledInflow, RuledReview, r.Via)
+	}
 
+	data := map[string]any{}
+	for k, v := range r.Data {
+		data[k] = v
+	}
+	if r.Level != "" {
+		data["level"] = r.Level
+	}
 	payload := "{}"
 	if len(data) > 0 {
 		b, err := json.Marshal(data)
@@ -572,7 +615,7 @@ func SetHumanAnnotation(name, messageID string, matched bool, data map[string]an
 	}
 
 	status := StatusEmpty
-	if matched {
+	if r.Matched {
 		status = StatusOK
 	}
 	conf := 1.0
@@ -586,10 +629,25 @@ func SetHumanAnnotation(name, messageID string, matched bool, data map[string]an
 
 	_, err = db.Exec(`
 		INSERT OR REPLACE INTO annotations
-			(id, message_id, annotator_id, annotator_version, seq, status, source, data_json, confidence, created_at)
-		VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
+			(id, message_id, annotator_id, annotator_version, seq, status, source,
+			 data_json, confidence, created_at, ruled_via)
+		VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
 		uuid.New().String(), messageID, a.ID, a.Version, status, SourceHuman, payload, conf,
-		time.Now().UnixMilli())
+		time.Now().UnixMilli(), r.Via)
+	return err
+}
+
+// ClearRuling removes a person's verdict, so the machine's stands again.
+func ClearRuling(name, messageID string) error {
+	a, err := GetAnnotator(name)
+	if err != nil {
+		return err
+	}
+	if a == nil {
+		return fmt.Errorf("no annotator named %q", name)
+	}
+	_, err = db.Exec(`DELETE FROM annotations WHERE message_id = ? AND annotator_id = ? AND source = ?`,
+		messageID, a.ID, SourceHuman)
 	return err
 }
 
@@ -737,6 +795,22 @@ type HumanRuling struct {
 	Confidence float64
 	// Ruled is what the person said.
 	Ruled bool
+	// SaidLevel and RuledLevel are the levels, for a levelled label.
+	SaidLevel, RuledLevel string
+	// Via is how the ruling was made: RuledInflow, RuledReview, or empty for a
+	// ruling recorded before anyone kept track.
+	Via string
+}
+
+// Unbiased reports whether this ruling may be used to measure the model.
+func (r HumanRuling) Unbiased() bool { return r.Via == RuledReview }
+
+// Agrees reports whether the machine and the person gave the same answer.
+func (r HumanRuling) Agrees() bool {
+	if r.Said != r.Ruled {
+		return false
+	}
+	return r.SaidLevel == r.RuledLevel
 }
 
 // HumanRulings returns every message a person has ruled on for an annotator,
@@ -750,7 +824,10 @@ func HumanRulings(annotatorID string) ([]HumanRuling, error) {
 		SELECT h.message_id,
 		       CASE WHEN mach.status = ? THEN 1 ELSE 0 END,
 		       COALESCE(mach.confidence, 0),
-		       CASE WHEN h.status = ? THEN 1 ELSE 0 END
+		       CASE WHEN h.status = ? THEN 1 ELSE 0 END,
+		       COALESCE(json_extract(mach.data_json, '$.level'), ''),
+		       COALESCE(json_extract(h.data_json, '$.level'), ''),
+		       COALESCE(h.ruled_via, '')
 		FROM annotations h
 		JOIN annotations mach
 		  ON mach.message_id = h.message_id
@@ -768,7 +845,8 @@ func HumanRulings(annotatorID string) ([]HumanRuling, error) {
 	for rows.Next() {
 		var r HumanRuling
 		var said, ruled int
-		if err := rows.Scan(&r.MessageID, &said, &r.Confidence, &ruled); err != nil {
+		if err := rows.Scan(&r.MessageID, &said, &r.Confidence, &ruled,
+			&r.SaidLevel, &r.RuledLevel, &r.Via); err != nil {
 			return nil, err
 		}
 		r.Said, r.Ruled = said == 1, ruled == 1

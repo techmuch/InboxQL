@@ -20,7 +20,7 @@ import { openContact, openMessage, openQuery, useViewerStore } from '../lib/tabs
 import {
   contactName,
   getContactResponsiveness,
-  modifyContactTag,
+  modifyContactLabel,
   runQuery,
   setContactNotes,
   type Contact,
@@ -77,7 +77,7 @@ export const ContactCard = ({ address }: { address: string }) => {
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
 
-  // Tag editing state
+  // Label editing state
   const [newTag, setNewTag] = useState('');
   const [isAddingTag, setIsAddingTag] = useState(false);
 
@@ -144,8 +144,8 @@ export const ContactCard = ({ address }: { address: string }) => {
     const tag = newTag.trim().toLowerCase();
     if (!tag) return;
     try {
-      const res = await modifyContactTag(address, tag, 'add');
-      setContact(prev => prev ? { ...prev, tags: res.tags } : null);
+      const res = await modifyContactLabel(address, tag, 'add');
+      setContact(prev => prev ? { ...prev, labels: res.labels } : null);
       setNewTag('');
       setIsAddingTag(false);
     } catch (err) {
@@ -155,8 +155,8 @@ export const ContactCard = ({ address }: { address: string }) => {
 
   const handleRemoveTag = async (tag: string) => {
     try {
-      const res = await modifyContactTag(address, tag, 'remove');
-      setContact(prev => prev ? { ...prev, tags: res.tags } : null);
+      const res = await modifyContactLabel(address, tag, 'remove');
+      setContact(prev => prev ? { ...prev, labels: res.labels } : null);
     } catch (err) {
       console.error(err);
     }
@@ -217,18 +217,18 @@ export const ContactCard = ({ address }: { address: string }) => {
             <h2 className="truncate text-2xl font-bold">{contactName(contact)}</h2>
             <p className="truncate font-mono text-sm text-muted-foreground">{contact.address}</p>
 
-            {/* Custom tags pills */}
+            {/* Labels — the same word as on mail, and queried the same way. */}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {(contact.tags ?? []).map(t => (
+              {(contact.labels ?? []).map(t => (
                 <span
                   key={t}
                   className="inline-flex items-center gap-1 border border-border bg-accent/30 px-2 py-0.5 text-xs text-foreground group rounded-sm"
                 >
                   <button
                     type="button"
-                    onClick={() => openQuery(`in:contacts tag:${t}`)}
+                    onClick={() => openQuery(`in:contacts label:${t}`)}
                     className="hover:underline flex items-center gap-1 cursor-pointer"
-                    title={`Filter contacts by tag:${t}`}
+                    title={`Contacts labelled ${t}`}
                   >
                     <Tag className="h-2.5 w-2.5 text-muted-foreground" />
                     <span>{t}</span>
@@ -237,7 +237,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                     type="button"
                     onClick={() => handleRemoveTag(t)}
                     className="text-muted-foreground hover:text-destructive cursor-pointer ml-0.5"
-                    title={`Remove tag ${t}`}
+                    title={`Remove the label ${t}`}
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -249,7 +249,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                     type="text"
                     value={newTag}
                     onChange={e => setNewTag(e.target.value)}
-                    placeholder="tag name..."
+                    placeholder="label…"
                     autoFocus
                     className="h-6 w-24 bg-background border border-primary px-1.5 text-xs outline-none rounded-xs"
                   />
@@ -274,7 +274,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                   onClick={() => setIsAddingTag(true)}
                   className="inline-flex items-center gap-1 border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors cursor-pointer rounded-sm"
                 >
-                  <Plus className="h-3 w-3" /> Tag
+                  <Plus className="h-3 w-3" /> Label
                 </button>
               )}
             </div>
@@ -341,6 +341,18 @@ export const ContactCard = ({ address }: { address: string }) => {
             {/* Open Loops */}
             <div className="space-y-3 pt-1">
               <div className="text-xs font-medium text-foreground">Open Loops (Pending Replies)</div>
+              {/* Says what these lists are made of. Who-sent-last alone lists
+                  every "thanks!" and every newsletter as waiting on you; the
+                  `loops` label is what tells an open loop from a closed one. */}
+              <p className="text-[11px] text-muted-foreground">
+                {responsiveness.loopsJudged
+                  ? <>Judged by the <span className="font-mono">loops</span> label where it has looked
+                      {(responsiveness.closedByJudgement ?? 0) > 0 &&
+                        <> — {responsiveness.closedByJudgement} closed conversation{responsiveness.closedByJudgement === 1 ? '' : 's'} left out</>}
+                      . Rows marked <span className="italic">unjudged</span> are listed on who sent last.</>
+                  : <>By who sent last, which counts every newsletter as waiting on you. Install the
+                      <span className="font-mono"> loops</span> label (Settings → AI → starters) to judge them.</>}
+              </p>
 
               {responsiveness.awaitingMyReplyCount === 0 && responsiveness.awaitingTheirReplyCount === 0 && (
                 <div className="border border-border/70 bg-accent/20 px-3 py-2 text-xs text-muted-foreground flex items-center gap-2">
@@ -374,6 +386,9 @@ export const ContactCard = ({ address }: { address: string }) => {
                           >
                             {t.subject || '(no subject)'}
                           </button>
+                          {responsiveness.loopsJudged && !t.judged && (
+                            <span className="shrink-0 text-[10px] italic text-muted-foreground">unjudged</span>
+                          )}
                           <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
                             {new Date(t.lastMessageAt).toLocaleDateString()}
                           </span>
@@ -405,6 +420,9 @@ export const ContactCard = ({ address }: { address: string }) => {
                           >
                             {t.subject || '(no subject)'}
                           </button>
+                          {responsiveness.loopsJudged && !t.judged && (
+                            <span className="shrink-0 text-[10px] italic text-muted-foreground">unjudged</span>
+                          )}
                           <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
                             {new Date(t.lastMessageAt).toLocaleDateString()}
                           </span>

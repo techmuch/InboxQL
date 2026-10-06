@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 38
+	SchemaVersion = 40
 )
 
 var (
@@ -1663,6 +1663,66 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 38
+	}
+
+	if currentVersion < 39 {
+		log.Println("Applying schema migration v39 (a ruling says how it was made)...")
+		// A human ruling is the ground truth calibration and accuracy are
+		// measured against, and it was being treated as one kind of thing when
+		// it is two. A ruling made because somebody noticed a label was wrong is
+		// a sample of the model's mistakes; one made because a random draw put
+		// the message in front of them is a sample of the model. Fit a
+		// temperature on the first and it concludes the model is never right.
+		//
+		// 'inflow' is the first, 'review' the second. Rulings made before this
+		// column existed are left NULL — nobody recorded how they were made, and
+		// guessing 'review' would launder corrections into the unbiased set.
+		if _, err := db.Exec(`ALTER TABLE annotations ADD COLUMN ruled_via TEXT;`); err != nil {
+			log.Printf("Warning v39: %v", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 39;"); err != nil {
+			return err
+		}
+		currentVersion = 39
+	}
+
+	if currentVersion < 40 {
+		log.Println("Applying schema migration v40 (contact tags become labels)...")
+		// A tag was a weaker label: hand-applied only, with no record of who
+		// said so. "label" now means one thing for mail and for people — a
+		// named judgement, from a person or a model, with its source and how
+		// sure — so a model can label a contact the way it labels a message.
+		//
+		// Copied rather than renamed in place, because the new table has two
+		// columns the old one never had, and every row that existed was put
+		// there by a person: source 'human', confidence 1.
+		if _, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS contact_labels (
+				address    TEXT NOT NULL REFERENCES contacts(address) ON DELETE CASCADE,
+				label      TEXT NOT NULL,
+				source     TEXT NOT NULL DEFAULT 'human',
+				confidence REAL,
+				created_at INTEGER NOT NULL,
+				PRIMARY KEY (address, label)
+			);
+			CREATE INDEX IF NOT EXISTS idx_contact_labels_label ON contact_labels(label);
+			CREATE INDEX IF NOT EXISTS idx_contact_labels_address ON contact_labels(address);`); err != nil {
+			return fmt.Errorf("failed to apply schema v40: %w", err)
+		}
+		if tableExists(db, "contact_tags") {
+			if _, err := db.Exec(`
+				INSERT OR IGNORE INTO contact_labels (address, label, source, confidence, created_at)
+				SELECT address, tag, 'human', 1.0, created_at FROM contact_tags;`); err != nil {
+				return fmt.Errorf("failed to copy contact tags: %w", err)
+			}
+			if _, err := db.Exec(`DROP TABLE contact_tags;`); err != nil {
+				return fmt.Errorf("failed to drop contact_tags: %w", err)
+			}
+		}
+		if _, err := db.Exec("PRAGMA user_version = 40;"); err != nil {
+			return err
+		}
+		currentVersion = 40
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

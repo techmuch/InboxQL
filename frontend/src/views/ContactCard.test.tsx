@@ -67,8 +67,8 @@ describe('ContactCard', () => {
           toRatio: 0.83,
           hourlyDistribution: [0, 0, 0, 0, 0, 0, 0, 0, 2, 5, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         };
-      } else if (url.includes('/api/contacts/tags')) {
-        body = { address: 'alice@acme.com', tags: ['vip', 'client'] };
+      } else if (url.includes('/api/contacts/labels')) {
+        body = { address: 'alice@acme.com', labels: ['vip', 'client'] };
       } else if (url.includes('/api/contacts/notes')) {
         body = { address: 'alice@acme.com', notes: 'Updated note' };
       } else if (url.startsWith('/api/contacts')) {
@@ -162,15 +162,16 @@ describe('ContactCard', () => {
     });
   });
 
-  it('renders tag controls and supports adding a tag', async () => {
+  // Contact tags are labels now: the same word as on mail.
+  it('renders label controls and supports adding a label', async () => {
     mockServer();
     render(<ContactCard address="alice@acme.com" />);
 
-    const tagButton = await screen.findByRole('button', { name: /Tag/i });
+    const tagButton = await screen.findByRole('button', { name: /^Label$/i });
     expect(tagButton).toBeInTheDocument();
     fireEvent.click(tagButton);
 
-    const tagInput = screen.getByPlaceholderText('tag name...');
+    const tagInput = screen.getByPlaceholderText('label…');
     expect(tagInput).toBeInTheDocument();
 
     fireEvent.change(tagInput, { target: { value: 'client' } });

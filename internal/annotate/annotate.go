@@ -411,11 +411,67 @@ func evaluate(ctx context.Context, p llm.Provider, a *store.Annotator, m *messag
 	system := buildSystemPrompt(a)
 	user := renderMessage(a, m)
 
+	// A conversation annotator reads the whole conversation. This is what a
+	// generative model has that the decision model does not: a window large
+	// enough for the exchange rather than one message's opening paragraphs.
+	var digest *store.ThreadDigest
+	if a.Unit() == store.UnitThread {
+		if msgs, err := store.ThreadMessages(m.ID); err == nil && len(msgs) > 0 {
+			user = renderConversation(a, msgs)
+		}
+		digest, _ = store.DigestThread(m.ID)
+	}
+
 	raw, err := p.Complete(ctx, system, user)
 	if err != nil {
 		return nil, err
 	}
-	return parseResponse(a, raw)
+	results, err := parseResponse(a, raw)
+	if err != nil {
+		return nil, err
+	}
+	// Which way it points is a fact the database knows, so it is recorded
+	// from there rather than asked of the model.
+	if digest != nil {
+		for i := range results {
+			if results[i].Data == nil {
+				results[i].Data = map[string]any{}
+			}
+			results[i].Data["lastFromMe"] = digest.LastFromMe
+			results[i].Data["messages"] = digest.Messages
+		}
+	}
+	return results, nil
+}
+
+// renderConversation is a whole conversation as the user half of the prompt,
+// oldest first, keeping the newest messages when it is too long — the end of a
+// conversation is what decides whether anyone is still waiting.
+func renderConversation(a *store.Annotator, msgs []*message.Message) string {
+	const maxTotal = 24000
+	parts := make([]string, 0, len(msgs))
+	used := 0
+	for i := len(msgs) - 1; i >= 0; i-- {
+		part := renderMessage(a, msgs[i])
+		const maxEach = 6000
+		if len(part) > maxEach {
+			part = part[:maxEach] + "\n[truncated]"
+		}
+		if used+len(part) > maxTotal && len(parts) > 0 {
+			parts = append(parts, fmt.Sprintf("[%d earlier message(s) omitted]", i+1))
+			break
+		}
+		parts = append(parts, part)
+		used += len(part)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "A conversation of %d message(s), oldest first. Judge it as a whole; the last message is the newest.\n\n", len(msgs))
+	for i := len(parts) - 1; i >= 0; i-- {
+		b.WriteString("----- message -----\n")
+		b.WriteString(parts[i])
+		b.WriteString("\n\n")
+	}
+	return b.String()
 }
 
 // buildSystemPrompt turns an annotator into instructions plus an output
@@ -431,7 +487,19 @@ func buildSystemPrompt(a *store.Annotator) string {
 	b.WriteString(a.Instructions)
 	b.WriteString("\n\n")
 
-	if a.Kind == store.KindLabel {
+	if levels := a.Levels(); a.Kind == store.KindLabel && len(levels) > 0 {
+		b.WriteString("Choose exactly one level, from most to least:\n")
+		for _, l := range levels {
+			if l.Describe != "" {
+				fmt.Fprintf(&b, "- %s: %s\n", l.Label, l.Describe)
+			} else {
+				fmt.Fprintf(&b, "- %s\n", l.Label)
+			}
+		}
+		b.WriteString(`
+Reply with JSON only, in this exact shape:
+{"level": "<one of the levels above>", "confidence": 0.0-1.0}`)
+	} else if a.Kind == store.KindLabel {
 		b.WriteString(`Reply with JSON only, in this exact shape:
 {"matched": true|false, "confidence": 0.0-1.0}
 
@@ -507,6 +575,23 @@ func parseResponse(a *store.Annotator, raw string) ([]Result, error) {
 	}
 	if j := strings.LastIndex(text, "}"); j >= 0 && j < len(text)-1 {
 		text = text[:j+1]
+	}
+
+	if a.Kind == store.KindLabel && len(a.Levels()) > 0 {
+		var reply struct {
+			Level      string   `json:"level"`
+			Confidence *float64 `json:"confidence"`
+		}
+		if err := json.Unmarshal([]byte(text), &reply); err != nil {
+			return nil, fmt.Errorf("could not read the model's reply as JSON: %w", err)
+		}
+		// A generative model can answer with a level that does not exist.
+		// Refused rather than stored: a made-up level would match no query
+		// and quietly drop out of every count.
+		if !a.HasLevel(reply.Level) {
+			return nil, fmt.Errorf("the model answered level %q, which is not one of this label's levels", reply.Level)
+		}
+		return []Result{{Matched: true, Data: map[string]any{"level": reply.Level}, Confidence: reply.Confidence}}, nil
 	}
 
 	if a.Kind == store.KindLabel {

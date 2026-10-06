@@ -10,6 +10,7 @@ import {
 } from '../ai/api';
 import { Notice } from '../ai/Models';
 import { useQueryStore } from '../../lib/filters';
+import { ReviewPanel, ScoreLine, type AnnotatorScore } from './Review';
 
 /**
  * Annotators — the labelling and extraction surface.
@@ -188,15 +189,27 @@ export const Annotators = () => {
                     `Delete "${a.name}" and every result it produced? Messages are untouched.`,
                   )) return;
                   try {
-                    await deleteAnnotator(a.name);
+                    let out;
+                    try {
+                      out = await deleteAnnotator(a.name);
+                    } catch (e) {
+                      // Something is scoped on it. Say what, and only then
+                      // switch those off — never as a side effect of a
+                      // confirmation that did not mention them.
+                      const msg = e instanceof Error ? e.message : String(e);
+                      if (!/ gates /.test(msg)) throw e;
+                      if (!window.confirm(`${msg.split('\n')[0]}\n\nSwitch them off and delete ${a.name}? What they found is kept.`)) return;
+                      out = await deleteAnnotator(a.name, true);
+                    }
                     await load();
-                    setNotice({ ok: true, text: `Deleted ${a.name}.` });
+                    const off = out?.disabled?.length ? ` Switched off ${out.disabled.join(', ')}.` : '';
+                    setNotice({ ok: true, text: `Deleted ${a.name}.${off}` });
                   } catch (e) {
                     setNotice({ ok: false, text: e instanceof Error ? e.message : String(e) });
                   }
                 }}
                 onShowResults={() => setQuery(
-                  a.kind === 'extract' ? `| extract ${a.name}` : `label:${a.name}`,
+                  a.kind === 'extract' ? `extract:${a.name}` : `label:${a.name}`,
                 )}
               />
             ))}
@@ -276,6 +289,21 @@ const AnnotatorCard = ({
 
   const off = a.enabled === false;
 
+  // Only a label can be ruled on yes/no or by level; an extractor's rulings
+  // are corrections to spans, made in the message's Values view.
+  const isLabel = a.kind === 'label';
+  const levels = levelsOf(a);
+  const [score, setScore] = useState<AnnotatorScore | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const loadScore = useCallback(() => {
+    if (!isLabel) return;
+    fetch(`/api/annotators/score?name=${encodeURIComponent(a.name)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(setScore)
+      .catch(() => setScore(null));
+  }, [a.name, isLabel]);
+  useEffect(loadScore, [loadScore, a.version]);
+
   return (
     <div className={`border border-border bg-card ${off ? 'opacity-60' : ''}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
@@ -349,6 +377,19 @@ const AnnotatorCard = ({
           >
             Results
           </button>
+          {isLabel && (
+            <button
+              type="button"
+              onClick={() => setReviewing(true)}
+              disabled={done === 0}
+              title={done === 0
+                ? 'Nothing to review until it has answered something'
+                : 'Rule on ten messages drawn at random — the rulings accuracy is measured on'}
+              className="border border-border px-2 py-0.5 text-xs hover:bg-accent/40 disabled:opacity-50"
+            >
+              Review
+            </button>
+          )}
           <button
             type="button"
             onClick={onDelete}
@@ -361,6 +402,19 @@ const AnnotatorCard = ({
       </div>
 
       <p className="truncate px-4 pb-2 font-mono text-xs text-muted-foreground">{a.instructions}</p>
+      {isLabel && (
+        <div className="px-4 pb-2">
+          <ScoreLine score={score} />
+        </div>
+      )}
+      {reviewing && (
+        <ReviewPanel
+          name={a.name}
+          question={a.instructions}
+          levels={levels}
+          onClose={ruled => { setReviewing(false); if (ruled > 0) loadScore(); }}
+        />
+      )}
 
       {/* A running job, which is a different fact from coverage and so gets
           its own bar. The coverage one below cannot move while a job runs —
@@ -409,12 +463,20 @@ const AnnotatorCard = ({
         </span>
       </div>
 
-      {a.scopeBroken && (
+      {a.scopeBroken && (off ? (
+        // Off is the safe state for this, and usually why it is off: deleting
+        // the label it was scoped on switches it off in the same step. Said as
+        // a next step rather than as an alarm about a run that cannot happen.
+        <Banner tone="warn">
+          Its scope <code className="font-mono">{a.scope}</code> names a label that no longer
+          exists, which is why it is off. Re-scope it before switching it back on.
+        </Banner>
+      ) : (
         <Banner tone="error">
           Its scope <code className="font-mono">{a.scope}</code> no longer compiles — usually a
           label that was deleted. A run would cover the whole mailbox; edit it to narrow it again.
         </Banner>
-      )}
+      ))}
 
       {a.profileMissing && (
         <Banner tone="error">
@@ -704,4 +766,15 @@ function describeRun(a: Annotator, out: RunOutcome, dryRun: boolean): string {
   const matched = out.matched ?? out.records ?? 0;
   return `${a.name} evaluated ${evaluated.toLocaleString()} message${evaluated === 1 ? '' : 's'}, ` +
     `matching ${matched.toLocaleString()}.`;
+}
+
+/** A levelled label's levels, from its schema; empty for a yes/no one. */
+function levelsOf(a: Annotator): { label: string; describe?: string }[] {
+  if (a.kind !== 'label' || !a.schemaJson) return [];
+  try {
+    const parsed = JSON.parse(a.schemaJson);
+    return Array.isArray(parsed?.levels) ? parsed.levels : [];
+  } catch {
+    return [];
+  }
 }

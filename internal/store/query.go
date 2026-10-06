@@ -406,7 +406,7 @@ func scanContacts(ctx context.Context, plan *query.Plan) ([]*Contact, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if err := PopulateContactTags(out); err != nil {
+	if err := PopulateContactLabels(out); err != nil {
 		return nil, err
 	}
 	return out, nil

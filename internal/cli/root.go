@@ -1,6 +1,10 @@
 package cli
 
 import (
+	"io/fs"
+
+	inboxql "github.com/user/inboxql"
+
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +25,7 @@ var subcommands = map[string][]string{
 	"llm":         {"status", "configure", "test", "disable"},
 	"maintenance": {"vacuum", "analyze", "integrity", "checkpoint"},
 	"import":      {"sources", "mailboxes", "scan", "run", "eml"},
+	"skills":      {"list", "install", "remove"},
 	"draft":       {"create", "list", "show", "delete"},
 	"outbox":      {"list", "show", "approve", "reject"},
 	"service":     {"install", "uninstall", "start", "stop", "restart", "status"},
@@ -134,9 +139,9 @@ const (
 // commandOrder is the sequence commands appear in help, chosen to match the
 // order someone meets them rather than the alphabet.
 var commandOrder = []string{
-	"setup", "where", "service", "update", "hosts", "init", "start", "version", "doctor",
+	"setup", "where", "service", "update", "hosts", "init", "start", "open", "version", "doctor",
 	"account", "user", "vault", "llm", "maintenance", "ocr", "gliner", "laya", "backup", "restore",
-	"import", "export", "log", "ui", "annotate", "ticket", "contact",
+	"import", "export", "log", "ui", "skills", "annotate", "ticket", "contact",
 	"query", "saved", "sql", "search", "read", "analyze", "draft", "send", "outbox",
 }
 
@@ -152,11 +157,11 @@ func listedInOrder(name string) bool {
 var commandGroup = map[string]string{
 	"setup": groupStart, "where": groupStart, "service": groupStart, "update": groupStart,
 	"hosts": groupStart,
-	"init":  groupStart, "start": groupStart, "version": groupStart, "doctor": groupStart,
+	"init":  groupStart, "start": groupStart, "open": groupStart, "version": groupStart, "doctor": groupStart,
 	"account": groupAdmin, "user": groupAdmin, "vault": groupAdmin, "llm": groupAdmin,
 	"maintenance": groupAdmin, "ocr": groupAdmin, "gliner": groupAdmin, "laya": groupAdmin,
 	"backup": groupAdmin, "restore": groupAdmin,
-	"import": groupAdmin, "export": groupAdmin, "log": groupAdmin, "ui": groupAdmin,
+	"import": groupAdmin, "export": groupAdmin, "log": groupAdmin, "ui": groupAdmin, "skills": groupAdmin,
 	"annotate": groupAdmin, "ticket": groupAdmin, "contact": groupAdmin,
 	// query and sql lead the agent group: they are the general tools, and
 	// search is the narrow one kept for compatibility with existing callers.
@@ -227,6 +232,17 @@ and ` + "`iql --data ./data doctor`" + ` are the same invocation.`,
 		Short:  "show help for a command",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Not a command: the agent contract, AGENTS.md, as embedded in
+			// this binary — so it describes this version, and an installed
+			// skill can point an agent at it without a checkout or a network.
+			if len(args) == 1 && args[0] == "agents" {
+				b, err := fs.ReadFile(inboxql.Docs, "AGENTS.md")
+				if err != nil {
+					return Fail(ExitError, "%v", err)
+				}
+				_, err = cmd.OutOrStdout().Write(b)
+				return err
+			}
 			target, _, err := root.Find(args)
 			if err != nil || target == nil {
 				return Fail(ExitUsage, "unknown command %q", strings.Join(args, " "))

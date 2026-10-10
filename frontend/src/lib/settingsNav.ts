@@ -14,8 +14,23 @@ export function requestSettingsSection(id: string) {
   window.dispatchEvent(new CustomEvent(SETTINGS_SECTION_EVENT, { detail: id }));
 }
 
+const STORED = 'iql:settings-section';
+
 export function takeSettingsSection(): string | null {
-  const id = pending;
+  let id = pending;
   pending = null;
+  // A section asked for before a restart, read once after the reload.
+  try {
+    const stored = sessionStorage.getItem(STORED);
+    if (stored) {
+      sessionStorage.removeItem(STORED);
+      id = id ?? stored;
+    }
+  } catch { /* storage unavailable: start at the default section */ }
   return id;
+}
+
+/** Return to a section after the page reloads — across a restart. */
+export function rememberSettingsSection(id: string) {
+  try { sessionStorage.setItem(STORED, id); } catch { /* best effort */ }
 }

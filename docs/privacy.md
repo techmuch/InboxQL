@@ -27,6 +27,12 @@ An annotator that would send mail to a remote provider refuses to run until you
 have agreed to it, for that annotator, and its **Plan** says how many messages
 and roughly how much text would be sent, and where.
 
+Two other requests ever leave, each only when you press its button: checking
+for an update (to GitHub), and fetching a picture from **Gravatar** — one
+address per press, after which the picture is kept here. A Gravatar lookup
+tells Gravatar the address you looked up, which is why it is never done for
+everyone at once and never done by a page loading.
+
 ## When a password is asked for
 
 InboxQL listens on `127.0.0.1` — this computer only — and there it does not ask

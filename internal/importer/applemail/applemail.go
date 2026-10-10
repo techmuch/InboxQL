@@ -21,6 +21,8 @@
 package applemail
 
 import (
+	"github.com/user/inboxql/internal/tcc"
+
 	"context"
 	"fmt"
 	"io/fs"
@@ -56,8 +58,32 @@ func NewAt(mailRoot string) *Source { return &Source{mailRoot: mailRoot} }
 func (s *Source) ID() string   { return "apple-mail" }
 func (s *Source) Name() string { return "Apple Mail" }
 
-const fullDiskAccessRemedy = "Grant Full Disk Access to the program running InboxQL, then restart it:\n" +
-	"  System Settings → Privacy & Security → Full Disk Access"
+// blocked is the permission case, naming the program macOS will ask about.
+func blocked(root, detail string) importer.Detection {
+	g := tcc.Responsible(executablePath())
+	return importer.Detection{Available: true, Root: root, Detail: detail,
+		Remedy: diskAccessRemedy(g), Grantee: &g}
+}
+
+// diskAccessRemedy says who needs the grant. macOS asks about the app that
+// started InboxQL, not InboxQL: the iql binary under the login service, the
+// terminal when it was typed into one.
+func diskAccessRemedy(g tcc.Grantee) string {
+	where := "System Settings → Privacy & Security → Full Disk Access"
+	switch g.Kind {
+	case "app":
+		return fmt.Sprintf("Grant Full Disk Access to %s, then restart InboxQL:\n  %s\n\n"+
+			"%s, not iql: InboxQL was started from %s, and macOS asks about the app that started it.\n  %s",
+			g.Name, where, g.Name, g.Name, g.Path)
+	case "unsure":
+		return fmt.Sprintf("Grant Full Disk Access to the app InboxQL was started from — for tmux or screen, "+
+			"the terminal that started them — then restart InboxQL:\n  %s\n\n"+
+			"Adding the program itself as well does no harm:\n  %s", where, g.Binary)
+	default:
+		return fmt.Sprintf("Grant Full Disk Access to the program running InboxQL, then restart it:\n  %s\n\n"+
+			"  Currently running as: %s", where, g.Path)
+	}
+}
 
 func (s *Source) mailDir() string {
 	if s.mailRoot != "" {
@@ -85,11 +111,7 @@ func (s *Source) Detect() importer.Detection {
 		}
 	case os.IsPermission(err):
 		// The interesting case, and the one people lose an hour to.
-		return importer.Detection{
-			Available: true, Root: dir,
-			Detail: fmt.Sprintf("%s exists but cannot be read", dir),
-			Remedy: fullDiskAccessRemedy + "\n  Currently running as: " + executablePath(),
-		}
+		return blocked(dir, fmt.Sprintf("%s exists but cannot be read", dir))
 	case err != nil:
 		return importer.Detection{Available: true, Root: dir, Detail: err.Error()}
 	}
@@ -118,11 +140,7 @@ func (s *Source) Detect() importer.Detection {
 	// Readable at the top level does not mean readable throughout: TCC can
 	// allow the listing and refuse the contents, so probe one level deeper.
 	if _, err := os.ReadDir(best); os.IsPermission(err) {
-		return importer.Detection{
-			Available: true, Root: best,
-			Detail: fmt.Sprintf("%s cannot be read", best),
-			Remedy: fullDiskAccessRemedy + "\n  Currently running as: " + executablePath(),
-		}
+		return blocked(best, fmt.Sprintf("%s cannot be read", best))
 	}
 
 	s.root = best

@@ -81,6 +81,11 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/system", auth.Middleware(systemMux))
 	mux.Handle("/api/system/", auth.Middleware(systemMux))
 
+	avatarMux := http.NewServeMux()
+	registerAvatarRoutes(avatarMux)
+	mux.Handle("/api/avatars", auth.Middleware(avatarMux))
+	mux.Handle("/api/avatars/", auth.Middleware(avatarMux))
+
 	docsMux := http.NewServeMux()
 	registerDocsRoutes(docsMux)
 	mux.Handle("/api/docs", auth.Middleware(docsMux))
@@ -270,7 +275,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.83",
+	Version: "0.0.84",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.

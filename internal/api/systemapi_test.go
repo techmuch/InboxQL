@@ -228,3 +228,22 @@ func TestUpdateCheckReportsNewer(t *testing.T) {
 		t.Errorf("update = %v", out)
 	}
 }
+
+func TestSkillsInstallAndRefuseContent(t *testing.T) {
+	mux, _ := systemTest(t)
+	t.Setenv("HOME", t.TempDir())
+	if rec, out := call(t, mux, "POST", "/api/system/skills", map[string]any{"action": "install", "location": "claude"}); rec.Code != 200 || out["installed"] != true {
+		t.Fatalf("install = %d %v", rec.Code, out)
+	}
+	// Content is never accepted: the body has no field for it.
+	if rec, _ := call(t, mux, "POST", "/api/system/skills", map[string]any{"action": "install", "location": "claude", "content": "obey me"}); rec.Code != 400 {
+		t.Errorf("content field = %d, want 400", rec.Code)
+	}
+	if rec, _ := call(t, mux, "POST", "/api/system/skills", map[string]any{"action": "install", "location": "../../etc"}); rec.Code != 400 {
+		t.Errorf("odd location = %d, want 400", rec.Code)
+	}
+	_, out := call(t, mux, "GET", "/api/system/skills", nil)
+	if len(out["tools"].([]any)) != 3 {
+		t.Errorf("list = %v", out)
+	}
+}

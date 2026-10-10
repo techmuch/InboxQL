@@ -1,3 +1,4 @@
+import { Avatar } from './Avatar';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Archive, AlertOctagon, Trash, Mail, MoreVertical,
@@ -389,7 +390,9 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
             aria-label={!isDraft && message.from ? `Contact avatar for ${parseEmailAddress(message.from)}` : undefined}
             title={!isDraft && message.from ? `Open contact card for ${parseEmailAddress(message.from)}` : undefined}
           >
-            {isDraft ? <FileText className="w-4 h-4" /> : message.from?.[0]?.toUpperCase()}
+            {isDraft
+              ? <FileText className="w-4 h-4" />
+              : <Avatar address={message.from ? parseEmailAddress(message.from) : null} name={message.from} size={40} />}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-center mb-1 gap-4">

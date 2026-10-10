@@ -1224,10 +1224,33 @@ iql --json hosts show             a named address, if one is set
 | `service install\|uninstall\|start\|stop\|restart\|status` | a LaunchAgent / systemd user unit / logon task, from login to logout |
 | `update [--check] [--yes]` | verify, back up the mailbox, stop the service, replace the binary, start it |
 | `hosts set <name>\|remove\|show` | a name such as `inboxql.localhost` in the hosts file |
+| `open [--print]` | open the running server in the browser; `--print` only prints the address |
+| `skills list\|install\|remove <tool>` | the iql skill for Claude Code (`~/.claude/skills/iql`) and Codex / Gemini CLI (`~/.agents/skills/iql`) |
 
-**Only `where`, `service status`, `update --check` and `hosts show` are yours to
-run unasked.** The rest change the machine — a login item, the binary, the
+**Only `where`, `service status`, `update --check`, `hosts show`, `skills list`
+and `open --print` are yours to run unasked.** The rest change the machine — a login item, the binary, the
 hosts file, the mailbox's schema — and need the person to ask for them.
+
+**`iql open` is for people.** It adds a browser tab with no explanation. To put
+something in front of a person, use `iql ui query <window> <query> --note <why>`.
+
+**Skills.** `iql skills install` writes a short guide to iql — the rules above,
+the commonest commands, and a pointer to `iql help agents`, which prints this
+whole file from the binary. Do not install one unasked: it is a change to
+another program's configuration. A folder named `iql` that iql did not write is
+never touched; installed skills are refreshed when a new version starts.
+
+**Pictures of people** come from Gravatar only on request: `POST
+/api/avatars/gravatar {"address": …}`, one address at a time, after which the
+picture is served from the mailbox. Each fetch tells Gravatar the person is in
+the user's mail, so never fetch in bulk, and not unasked.
+
+**Full Disk Access** has no prompt to trigger. Import's `blocked` detection now
+carries `grantee`: the program macOS will actually ask about — `kind: "app"` (the
+terminal or editor InboxQL was started from), `"binary"` (iql itself, under the
+login service) or `"unsure"` (started inside tmux, screen or SSH). Relay the
+name; the usual mistake is granting it to iql when the terminal is what macOS
+checks.
 
 **One server per mailbox.** A running server holds a lock in its data
 directory. `iql start` on a held mailbox prints where the running one is and

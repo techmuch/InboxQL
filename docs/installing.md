@@ -75,6 +75,7 @@ iql service stop        # until the next login
 iql service start
 iql service restart     # after editing settings.json by hand
 iql service uninstall   # stop it and remove the definition; mail is untouched
+iql open                # open it in your browser
 ```
 
 **Settings → System** shows the same state and has a **Restart** button.

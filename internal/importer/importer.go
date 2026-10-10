@@ -17,6 +17,8 @@
 package importer
 
 import (
+	"github.com/user/inboxql/internal/tcc"
+
 	"context"
 	"errors"
 	"time"
@@ -43,6 +45,9 @@ type Detection struct {
 	Detail string `json:"detail"`
 	// Remedy is actionable advice when unusable, empty otherwise.
 	Remedy string `json:"remedy,omitempty"`
+	// Grantee is the program that needs Full Disk Access, in the permission
+	// case: the one macOS will actually ask about, which is not always iql.
+	Grantee *tcc.Grantee `json:"grantee,omitempty"`
 }
 
 // Mailbox is one folder in a source. Mailboxes nest, so this is a flat list

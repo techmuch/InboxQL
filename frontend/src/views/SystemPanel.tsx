@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  AlertTriangle, BatteryCharging, Check, Copy, Cpu, Download, FolderOpen, Globe, Loader2,
+  AlertTriangle, BatteryCharging, Bot, Check, Copy, Cpu, Download, FolderOpen, Globe, Loader2,
   Power, RefreshCw, RotateCw, Server, Settings2,
 } from 'lucide-react';
 import { expectRestart, useRestartExpectation, clearRestartExpectation } from '../lib/devReload';
@@ -327,6 +327,8 @@ export const SystemPanel = () => {
       </div>
 
       <UpdateSection state={state} />
+
+      <SkillsSection />
 
       <MachineSettingsEditor
         onChanged={load}
@@ -784,5 +786,89 @@ const MailboxSwitch = ({ current, onDone }: { current: string; onDone: (r: Setti
         </div>
       )}
     </div>
+  );
+};
+
+interface SkillTool { id: string; name: string; installed: boolean; location: string }
+interface SkillLocation {
+  id: string; path: string; tools: string[];
+  installed: boolean; version?: string; current: boolean; foreign?: boolean;
+}
+
+/**
+ * AI assistants: a short guide to iql installed where coding tools look for
+ * skills, so an agent the user runs knows the rules before it starts. Two
+ * folders cover the three tools — Codex and Gemini CLI share one.
+ */
+const SkillsSection = () => {
+  const [data, setData] = useState<{ tools: SkillTool[]; locations: SkillLocation[]; version: string } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(() => {
+    fetch('/api/system/skills', { cache: 'no-store' }).then(r => r.json()).then(setData).catch(() => setError('could not read the skills'));
+  }, []);
+  useEffect(load, [load]);
+
+  const change = async (action: 'install' | 'remove', location: string) => {
+    setBusy(location); setError(null);
+    const { ok, data: d } = await sendJSON('POST', '/api/system/skills', { action, location });
+    setBusy(null);
+    if (!ok) setError(errorText(d));
+    load();
+  };
+
+  if (!data) return null;
+  const btn = 'border border-border px-3 py-1 hover:bg-accent disabled:opacity-50';
+  return (
+    <section className="border border-border bg-card/40 p-4">
+      <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+        <Bot className="h-3.5 w-3.5" /> AI assistants
+      </h3>
+      <p className="text-[11px] text-muted-foreground mb-3">
+        Install a short guide to <span className="font-mono">iql</span> where AI coding tools look for skills, so an agent
+        you run knows the rules before it starts — that it can draft mail but not send it, how queries work, and where
+        the full contract is (<span className="font-mono">iql help agents</span>). Nothing is installed unless you press
+        Install, and only a skill InboxQL wrote is ever replaced or removed. Updates keep installed ones current.
+      </p>
+      <div className="space-y-3 text-xs">
+        {data.locations.map(l => {
+          const tools = data.tools.filter(t => t.location === l.id);
+          const present = tools.filter(t => t.installed);
+          return (
+            <div key={l.id} className="flex flex-wrap items-start gap-3 border-t border-border/50 pt-3">
+              <div className="flex-1 min-w-[16rem]">
+                <p className="font-medium">
+                  {tools.map(t => t.name).join(' and ')}
+                  {present.length === 0 && <span className="ml-2 text-muted-foreground font-normal">— not found on this machine</span>}
+                </p>
+                <p className="font-mono text-[11px] text-muted-foreground break-all">{l.path}</p>
+                <p className="mt-0.5 text-[11px]">
+                  {l.foreign
+                    ? <span className="text-amber-600 dark:text-amber-400">A skill named iql is already there, and InboxQL did not write it. It is left alone.</span>
+                    : l.installed
+                      ? l.current
+                        ? <span className="text-emerald-600 dark:text-emerald-400">Installed, current (v{l.version})</span>
+                        : <span className="text-amber-600 dark:text-amber-400">Installed for v{l.version}; this is v{data.version}</span>
+                      : <span className="text-muted-foreground">Not installed</span>}
+                </p>
+              </div>
+              {!l.foreign && (
+                <div className="flex gap-2">
+                  {(!l.installed || !l.current) && (
+                    <button className={btn} disabled={busy === l.id} onClick={() => change('install', l.id)}>
+                      {l.installed ? 'Update' : 'Install'}
+                    </button>
+                  )}
+                  {l.installed && (
+                    <button className={btn} disabled={busy === l.id} onClick={() => change('remove', l.id)}>Remove</button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+    </section>
   );
 };

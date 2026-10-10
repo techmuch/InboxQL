@@ -1,3 +1,5 @@
+import { Avatar } from './Avatar';
+import { avatarMeta, fetchGravatar, removeAvatar, type AvatarMeta } from '../lib/avatars';
 import { useCallback, useEffect, useState } from 'react';
 import {
   AlertCircle,
@@ -212,10 +214,14 @@ export const ContactCard = ({ address }: { address: string }) => {
           </div>
         )}
         <header className="flex items-start gap-4">
-          <KindIcon kind={contact.kind} />
+          <div className="relative shrink-0">
+            <Avatar address={contact.address} name={contactName(contact)} size={64} />
+            <span className="absolute -bottom-1 -right-1"><KindIcon kind={contact.kind} small /></span>
+          </div>
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-2xl font-bold">{contactName(contact)}</h2>
             <p className="truncate font-mono text-sm text-muted-foreground">{contact.address}</p>
+            <PictureControls address={contact.address} />
 
             {/* Labels — the same word as on mail, and queried the same way. */}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -713,12 +719,52 @@ function other(label: string, self: string): string {
   return ends.find(a => a !== self) ?? label;
 }
 
-const KindIcon = ({ kind }: { kind: Contact['kind'] }) => {
+const KindIcon = ({ kind, small }: { kind: Contact['kind']; small?: boolean }) => {
   const Icon = kind === 'system' ? Bot : kind === 'organization' ? Building2 : kind === 'unknown' ? HelpCircle : User;
   return (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center border border-border bg-muted">
-      <Icon className="h-5 w-5 text-muted-foreground" />
+    <span title={kind} className={`flex shrink-0 items-center justify-center border border-border bg-muted ${small ? 'h-6 w-6' : 'h-10 w-10'}`}>
+      <Icon className={`${small ? 'h-3.5 w-3.5' : 'h-5 w-5'} text-muted-foreground`} />
     </span>
+  );
+};
+
+/**
+ * The contact's picture, fetched from Gravatar only when this button is
+ * pressed, for this one address, and kept in the mailbox after that.
+ */
+const PictureControls = ({ address }: { address: string }) => {
+  const [meta, setMeta] = useState<AvatarMeta | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    avatarMeta(address).then(m => { if (live) setMeta(m); }).catch(() => {});
+    return () => { live = false; };
+  }, [address]);
+  const run = async (f: () => Promise<AvatarMeta>) => {
+    setBusy(true); setError(null);
+    try { setMeta(await f()); } catch (e: any) { setError(e?.message ?? 'that did not work'); } finally { setBusy(false); }
+  };
+  const when = meta?.fetchedAt ? new Date(meta.fetchedAt).toLocaleDateString() : '';
+  const btn = 'border border-border px-2 py-0.5 hover:bg-accent disabled:opacity-50';
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+      {meta?.status === 'stored' && <span>Picture from Gravatar, fetched {when}.</span>}
+      {meta?.status === 'none' && <span>No Gravatar for this address (asked {when}).</span>}
+      {meta?.status !== 'stored' && (
+        <button className={btn} disabled={busy} onClick={() => run(() => fetchGravatar(address))}
+          title="Asks Gravatar once, for this address only, and keeps the picture here">
+          {busy ? 'Asking…' : meta?.status === 'none' ? 'Ask Gravatar again' : 'Get picture from Gravatar'}
+        </button>
+      )}
+      {meta?.status === 'stored' && (
+        <>
+          <button className={btn} disabled={busy} onClick={() => run(() => fetchGravatar(address))}>Refresh</button>
+          <button className={btn} disabled={busy} onClick={() => run(() => removeAvatar(address))}>Remove</button>
+        </>
+      )}
+      {error && <span className="text-destructive">{error}</span>}
+    </div>
   );
 };
 

@@ -1,3 +1,4 @@
+import { Avatar } from '../Avatar';
 import { useEffect, useState } from 'react';
 import { ArrowUpDown, Inbox } from 'lucide-react';
 import {
@@ -681,7 +682,12 @@ const ContactRow = ({ contact: c, selected }: { contact: Contact; selected: bool
                   rowStateClasses({ selected, current })
                 }`}
               >
-            <td className="px-4 py-1.5 truncate max-w-0">{contactName(c)}</td>
+            <td className="px-4 py-1.5 truncate max-w-0">
+              <span className="inline-flex items-center gap-2 max-w-full">
+                <Avatar address={c.address} name={contactName(c)} size={20} />
+                <span className="truncate">{contactName(c)}</span>
+              </span>
+            </td>
             <td className="px-4 py-1.5 truncate max-w-0 font-mono text-xs text-muted-foreground">
               {c.address}
             </td>

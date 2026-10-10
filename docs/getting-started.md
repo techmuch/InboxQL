@@ -45,7 +45,8 @@ On Windows, in PowerShell:
 irm https://techmuch.github.io/InboxQL/install.ps1 | iex
 ```
 
-Then open **http://localhost:8420**. [Installing, updating and
+Then open **http://localhost:8420** — or type `iql open`, which opens whatever
+address the running server is at. [Installing, updating and
 removing](installing.md) has the details, including what each file is for.
 
 ## Your first hour

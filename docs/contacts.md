@@ -23,6 +23,17 @@ stored as a separate count, so it cannot disagree with the mailbox.
 - **Files** — what they sent you, or everything on any message they were on.
 - **Notes** — your own, private, in Markdown.
 
+## Pictures
+
+A contact shows their initials until you ask for a picture. **Get picture from
+Gravatar** on the card asks Gravatar once, for that one address, and keeps the
+picture in your mailbox; from then on it is loaded from InboxQL, never from
+Gravatar. If Gravatar has none, the card says so and remembers that you asked.
+**Refresh** asks again and **Remove** deletes the stored picture.
+
+There is deliberately no "get pictures for everyone". Each lookup tells
+Gravatar that address is in your mail, so it is one deliberate click per person.
+
 ## People and systems
 
 A mailbox is mostly not people. Receipts, notifications, newsletters and

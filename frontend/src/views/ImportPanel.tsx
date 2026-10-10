@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { openErrorLog } from '../lib/tabs';
+import { expectRestart } from '../lib/devReload';
+import { rememberSettingsSection } from '../lib/settingsNav';
 import {
   AlertTriangle, ChevronDown, ChevronRight, Download, Folder, HardDrive,
   Loader2, RefreshCw, Search, ShieldAlert, XCircle, CheckCircle2,
@@ -20,6 +22,8 @@ interface Detection {
   root?: string;
   detail: string;
   remedy?: string;
+  /** Who macOS will ask about: the app that started InboxQL, or iql itself. */
+  grantee?: { name: string; path: string; kind: 'app' | 'binary' | 'unsure'; binary: string };
 }
 
 interface Source extends Detection {
@@ -549,22 +553,99 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
   );
 };
 
-const PermissionNotice = ({ detection, onRetry }: { detection: Detection; onRetry: () => void }) => (
-  <div className="flex items-start gap-3 border border-amber-500/40 bg-amber-500/10 px-4 py-3 mb-4">
-    <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
-    <div className="text-xs leading-relaxed flex-1">
-      <p className="font-bold text-amber-700 dark:text-amber-400 mb-1">{detection.detail}</p>
-      {detection.remedy && (
-        // Rendered verbatim: it names the exact binary that needs the grant,
-        // and the usual mistake is granting access to the wrong program.
-        <pre className="whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">{detection.remedy}</pre>
-      )}
-      <button onClick={onRetry} className="mt-2 border border-border px-3 py-1 hover:bg-accent">
-        Re-check
-      </button>
+/**
+ * Full Disk Access, made as short a trip as macOS allows.
+ *
+ * There is no prompt to trigger: macOS has one for the camera, none for the
+ * disk. So this names the program that needs the grant — the app InboxQL was
+ * started from, which is the part people get wrong — opens the exact Settings
+ * pane, shows the program in Finder to drag in, and restarts InboxQL to pick
+ * the grant up, because macOS applies it when a program starts.
+ */
+export const PermissionNotice = ({ detection, onRetry }: { detection: Detection; onRetry: () => void }) => {
+  const [error, setError] = useState<string | null>(null);
+  const g = detection.grantee;
+  const post = async (url: string, body?: unknown) => {
+    setError(null);
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!r.ok) setError((await r.text()) || 'that did not work');
+    return r;
+  };
+  const restartAndCheck = async () => {
+    const v = await fetch('/api/version', { cache: 'no-store' }).then(r => r.json()).catch(() => null);
+    const r = await post('/api/system/restart');
+    if (r.ok && v?.instanceId) {
+      // Back to this page once the new server answers: the grant is checked
+      // when the program starts, so the check is what the person came for.
+      rememberSettingsSection('import');
+      expectRestart('restart', v.instanceId);
+    }
+  };
+  const btn = 'border border-border px-3 py-1 hover:bg-accent';
+
+  return (
+    <div className="flex items-start gap-3 border border-amber-500/40 bg-amber-500/10 px-4 py-3 mb-4">
+      <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+      <div className="text-xs leading-relaxed flex-1 space-y-2">
+        <p className="font-bold text-amber-700 dark:text-amber-400">{detection.detail}</p>
+        {g ? (
+          <>
+            <p>
+              Reading Apple Mail's files needs <strong>Full Disk Access</strong>, and macOS has no way for a
+              program to ask for it — it is granted in System Settings.{' '}
+              {g.kind === 'app' && <>Grant it to <strong>{g.name}</strong>, not iql: InboxQL was started from {g.name}, and
+                macOS asks about the app that started it.</>}
+              {g.kind === 'binary' && <>Grant it to the program running InboxQL, <span className="font-mono">{g.path}</span>.</>}
+              {g.kind === 'unsure' && <>Grant it to the app InboxQL was started from — for tmux or screen, the terminal
+                that started them. Adding iql as well does no harm.</>}
+            </p>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>
+                <button onClick={() => post('/api/import/disk-access/open')} className={btn}>Open Full Disk Access settings</button>
+              </li>
+              <li>
+                Add it with <strong>+</strong>, or drag it in:{' '}
+                {g.kind === 'app' && (
+                  <button onClick={() => post('/api/import/disk-access/reveal', { target: 'grantee' })} className={btn}>
+                    Show {g.name} in Finder
+                  </button>
+                )}{' '}
+                {g.kind !== 'app' && (
+                  <button onClick={() => post('/api/import/disk-access/reveal', { target: 'binary' })} className={btn}>
+                    Show iql in Finder
+                  </button>
+                )}
+              </li>
+              <li>
+                <button onClick={restartAndCheck} className="bg-primary text-primary-foreground px-3 py-1 font-semibold hover:opacity-90">
+                  I've granted it — restart InboxQL and check
+                </button>{' '}
+                <button onClick={onRetry} className={btn}>Check again without restarting</button>
+              </li>
+            </ol>
+            {g.kind === 'app' && (
+              <p className="text-muted-foreground">
+                Granting it to {g.name} lets everything you run in {g.name} read those folders. Running InboxQL as the
+                login service instead (<span className="font-mono">iql service install</span>) needs the grant for iql alone.
+              </p>
+            )}
+          </>
+        ) : detection.remedy && (
+          // Rendered verbatim: it names the exact program that needs the grant.
+          <pre className="whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">{detection.remedy}</pre>
+        )}
+        {!g && (
+          <button onClick={onRetry} className={btn}>Re-check</button>
+        )}
+        {error && <p className="text-destructive">{error}</p>}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const JobProgress = ({ job, onCancel }: { job: Job; onCancel: () => void }) => {
   const running = job.status === 'running' || job.status === 'pending';

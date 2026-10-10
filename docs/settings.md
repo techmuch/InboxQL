@@ -74,6 +74,16 @@ the new version.
 A copy installed with Homebrew says so and leaves updating to `brew upgrade
 inboxql`. [Installing](installing.md#updating) has the details.
 
+### AI assistants
+
+The AI coding tools on this computer — Claude Code, Codex, Gemini CLI — and
+whether the iql skill is installed for each. The skill is a short guide that
+tells an agent the rules before it starts: it can draft mail but not send it,
+how queries work, and that `iql help agents` has the rest. **Install**,
+**Update** and **Remove** act on InboxQL's own skill folder only; a folder named
+`iql` that something else put there is left alone. See [the command
+line](command-line.md#driving-it-from-an-agent).
+
 ### Machine settings
 
 The editor for `~/.iql/settings.json`. Each field says whether it **applies
@@ -108,6 +118,13 @@ A server running with no machine settings at all offers **Create settings for
 this mailbox**, which records the mailbox and address it is already using — so
 nothing changes now, but every command and the login service will agree from
 then on.
+
+## User Profile
+
+Your name, email address and picture. **Use my Gravatar** asks Gravatar once for
+the picture of the address on the profile and keeps it in the mailbox, so the
+picture in the corner of every page is loaded from InboxQL rather than from
+Gravatar. You can also give any picture's address yourself.
 
 ## General
 

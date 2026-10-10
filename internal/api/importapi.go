@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/user/inboxql/internal/importer"
 	"github.com/user/inboxql/internal/importer/applemail"
 	"github.com/user/inboxql/internal/store"
+	"github.com/user/inboxql/internal/tcc"
 )
 
 // importManager is created on first use, once the data directory is known.
@@ -58,6 +61,8 @@ func sourceByID(id string) importer.Source {
 // registerImportRoutes wires the import API onto an authenticated mux.
 func registerImportRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/import/sources", handleImportSources)
+	mux.HandleFunc("POST /api/import/disk-access/open", handleDiskAccessOpen)
+	mux.HandleFunc("POST /api/import/disk-access/reveal", handleDiskAccessReveal)
 	mux.HandleFunc("GET /api/import/sources/{id}/mailboxes", handleImportMailboxes)
 	mux.HandleFunc("POST /api/import/sources/{id}/scan", handleImportScan)
 	mux.HandleFunc("GET /api/import/jobs", handleImportJobList)
@@ -282,4 +287,51 @@ func handleImportJobEvents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// handleDiskAccessOpen opens System Settings at Full Disk Access.
+//
+// There is no prompt to trigger for this permission — macOS offers one for
+// the camera, not for the disk — so the most that can be done from here is
+// to put the right pane in front of the person.
+func handleDiskAccessOpen(w http.ResponseWriter, r *http.Request) {
+	if err := tcc.OpenSettings(); err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"opened": tcc.SettingsURL})
+}
+
+// handleDiskAccessReveal shows, in Finder, the program to drag into the list.
+//
+// The body says which of two — the app that started InboxQL, or InboxQL
+// itself — and never a path: a page able to make this server reveal an
+// arbitrary path would be able to probe the disk.
+func handleDiskAccessReveal(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Target string `json:"target"` // "grantee" or "binary"
+	}
+	if !decodeStrict(w, r, &body) {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot find this program: %v", err)
+		return
+	}
+	if real, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = real
+	}
+	path := exe
+	if body.Target == "grantee" {
+		path = tcc.Responsible(exe).Path
+	} else if body.Target != "binary" {
+		writeError(w, http.StatusBadRequest, `target is "grantee" or "binary"`)
+		return
+	}
+	if err := tcc.Reveal(path); err != nil {
+		writeError(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"revealed": path})
 }

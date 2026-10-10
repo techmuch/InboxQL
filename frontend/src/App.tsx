@@ -26,10 +26,11 @@ import { useQueryStore, queryTerms, compose, asTerm, type QueryTerm } from './li
 import { useDevReload } from './lib/devReload';
 import { requestSettingsSection, takeSettingsSection, SETTINGS_SECTION_EVENT } from './lib/settingsNav';
 import { SystemPanel } from './views/SystemPanel';
+import { fetchGravatar } from './lib/avatars';
 import { Docs } from './views/Docs';
 import { openDoc, DOCS_TAB } from './lib/docsNav';
 import { version as appVersion } from '../package.json';
-import 'nexus-shell/style.css';
+// nexus-shell's stylesheet is imported from index.css, inside a layer.
 import './App.css';
 
 // --- Login View ---
@@ -742,18 +743,44 @@ const SettingsView = () => {
     }
   };
 
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [profileNote, setProfileNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const saveProfile = async (profile: any): Promise<boolean> => {
     try {
       const res = await fetch('/api/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userProfile)
+        body: JSON.stringify(profile)
       });
-      if (res.ok) {
-        alert('Profile updated successfully');
+      setProfileNote(res.ok ? { ok: true, text: 'Saved.' } : { ok: false, text: (await res.text()) || 'Could not save.' });
+      return res.ok;
+    } catch {
+      setProfileNote({ ok: false, text: 'Could not reach the server.' });
+      return false;
+    }
+  };
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveProfile(userProfile);
+  };
+  // Asks Gravatar once, for this address, keeps the picture in the mailbox,
+  // and points the profile at the stored copy — so no page ever loads it from
+  // Gravatar.
+  const fetchMyGravatar = async () => {
+    const email = (userProfile?.email ?? '').trim();
+    if (!email) { setProfileNote({ ok: false, text: 'Add your email address first: Gravatar looks pictures up by it.' }); return; }
+    setProfileNote(null);
+    try {
+      const m = await fetchGravatar(email);
+      if (m.status !== 'stored') {
+        setProfileNote({ ok: false, text: `Gravatar has no picture for ${email}.` });
+        return;
       }
-    } catch (e) {}
+      const next = { ...userProfile, profileImageUrl: `/api/avatars/image?address=${encodeURIComponent(email.toLowerCase())}&v=${encodeURIComponent(m.fetchedAt ?? '')}` };
+      setUserProfile(next);
+      if (await saveProfile(next)) setProfileNote({ ok: true, text: 'Saved your Gravatar picture. It is kept here and loaded from here.' });
+    } catch (e: any) {
+      setProfileNote({ ok: false, text: e?.message ?? 'Could not reach Gravatar.' });
+    }
   };
 
   const categories = [
@@ -1083,15 +1110,12 @@ const SettingsView = () => {
                 
                 <form onSubmit={handleUpdateProfile} className="space-y-6">
                   <div className="flex items-center gap-8 mb-8">
-                    <div className="relative group">
-                      <div className="w-24 h-24  bg-muted border-2 border-dashed border-border flex items-center justify-center overflow-hidden">
-                        {userProfile.profileImageUrl ? (
-                          <img src={userProfile.profileImageUrl} alt="Profile" className="w-full h-full object-cover" />
-                        ) : (
-                          <User className="w-10 h-10 text-muted-foreground opacity-50" />
-                        )}
-                      </div>
-                      <button type="button" className="absolute inset-0 bg-black/40 text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity ">CHANGE</button>
+                    <div className="w-24 h-24 shrink-0 bg-muted border-2 border-dashed border-border flex items-center justify-center overflow-hidden">
+                      {userProfile.profileImageUrl ? (
+                        <img src={userProfile.profileImageUrl} alt="Profile" className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-10 h-10 text-muted-foreground opacity-50" />
+                      )}
                     </div>
                     <div className="flex-1 space-y-4">
                       <div className="space-y-1.5">
@@ -1124,10 +1148,23 @@ const SettingsView = () => {
                       value={userProfile.profileImageUrl || ''}
                       onChange={e => setUserProfile({...userProfile, profileImageUrl: e.target.value})}
                     />
+                    <div className="flex flex-wrap items-center gap-3 pt-1">
+                      <button type="button" onClick={fetchMyGravatar}
+                        className="border border-border px-3 py-1.5 text-xs font-semibold hover:bg-accent">
+                        Use my Gravatar
+                      </button>
+                      <span className="text-[11px] text-muted-foreground">
+                        Asks Gravatar once for the picture of the email address above, and keeps it here. Your
+                        pages load it from InboxQL, never from Gravatar.
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="pt-4">
+                  <div className="pt-4 flex items-center gap-4">
                     <button type="submit" className="bg-primary text-primary-foreground px-5 py-2  font-semibold shadow-sm hover:opacity-90 active:scale-[0.98] transition-all text-sm">Save Profile</button>
+                    {profileNote && (
+                      <span className={`text-xs ${profileNote.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>{profileNote.text}</span>
+                    )}
                   </div>
                 </form>
               </div>

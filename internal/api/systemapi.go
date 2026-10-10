@@ -92,6 +92,7 @@ func registerSystemRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/system/restart", handleSystemRestart)
 	mux.HandleFunc("POST /api/system/update", handleSystemUpdateRun)
 	mux.HandleFunc("GET /api/system/update/log", handleSystemUpdateLog)
+	registerSkillsRoutes(mux)
 }
 
 // SystemState is everything the System section shows.

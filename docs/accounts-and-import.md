@@ -71,17 +71,35 @@ open while it runs.
 
 ### Full Disk Access
 
-macOS protects `~/Library/Mail`, so the program reading it needs **Full Disk
-Access**. When it is missing, the Import page says so and says which program
-needs it — `~/.iql/bin/iql` for an installed copy — rather than failing with a
-bare permission error.
+macOS protects `~/Library/Mail`, so reading it needs **Full Disk Access** — and
+macOS has no way for a program to ask for it. Camera and microphone get an
+"Allow?" dialog; the disk does not. The grant is made by you, in System
+Settings. The Import page makes that as short a trip as it can.
 
-Grant it in **System Settings → Privacy & Security → Full Disk Access**, add the
-program with **+**, then restart InboxQL (**Settings → System → Restart**). The
-usual mistake is granting it to the terminal or the browser instead of `iql`.
+**Who needs it is the part people get wrong.** macOS does not ask whether
+InboxQL may read the folder; it asks about the app that *started* InboxQL:
 
-After every update, grant it again: macOS ties the grant to the exact file,
-and an update is a new file.
+| InboxQL was started | Grant Full Disk Access to |
+|---|---|
+| as the login service | `~/.iql/bin/iql` itself |
+| by typing `iql start` in Terminal, iTerm, VS Code… | that app — not iql |
+| inside tmux, screen or an SSH session | the terminal that started them; adding iql too does no harm |
+
+The Import page works out which applies and names it. Then:
+
+1. **Open Full Disk Access settings** goes straight to the right pane.
+2. **Show … in Finder** selects the program to add; drag it into the list, or
+   use **+**.
+3. **I've granted it — restart InboxQL and check.** macOS applies the grant
+   when a program starts, so InboxQL restarts, and the page comes back to Import
+   and checks again by itself.
+
+Granting it to a terminal lets everything you run in that terminal read those
+folders. Running InboxQL as the login service needs the grant for iql alone,
+which is the tighter choice.
+
+After every update, grant it again if the grant was to iql: macOS ties the grant
+to the exact file, and an update is a new file.
 
 ### Choosing what to import
 

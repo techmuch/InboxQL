@@ -63,6 +63,7 @@ mailbox by accident: with none to use, it stops and says how to make one.
 | `hosts` | `set <name>` `remove` `show` — a name for the site |
 | `init` | prepare a mailbox folder: database, key, administrator |
 | `start` | run the server in this terminal (`--addr`, `--open`, `--dev`) |
+| `open` | open the running server in your browser; `--print` just prints the address |
 | `version` | which version, built from what |
 | `doctor` | health checks; non-zero when any fail |
 
@@ -115,6 +116,7 @@ mailbox by accident: with none to use, it stops and says how to make one.
 | `user` | dashboard logins; `user passwd` |
 | `vault` | the key account passwords are encrypted with |
 | `ui` | the open browser windows — see what each shows, point one at a query |
+| `skills` | `list` `install` `remove` — teach AI coding tools how to use iql |
 
 Two commands are destructive and cannot be undone: `account remove` deletes
 every message stored for that account, and `vault rotate` re-encrypts every
@@ -142,4 +144,20 @@ account ids.
 
 The command line is designed to be used by an AI agent as well as a person.
 [For agents](agents.md) is the contract it follows — what every command
-returns, what the exit codes mean, and why `send` does not send.
+returns, what the exit codes mean, and why `send` does not send. `iql help
+agents` prints the same contract from the program itself.
+
+To give the AI tools you use that knowledge up front, install the iql skill:
+
+```sh
+iql skills list             # which tools are here, and what is installed
+iql skills install claude   # Claude Code: ~/.claude/skills/iql
+iql skills install codex    # Codex and Gemini CLI: ~/.agents/skills/iql
+```
+
+The skill is short — the rules that stop an agent doing harm, the commands it
+will use most, and a pointer to `iql help agents` for everything else.
+Codex and Gemini CLI read the same folder, so one install serves both. Only a
+skill iql wrote is ever replaced or removed, and a new version of iql keeps
+installed ones current. Settings → System → **AI assistants** does the same
+with buttons.

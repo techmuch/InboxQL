@@ -20,13 +20,15 @@ import (
 	"github.com/user/inboxql/internal/llm"
 	"github.com/user/inboxql/internal/machine"
 	"github.com/user/inboxql/internal/serverlock"
+	"github.com/user/inboxql/internal/skills"
 	"github.com/user/inboxql/internal/store"
+	"github.com/user/inboxql/internal/tcc"
 )
 
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.83"
+var Version = "0.0.84"
 
 func init() {
 	register(&Command{
@@ -311,8 +313,21 @@ func runStart(ctx *Context, args []string) error {
 	}
 	defer store.CloseDB()
 
+	// Installed skills describe the version that wrote them. Keep them
+	// describing this one; installing one was the person's choice, keeping it
+	// true is upkeep.
+	if home, err := os.UserHomeDir(); err == nil {
+		for _, path := range skills.Refresh(home, Version) {
+			log.Printf("[skills] refreshed %s for iql %s", path, Version)
+		}
+	}
+
 	// The API needs the data directory for the attachment blob store and LLM logs.
 	api.SetDataDir(ctx.DataDir)
+
+	// Which program macOS holds responsible for reading protected folders
+	// depends on who started this one; the service is the certain case.
+	tcc.SetService(*serviceMode)
 
 	if *serviceMode {
 		// As a login service, a local model server started here would hold

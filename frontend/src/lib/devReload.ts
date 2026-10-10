@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { version as appVersion } from '../../package.json';
 
 interface VersionResponse {
@@ -6,6 +6,46 @@ interface VersionResponse {
   revision?: string;
   dev: boolean;
   instanceId: string;
+}
+
+/**
+ * A restart this page asked for — Settings → System → Restart or Update — and
+ * is waiting out. Outside --dev nothing polls, so a page that started a
+ * restart has to say so; it then watches for a server with a different
+ * instance id and reloads onto it, whatever mode the server runs in.
+ */
+export interface RestartExpectation {
+  reason: 'restart' | 'update';
+  /** The instance that was running when the restart was asked for. */
+  from: string;
+  since: number;
+  /** Set when nothing came back in time, so the page can say so. */
+  gaveUp?: boolean;
+}
+
+/** How long to wait for a server to come back before saying it has not. */
+export const RESTART_PATIENCE_MS = 120_000;
+
+let expectation: RestartExpectation | null = null;
+const listeners = new Set<() => void>();
+const emit = () => listeners.forEach(l => l());
+
+export function expectRestart(reason: RestartExpectation['reason'], from: string) {
+  expectation = { reason, from, since: Date.now() };
+  emit();
+  window.dispatchEvent(new Event('iql:expect-restart'));
+}
+
+export function clearRestartExpectation() {
+  expectation = null;
+  emit();
+}
+
+export function useRestartExpectation(): RestartExpectation | null {
+  return useSyncExternalStore(
+    l => { listeners.add(l); return () => listeners.delete(l); },
+    () => expectation,
+  );
 }
 
 /**
@@ -29,8 +69,13 @@ export function useDevReload() {
         }
 
         const data: VersionResponse = await res.json();
-        if (!data || !data.dev) {
-          // If the server is not running in --dev mode, stop polling.
+        if (expectation && !expectation.gaveUp) {
+          if (data?.instanceId && data.instanceId !== expectation.from) {
+            window.location.reload();
+            return;
+          }
+        } else if (!data || !data.dev) {
+          // Outside --dev, nothing to watch until a restart is asked for.
           return;
         }
 
@@ -68,6 +113,12 @@ export function useDevReload() {
         // Server might be temporarily restarting; continue polling
       }
 
+      if (expectation && !expectation.gaveUp && Date.now() - expectation.since > RESTART_PATIENCE_MS) {
+        expectation = { ...expectation, gaveUp: true };
+        emit();
+        return;
+      }
+
       if (!isCancelled) {
         schedule(1500);
       }
@@ -80,9 +131,17 @@ export function useDevReload() {
 
     check();
 
+    // A restart asked for while not polling starts the watch again.
+    const onExpect = () => {
+      if (pollTimer) clearTimeout(pollTimer);
+      schedule(1000);
+    };
+    window.addEventListener('iql:expect-restart', onExpect);
+
     return () => {
       isCancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
+      window.removeEventListener('iql:expect-restart', onExpect);
     };
   }, []);
 }

@@ -596,6 +596,13 @@ func LookupField(name string) (*Field, bool) {
 	return f, ok
 }
 
+// entityAliases are aliases that hold only inside one kind of query, for a
+// name another kind already owns. `name:` is a contact's name everywhere
+// else; in a file query the only name there is is the one it arrived under.
+var entityAliases = map[string]map[string]string{
+	EntityAttachment: {"name": "filename"},
+}
+
 // LookupFieldIn resolves a name against one entity.
 //
 // Falls back to the message declaration when the entity does not claim the
@@ -603,6 +610,9 @@ func LookupField(name string) (*Field, bool) {
 // twice — DraftServes decides whether that fallback can actually be compiled.
 func LookupFieldIn(entity, name string) (*Field, bool) {
 	n := canonicalName(name)
+	if local, ok := entityAliases[entity][strings.ToLower(strings.TrimSpace(name))]; ok {
+		n = local
+	}
 	if f, ok := byEntity[entity][n]; ok {
 		return f, true
 	}

@@ -1,4 +1,9 @@
-# Publishes site/ — the install page and the install scripts — to GitHub Pages.
+# Publishes site/ — the install page, the install scripts and the guides — to
+# GitHub Pages.
+#
+# The guides in site/docs are generated here from docs/*.md and AGENTS.md by
+# cmd/docsgen, with the same renderer the application's Help menu uses, so the
+# site and the application cannot disagree about what a guide says.
 #
 # The scripts live on the Pages site rather than being fetched from the
 # repository's raw files so the install command is short, stable and on a
@@ -10,7 +15,14 @@ name: Pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "AGENTS.md"
+      - "embed.go"
+      - "internal/docs/**"
+      - "cmd/docsgen/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -37,6 +49,17 @@ jobs:
         run: |
           sh -n site/install.sh
           shellcheck -s sh site/install.sh
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Every link between guides and every heading it names is checked
+      # before anything is published.
+      - name: Build the guides
+        run: |
+          go test ./internal/docs/
+          go run ./cmd/docsgen -out site/docs
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

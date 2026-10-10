@@ -18,6 +18,7 @@ import (
 	"github.com/user/inboxql/internal/api"
 	"github.com/user/inboxql/internal/auth"
 	"github.com/user/inboxql/internal/llm"
+	"github.com/user/inboxql/internal/machine"
 	"github.com/user/inboxql/internal/serverlock"
 	"github.com/user/inboxql/internal/store"
 )
@@ -25,7 +26,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.82"
+var Version = "0.0.83"
 
 func init() {
 	register(&Command{
@@ -218,6 +219,12 @@ func runDevSupervisor(ctx *Context) error {
 			}
 		}
 
+		// A child that exits asking for a restart — Settings → Restart —
+		// is started again like one whose binary changed.
+		if !restart && cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == exitRestart {
+			p.Printf("\n%s\n", p.Yellow("Restart requested, restarting server..."))
+			restart = true
+		}
 		if !restart {
 			return nil
 		}
@@ -273,7 +280,7 @@ func runStart(ctx *Context, args []string) error {
 	// second server never gets as far as migrating it. When one is already
 	// running, this is not an error: point at it. That is what somebody
 	// typing `iql start` while the service runs actually wants.
-	lock, other, err := serverlock.Acquire(ctx.DataDir, serverlock.Info{
+	lock, other, err := acquireLock(ctx.DataDir, serverlock.Info{
 		PID: os.Getpid(), URL: displayURL, Addr: *addr, Version: Version,
 		Schema: store.SchemaVersion, Started: time.Now(),
 	})
@@ -396,8 +403,80 @@ func runStart(ctx *Context, args []string) error {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
+	// Restart is asked for by the settings page and carried out here, where
+	// the listener, the lock and the database can be let go in order.
+	restartReq := make(chan struct{}, 1)
+	mode := "foreground"
+	switch {
+	case *serviceMode:
+		mode = "service"
+	case os.Getenv("INBOXQL_DEV_CHILD") == "1":
+		mode = "dev"
+	}
+	addrSource := "default"
+	switch {
+	case flagWasSet(fs, "addr"):
+		addrSource = "flag"
+	case strings.TrimSpace(os.Getenv("INBOXQL_ADDR")) != "":
+		addrSource = "env"
+	case ctx.Machine != nil && ctx.Machine.Addr != "":
+		addrSource = "settings"
+	}
+	exe := selfBinary()
+	var started *machine.Settings
+	if ctx.Machine != nil {
+		c := *ctx.Machine
+		started = &c
+	}
+	api.SetRuntime(api.Runtime{
+		Mode: mode, Binary: exe, PID: os.Getpid(), Started: time.Now(),
+		DataDir: ctx.DataDir, DataSource: ctx.DataSource, Addr: *addr, AddrSource: addrSource,
+		URL: displayURL, AuthLocal: local, AuthReason: reason, Settings: started,
+		Restart: func() error {
+			if mode == "service" {
+				return restartViaService(exe)
+			}
+			select {
+			case restartReq <- struct{}{}:
+			default:
+			}
+			return nil
+		},
+		Update: func(logPath string, done func(error)) error {
+			return startUpdate(exe, mode, ctx.DataDir, logPath, func(err error) {
+				done(err)
+				// Under the service the updater restarts it; under --dev the
+				// supervisor sees the binary change. In a terminal nobody
+				// else will, so this server becomes the new binary itself.
+				if err == nil && mode == "foreground" {
+					select {
+					case restartReq <- struct{}{}:
+					default:
+					}
+				}
+			})
+		},
+	})
+
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.ListenAndServe() }()
+	select {
+	case err := <-serveErr:
 		return Fail(ExitError, "server stopped: %v", err)
+	case <-restartReq:
+	}
+
+	p.Printf("\n%s\n", p.Yellow("Restarting..."))
+	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = srv.Shutdown(shutdown)
+	cancel()
+	store.CloseDB()
+	lock.Release()
+	if mode == "dev" {
+		return Fail(exitRestart, "")
+	}
+	if err := replaceSelf(exe); err != nil {
+		return Fail(ExitError, "restarting: %v — start it again with `iql start`", err)
 	}
 	return nil
 }

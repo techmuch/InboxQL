@@ -1,4 +1,4 @@
-.PHONY: all build frontend backend install uninstall clean run stop start restart test e2e test-all
+.PHONY: all build frontend backend install uninstall clean run stop start restart test e2e test-all docs
 
 PREFIX ?= $(shell go env GOPATH)
 BINDIR ?= $(PREFIX)/bin
@@ -16,7 +16,7 @@ frontend:
 	mkdir -p internal/embed/static
 	cp -r frontend/dist/* internal/embed/static/
 
-VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.82")
+VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.83")
 LDFLAGS := -X github.com/user/inboxql/internal/cli.Version=$(VERSION)
 
 # FTS5 is a compile-time option in mattn/go-sqlite3, not a runtime one. Without
@@ -54,6 +54,11 @@ e2e:
 	go test -race -tags "e2e $(TAGS)" -count=1 ./e2e/... -v
 
 test-all: test e2e
+
+# The site's copy of the guides, for previewing what Pages will publish:
+# open site/docs/index.html. Generated, so not committed.
+docs:
+	go run ./cmd/docsgen -out site/docs
 
 clean:
 	@echo "Cleaning up build artifacts..."

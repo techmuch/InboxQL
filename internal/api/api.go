@@ -73,6 +73,19 @@ func Router() (http.Handler, error) {
 	registerImportRoutes(importMux)
 	mux.Handle("/api/import/", auth.Middleware(importMux))
 
+	// The machine: how this server runs, its settings file, restart and
+	// update. Authenticated like everything else — restarting the server or
+	// replacing its binary is at least as consequential as reading the mail.
+	systemMux := http.NewServeMux()
+	registerSystemRoutes(systemMux)
+	mux.Handle("/api/system", auth.Middleware(systemMux))
+	mux.Handle("/api/system/", auth.Middleware(systemMux))
+
+	docsMux := http.NewServeMux()
+	registerDocsRoutes(docsMux)
+	mux.Handle("/api/docs", auth.Middleware(docsMux))
+	mux.Handle("/api/docs/", auth.Middleware(docsMux))
+
 	errorMux := http.NewServeMux()
 	registerErrorRoutes(errorMux)
 	mux.Handle("/api/errors", auth.Middleware(errorMux))
@@ -257,7 +270,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.82",
+	Version: "0.0.83",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.

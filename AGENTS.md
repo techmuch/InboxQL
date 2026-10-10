@@ -493,7 +493,7 @@ iql --json query "in:contacts has:notes"
 | `has:` | `phone name org notes label awaiting` |
 | `notes:` | prose search in private contact notes |
 | `awaiting:` | `me` (contact sent last message) or `them` (user sent last message) |
-| `messages:` `sent:` `received:` | interaction thresholds, e.g. `messages>10` |
+| `messages:` `sent:` | interaction thresholds, e.g. `messages>10` |
 
 **Contact tags are labels now.** Same word as on mail, stored with who set it.
 `tag`, `untag`, `tag:` and `/api/contacts/tags` still work. One thing to get
@@ -1179,6 +1179,21 @@ failure), `account` (add/list/remove/verify/sync), `user`, `vault`
 `ui` (the open browser windows; needs a running server — see above),
 `backup` / `restore`, `export`, `version`, `start`, and the machine commands
 below: `setup`, `where`, `service`, `update`, `hosts`.
+
+**The System section of Settings** (`GET /api/system`) reports what `iql where`
+and `iql service status` do, for the running server: its mode (`service`,
+`foreground` or `dev`), the mailbox and why it is that one, the address and
+auth posture, saved settings still waiting for a restart, power, and whether
+the AI provider is remote. `POST /api/system/restart` and
+`POST /api/system/update` exist for the page's buttons. **Do not call them
+unasked**: both end the process serving the user's open windows, and an update
+replaces the binary. Suggest them, and let the person press the button.
+
+**The user guides** are embedded in the binary and served at `/api/docs` — the
+same Markdown as `docs/*.md`, plus this file. When a user asks how something
+works, `GET /api/docs/index` is a searchable copy of everything they can read
+under Help → Documentation, and pointing them at a guide by name is better
+than paraphrasing it.
 
 Two to avoid unless explicitly asked: `account remove` deletes every stored
 message for that account, and `vault rotate` re-encrypts every credential.

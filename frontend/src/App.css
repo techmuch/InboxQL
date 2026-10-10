@@ -21,3 +21,34 @@
 .app-lockup h1 {
   text-transform: none;
 }
+
+/*
+ * The guides, in Help → Documentation.
+ *
+ * Rendered from Markdown on the server, so the elements are plain HTML with no
+ * classes; these rules are the whole of their typography. Sized for reading —
+ * a measure of about seventy characters, generous leading — because a guide
+ * is read, not scanned like a settings page.
+ */
+.iql-doc { font-size: 15px; line-height: 1.7; color: hsl(var(--foreground)); }
+.iql-doc > :first-child { margin-top: 0; }
+.iql-doc h2 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; margin: 2.4em 0 0.6em; padding-top: 0.2em; scroll-margin-top: 1rem; }
+.iql-doc h3 { font-size: 1.05rem; font-weight: 650; margin: 1.8em 0 0.4em; scroll-margin-top: 1rem; }
+.iql-doc h4 { font-size: 0.95rem; font-weight: 650; margin: 1.4em 0 0.3em; }
+.iql-doc p { margin: 0 0 1em; }
+.iql-doc ul, .iql-doc ol { margin: 0 0 1em; padding-left: 1.4em; }
+.iql-doc ul { list-style: disc; }
+.iql-doc ol { list-style: decimal; }
+.iql-doc li { margin: 0.25em 0; }
+.iql-doc li > p { margin: 0; }
+.iql-doc a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.iql-doc strong { font-weight: 650; }
+.iql-doc code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86em; background: hsl(var(--muted)); padding: 0.1em 0.35em; }
+.iql-doc pre { background: hsl(var(--muted) / 0.6); border: 1px solid hsl(var(--border)); padding: 0.9em 1.1em; overflow-x: auto; margin: 0 0 1.2em; font-size: 13px; line-height: 1.55; }
+.iql-doc pre code { background: none; padding: 0; font-size: inherit; }
+.iql-doc table { width: 100%; border-collapse: collapse; margin: 0 0 1.4em; font-size: 13.5px; line-height: 1.5; display: block; overflow-x: auto; }
+.iql-doc th, .iql-doc td { text-align: left; vertical-align: top; padding: 0.45em 0.8em 0.45em 0; border-bottom: 1px solid hsl(var(--border)); }
+.iql-doc th { font-weight: 600; color: hsl(var(--muted-foreground)); }
+.iql-doc blockquote { border-left: 3px solid hsl(var(--border)); padding-left: 1em; color: hsl(var(--muted-foreground)); margin: 0 0 1em; }
+.iql-doc hr { border: 0; border-top: 1px solid hsl(var(--border)); margin: 2em 0; }
+.iql-doc .iql-doc-target, .iql-doc-target { background: hsl(var(--primary) / 0.12); transition: background 1.2s; }

@@ -24,6 +24,10 @@ import { RailDefaults } from './views/RailDefaults';
 import { LogSettings } from './views/LogSettings';
 import { useQueryStore, queryTerms, compose, asTerm, type QueryTerm } from './lib/filters';
 import { useDevReload } from './lib/devReload';
+import { requestSettingsSection, takeSettingsSection, SETTINGS_SECTION_EVENT } from './lib/settingsNav';
+import { SystemPanel } from './views/SystemPanel';
+import { Docs } from './views/Docs';
+import { openDoc, DOCS_TAB } from './lib/docsNav';
 import { version as appVersion } from '../package.json';
 import 'nexus-shell/style.css';
 import './App.css';
@@ -573,7 +577,15 @@ const AttachmentTargetSetting = () => {
 
 const SettingsView = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('profile');
+  const [activeCategory, setActiveCategory] = useState(() => takeSettingsSection() ?? 'profile');
+  useEffect(() => {
+    const go = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (id) { takeSettingsSection(); setActiveCategory(id); }
+    };
+    window.addEventListener(SETTINGS_SECTION_EVENT, go);
+    return () => window.removeEventListener(SETTINGS_SECTION_EVENT, go);
+  }, []);
   const { theme, setTheme } = useThemeStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
@@ -750,6 +762,9 @@ const SettingsView = () => {
     // held one thing — the theme — and a category per preference is how a
     // settings page ends up with eight sections nobody can find anything in.
     { id: 'general', label: 'General', icon: Eye },
+    // The machine rather than the mailbox: where the mail is, how the server
+    // runs, the settings file, restart and update.
+    { id: 'system', label: 'System', icon: Server },
     { id: 'accounts', label: 'Mail Accounts', icon: Mail },
     { id: 'import', label: 'Import Mail', icon: Download },
     { id: 'ai', label: 'AI Configuration', icon: Cpu },
@@ -1184,6 +1199,8 @@ const SettingsView = () => {
             </div>
           )}
 
+          {activeCategory === 'system' && <SystemPanel />}
+
           {activeCategory === 'maintenance' && <MaintenancePanel />}
 
           {activeCategory === 'data' && (
@@ -1236,6 +1253,7 @@ componentRegistry.register('mail', Desk);
 componentRegistry.register('query', Desk);
 componentRegistry.register('search', Desk);
 componentRegistry.register('settings', SettingsView);
+componentRegistry.register(DOCS_TAB, Docs);
 componentRegistry.register('agents', AgentManager);
 componentRegistry.register('viewer', () => <MessageViewer only="message" />);
 // The old id, so a layout persisted before the rename still resolves.
@@ -1423,9 +1441,17 @@ function App() {
       execute: handleLogout,
     });
     commandRegistry.registerCommand({
+      id: 'iql.open-docs',
+      label: 'Documentation',
+      keybinding: 'F1',
+      execute: () => openDoc(),
+    });
+    commandRegistry.registerCommand({
       id: 'nexus.about',
       label: 'About InboxQL',
-      execute: () => alert(`InboxQL v${appVersion}\nInboxQL Workbench`),
+      // The version on its own answers little; the System section says which
+      // version, where the mailbox is and how the server is running.
+      execute: () => { requestSettingsSection('system'); openToolCb('settings', 'Settings'); },
     });
 
     menuRegistry.setMenus({
@@ -1441,6 +1467,8 @@ function App() {
         { id: 'view.toggle-chat', label: 'Toggle Chat', commandId: 'view.toggleChat', keybinding: 'Control+I' },
       ],
       'Help': [
+        { id: 'help.docs', label: 'Documentation', commandId: 'iql.open-docs', keybinding: 'F1' },
+        { id: 'help.docs-divider', label: '---' },
         { id: 'help.settings', label: 'Settings', commandId: 'iql.open-settings' },
         { id: 'help.windows', label: 'Windows', commandId: 'iql.open-windows' },
         { id: 'help.errors', label: 'Log', commandId: 'iql.open-errors' },

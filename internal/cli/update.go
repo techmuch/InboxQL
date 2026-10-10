@@ -155,7 +155,9 @@ func runUpdate(ctx *Context, args []string) error {
 	mgr, _ := service.ForThisMachine()
 	restart := false
 	if mgr != nil {
-		if st, err := mgr.Status(); err == nil && st.Installed && (st.Running || st.Starting) {
+		// Only the service that runs this binary. A development build being
+		// updated has no business stopping the installed service.
+		if st, err := mgr.Status(); err == nil && st.Installed && (st.Running || st.Starting) && serviceRuns(mgr, exe) {
 			if err := mgr.Stop(); err != nil {
 				return Fail(ExitError, "stopping the service: %v — nothing was changed", err)
 			}
@@ -201,4 +203,15 @@ func isTerminal(r any) bool {
 	}
 	fi, err := f.Stat()
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// serviceRuns reports whether the installed service definition launches exe.
+// When the definition cannot be read, it is assumed to: stopping the service
+// needlessly is cheaper than upgrading a database under a running server.
+func serviceRuns(mgr service.Manager, exe string) bool {
+	b, err := os.ReadFile(mgr.File())
+	if err != nil {
+		return true
+	}
+	return strings.Contains(string(b), exe)
 }

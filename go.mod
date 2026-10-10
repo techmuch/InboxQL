@@ -13,6 +13,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/spf13/cobra v1.10.2
 	github.com/tggo/goSentencePiece v1.1.0
+	github.com/yuin/goldmark v1.7.8
 	golang.org/x/crypto v0.48.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.45.0

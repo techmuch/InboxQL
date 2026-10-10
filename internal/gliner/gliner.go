@@ -56,6 +56,8 @@ import (
 	"github.com/gomlx/onnx-gomlx/onnx"
 	"github.com/gomlx/onnx-gomlx/onnx/parser"
 	sp "github.com/tggo/goSentencePiece"
+
+	"github.com/user/inboxql/internal/modelpath"
 )
 
 // Token ids that are not in spm.model; they come from added_tokens.json.
@@ -142,7 +144,7 @@ type Model struct {
 }
 
 // Dir is where the weights live under a data directory.
-func Dir(dataDir string) string { return filepath.Join(dataDir, "models", "gliner") }
+func Dir(dataDir string) string { return modelpath.For(dataDir, "gliner") }
 
 // Installed reports whether a usable model is present.
 //

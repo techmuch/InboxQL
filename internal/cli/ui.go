@@ -28,7 +28,7 @@ func init() {
   close <id>        forget a window that is gone
 
 flags:
-  --addr <host:port>  the running server (default 127.0.0.1:8080, or $INBOXQL_ADDR)
+  --addr <host:port>  the running server (default: $INBOXQL_ADDR, the machine settings, then 127.0.0.1:8420)
   --note <text>       why, shown beside whatever changes
 
 ## This one talks to the server, not the database
@@ -62,7 +62,7 @@ func runUI(ctx *Context, args []string) error {
 
 	fs := flag.NewFlagSet("ui", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
-	addr := fs.String("addr", envOr("INBOXQL_ADDR", "127.0.0.1:8080"), "the running server")
+	addr := fs.String("addr", ctx.defaultAddr(), "the running server")
 	note := fs.String("note", "", "why, shown beside whatever changes")
 
 	// The positionals come before the flags are parsed, because an id and a

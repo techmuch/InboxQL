@@ -94,6 +94,14 @@ jobs:
           GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o iql-arm64 ./cmd/iql
           lipo -create -output iql iql-amd64 iql-arm64
           lipo -info iql
+          # Ad-hoc signed after joining. Apple Silicon refuses to run a binary
+          # without a valid signature, and the linker's per-slice signatures
+          # are not guaranteed to survive lipo. Ad hoc needs no Developer ID;
+          # it is not notarisation, and Gatekeeper still quarantines a copy
+          # downloaded through a browser — the install script uses curl,
+          # which does not set the quarantine flag.
+          codesign --force --sign - iql
+          codesign --verify --verbose iql
 
       - name: Build
         if: matrix.goarch != 'universal'
@@ -161,14 +169,24 @@ jobs:
           body: |
             ## Install
 
-            Download the archive for your platform, unpack it, and put `iql` on your PATH.
+            **macOS and Linux**
 
             ```
-            iql init --data ~/.inboxql
-            iql start --data ~/.inboxql
+            curl -fsSL https://techmuch.github.io/InboxQL/install.sh | sh
             ```
 
-            macOS builds are unsigned; Gatekeeper will need
-            `xattr -d com.apple.quarantine iql` until notarisation is set up.
+            **Windows** (PowerShell)
 
-            Verify a download against `SHA256SUMS` before running it.
+            ```
+            irm https://techmuch.github.io/InboxQL/install.ps1 | iex
+            ```
+
+            The script verifies the download against `SHA256SUMS`, installs to
+            `~/.iql/bin`, writes `~/.iql/settings.json`, and installs the login
+            service. Already installed? `iql update`.
+
+            Full instructions: https://techmuch.github.io/InboxQL/
+
+            macOS builds are ad-hoc signed, not notarised. The install script
+            downloads with curl, which Gatekeeper does not quarantine; a browser
+            download needs `xattr -d com.apple.quarantine iql`.

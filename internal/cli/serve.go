@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -17,13 +18,14 @@ import (
 	"github.com/user/inboxql/internal/api"
 	"github.com/user/inboxql/internal/auth"
 	"github.com/user/inboxql/internal/llm"
+	"github.com/user/inboxql/internal/serverlock"
 	"github.com/user/inboxql/internal/store"
 )
 
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.81"
+var Version = "0.0.82"
 
 func init() {
 	register(&Command{
@@ -46,11 +48,13 @@ Serves the dashboard and API. The data directory must already exist; run
 ` + "`iql init`" + ` first.
 
 Flags:
-  --addr <host:port>   listen address (default "127.0.0.1:8080", or $INBOXQL_ADDR)
+  --addr <host:port>   listen address (default: $INBOXQL_ADDR, the machine settings, then 127.0.0.1:8420)
   --open               automatically open the dashboard in your default browser
   --dev                monitor the executable for changes and restart automatically
   --require-password   always ask for a password, even on this machine
   --trust-local        keep passwordless access when serving beyond localhost
+  --service            how the login service runs it; starts local models on
+                       first use rather than at launch
 
 By default InboxQL listens on localhost only and does not ask for a password
 there: it is your machine, and you are already the only one who can reach it.
@@ -228,7 +232,7 @@ func runStart(ctx *Context, args []string) error {
 	// every interface unasked, and binding locally is also what makes
 	// passwordless access defensible: reaching the port at all means being on
 	// this machine.
-	addr := fs.String("addr", envOr("INBOXQL_ADDR", "127.0.0.1:8080"), "listen address")
+	addr := fs.String("addr", ctx.defaultAddr(), "listen address")
 	openFlag := fs.Bool("open", false, "open browser on start")
 	devFlag := fs.Bool("dev", false, "monitor the binary for changes and restart")
 	requirePassword := fs.Bool("require-password", envBool("INBOXQL_REQUIRE_PASSWORD"),
@@ -237,6 +241,9 @@ func runStart(ctx *Context, args []string) error {
 	// would otherwise switch it off.
 	forceTrust := fs.Bool("trust-local", envBool("INBOXQL_TRUST_LOCAL"),
 		"keep passwordless access when serving beyond localhost")
+	// Set by the service definitions, never typed: it changes what a server
+	// does at login rather than how it serves.
+	serviceMode := fs.Bool("service", false, "run as the login service (starts local models on first use)")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -248,6 +255,50 @@ func runStart(ctx *Context, args []string) error {
 	local, reason := trustDecision(*addr, *requirePassword, *forceTrust)
 	auth.SetTrustLocal(local)
 
+	// Show the name people type. A loopback bind is reached as localhost, and
+	// printing 127.0.0.1 just invites someone to wonder whether it differs.
+	// A hostname from the machine settings wins, because it is the address
+	// somebody chose to type.
+	displayURL := "http://" + *addr
+	if host, port, err := net.SplitHostPort(*addr); err == nil {
+		if host == "" || auth.IsLoopback(host) {
+			displayURL = "http://localhost:" + port
+			if ctx.Machine != nil && ctx.Machine.Hostname != "" {
+				displayURL = "http://" + ctx.Machine.Hostname + ":" + port
+			}
+		}
+	}
+
+	// One server per mailbox, taken before the database is opened, so a
+	// second server never gets as far as migrating it. When one is already
+	// running, this is not an error: point at it. That is what somebody
+	// typing `iql start` while the service runs actually wants.
+	lock, other, err := serverlock.Acquire(ctx.DataDir, serverlock.Info{
+		PID: os.Getpid(), URL: displayURL, Addr: *addr, Version: Version,
+		Schema: store.SchemaVersion, Started: time.Now(),
+	})
+	if errors.Is(err, serverlock.ErrHeld) {
+		url := ""
+		if other != nil {
+			url = other.URL
+		}
+		p := ctx.Printer()
+		if url != "" {
+			p.Printf("InboxQL is already running for %s at %s\n", ctx.DataDir, p.Bold(url))
+			if *openFlag {
+				_ = openBrowser(url)
+			}
+		} else {
+			p.Printf("InboxQL is already running for %s.\n", ctx.DataDir)
+		}
+		p.Printf("%s\n", p.Dim("Stop it with `iql service stop` if it is the service, or use --data for another mailbox."))
+		return nil
+	}
+	if err != nil {
+		return Fail(ExitError, "locking %s: %v", ctx.DataDir, err)
+	}
+	defer lock.Release()
+
 	if err := ctx.OpenStore(); err != nil {
 		return err
 	}
@@ -256,14 +307,21 @@ func runStart(ctx *Context, args []string) error {
 	// The API needs the data directory for the attachment blob store and LLM logs.
 	api.SetDataDir(ctx.DataDir)
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("LLM auto-start recovered from panic: %v", r)
-			}
+	if *serviceMode {
+		// As a login service, a local model server started here would hold
+		// its memory from login to logout whether or not anything uses it.
+		// Started on first use instead.
+		llm.StartOnFirstUse(ctx.DataDir)
+	} else {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("LLM auto-start recovered from panic: %v", r)
+				}
+			}()
+			_ = llm.AutoStartIfConfigured(context.Background(), ctx.DataDir)
 		}()
-		_ = llm.AutoStartIfConfigured(context.Background(), ctx.DataDir)
-	}()
+	}
 
 	revision := ""
 	if info, ok := debug.ReadBuildInfo(); ok {
@@ -283,15 +341,6 @@ func runStart(ctx *Context, args []string) error {
 	handler, err := api.Router()
 	if err != nil {
 		return Fail(ExitError, "%v", err)
-	}
-
-	// Show the name people type. A loopback bind is reached as localhost, and
-	// printing 127.0.0.1 just invites someone to wonder whether it differs.
-	displayURL := "http://" + *addr
-	if host, port, err := net.SplitHostPort(*addr); err == nil {
-		if host == "" || auth.IsLoopback(host) {
-			displayURL = "http://localhost:" + port
-		}
 	}
 
 	p := ctx.Printer()

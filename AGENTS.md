@@ -641,7 +641,7 @@ iql ui close <id>                      forget one that is gone
 **This command talks to the server, not the data directory.** Every other one
 reads the database; the list of open windows lives in the memory of the process
 serving them, so `iql start` must be running and `--addr` must point at it
-(default `127.0.0.1:8080`, or `$INBOXQL_ADDR`).
+(default: `$INBOXQL_ADDR`, then `addr` in the machine settings, then `127.0.0.1:8420`).
 
 ### Why this is the useful half
 
@@ -1177,7 +1177,8 @@ failure), `account` (add/list/remove/verify/sync), `user`, `vault`
 `laya` (status/install/calibrate/remove — the decision model),
 `log` (read what the application did; `log level` sets how much is recorded),
 `ui` (the open browser windows; needs a running server — see above),
-`backup` / `restore`, `export`, `version`, `start`.
+`backup` / `restore`, `export`, `version`, `start`, and the machine commands
+below: `setup`, `where`, `service`, `update`, `hosts`.
 
 Two to avoid unless explicitly asked: `account remove` deletes every stored
 message for that account, and `vault rotate` re-encrypts every credential.
@@ -1188,6 +1189,48 @@ failures as authentication rejected, host not found, network unreachable, or
 TLS verification failed, rather than returning one opaque error.
 
 ---
+
+## An installed machine
+
+InboxQL is normally installed as a per-user background service, with one
+mailbox per machine named in `~/.iql/settings.json`:
+
+```
+iql --json where                  which mailbox, and why — read this first
+iql --json service status         installed? running? at what address?
+iql --json update --check         is there a newer release?
+iql --json hosts show             a named address, if one is set
+```
+
+| Command | Does |
+|---|---|
+| `setup [--data <dir>] [--addr …]` | writes the settings and prepares the mailbox; `--data` adopts an existing one where it is |
+| `where` | the data directory in use, and whether it came from `--data`, `$INBOXQL_DATA`, the settings or this folder |
+| `service install\|uninstall\|start\|stop\|restart\|status` | a LaunchAgent / systemd user unit / logon task, from login to logout |
+| `update [--check] [--yes]` | verify, back up the mailbox, stop the service, replace the binary, start it |
+| `hosts set <name>\|remove\|show` | a name such as `inboxql.localhost` in the hosts file |
+
+**Only `where`, `service status`, `update --check` and `hosts show` are yours to
+run unasked.** The rest change the machine — a login item, the binary, the
+hosts file, the mailbox's schema — and need the person to ask for them.
+
+**One server per mailbox.** A running server holds a lock in its data
+directory. `iql start` on a held mailbox prints where the running one is and
+exits 0. A command from a newer `iql` refuses to open a mailbox an older server
+is serving — it would migrate the database underneath it — and says to stop
+the service or update.
+
+**On battery**, the automatic annotation sweep after a sync waits for mains
+power unless `heavyWorkOnBattery` is set in the settings. Nothing is lost:
+what is pending stays pending. A sweep you run yourself is not deferred.
+
+**The service starts local models on first use**, not at login: a model
+server held from login to logout costs gigabytes whether or not it is used.
+The first request that needs one waits for it to start.
+
+**macOS builds are not notarised.** Full Disk Access — needed to import from
+Apple Mail — is tied to the exact binary and lost at each update. If an import
+reports `blocked` after an update, that is why; relay the `remedy`.
 
 ## Things that will trip you up
 
@@ -1210,10 +1253,13 @@ to retry.
 `id` derives one from the name and answers **409** if that collides. Pass the
 `id` explicitly to update an existing account.
 
-**The data directory is explicit.** Pass `--data <dir>` or set `INBOXQL_DATA`. No
-command except `init` will create one; the rest exit 5 with instructions. This
-is intentional — the old behaviour silently made an empty database wherever the
-process happened to be running.
+**Which mailbox, first match wins:** `--data <dir>`, then `$INBOXQL_DATA`,
+then `~/.iql/settings.json` (`$INBOXQL_HOME` moves that folder), then `./data` —
+the last only when there are no machine settings. **Run `iql --json where`
+before reasoning about which mailbox you are reading**; it says which and why.
+No command except `init` and `setup` will create one; the rest exit 5 with
+instructions. A settings file that will not parse also exits 5, rather than
+falling back to `./data` — which would be a different mailbox.
 
 **Flags may follow positionals.** `iql read m1 --thread` and
 `iql read --thread m1` are equivalent. Use `--` before an argument that starts
@@ -1275,12 +1321,12 @@ Do not promise the user any of this; none of it exists:
 
 ## Authentication
 
-`iql start` listens on `127.0.0.1:8080` and serves it without a password, so a
+`iql start` listens on `127.0.0.1:8420` and serves it without a password, so a
 local tool driving the API needs no credentials in the default configuration.
 
 A password is required whenever the audience widens:
 
-- the listen address is not loopback (`--addr :8080`, a LAN address);
+- the listen address is not loopback (`--addr :8420`, a LAN address);
 - the request arrived through a proxy — any of `X-Forwarded-For`, `X-Real-Ip`,
   `Forwarded`, `X-Forwarded-Host`. This one cannot be turned off;
 - the request came from a browser page on another origin. Neither can this one.

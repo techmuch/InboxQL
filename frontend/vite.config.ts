@@ -12,7 +12,9 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        // Where `iql start` listens by default. INBOXQL_ADDR points the
+        // proxy elsewhere, matching the server's own override.
+        target: `http://${process.env.INBOXQL_ADDR ?? 'localhost:8420'}`,
         changeOrigin: true,
         secure: false,
       }

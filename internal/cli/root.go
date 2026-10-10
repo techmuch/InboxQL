@@ -23,6 +23,7 @@ var subcommands = map[string][]string{
 	"import":      {"sources", "mailboxes", "scan", "run", "eml"},
 	"draft":       {"create", "list", "show", "delete"},
 	"outbox":      {"list", "show", "approve", "reject"},
+	"service":     {"install", "uninstall", "start", "stop", "restart", "status"},
 }
 
 // globalFlag is a flag that means the same thing wherever it appears.
@@ -133,7 +134,7 @@ const (
 // commandOrder is the sequence commands appear in help, chosen to match the
 // order someone meets them rather than the alphabet.
 var commandOrder = []string{
-	"init", "start", "version", "doctor",
+	"setup", "where", "service", "update", "hosts", "init", "start", "version", "doctor",
 	"account", "user", "vault", "llm", "maintenance", "ocr", "gliner", "laya", "backup", "restore",
 	"import", "export", "log", "ui", "annotate", "ticket", "contact",
 	"query", "saved", "sql", "search", "read", "analyze", "draft", "send", "outbox",
@@ -149,7 +150,9 @@ func listedInOrder(name string) bool {
 }
 
 var commandGroup = map[string]string{
-	"init": groupStart, "start": groupStart, "version": groupStart, "doctor": groupStart,
+	"setup": groupStart, "where": groupStart, "service": groupStart, "update": groupStart,
+	"hosts": groupStart,
+	"init":  groupStart, "start": groupStart, "version": groupStart, "doctor": groupStart,
 	"account": groupAdmin, "user": groupAdmin, "vault": groupAdmin, "llm": groupAdmin,
 	"maintenance": groupAdmin, "ocr": groupAdmin, "gliner": groupAdmin, "laya": groupAdmin,
 	"backup": groupAdmin, "restore": groupAdmin,
@@ -184,8 +187,10 @@ and ` + "`iql --data ./data doctor`" + ` are the same invocation.`,
 		},
 	}
 
-	root.PersistentFlags().StringVar(&ctx.DataDir, "data",
-		envOr("INBOXQL_DATA", "./data"), "path to the InboxQL data directory")
+	// No default here: an empty value means "not said", and resolve() works
+	// out the rest — $INBOXQL_DATA, the machine settings, then ./data.
+	root.PersistentFlags().StringVar(&ctx.DataDir, "data", "",
+		"the InboxQL data directory (default: $INBOXQL_DATA, ~/.iql/settings.json, then ./data)")
 	root.PersistentFlags().BoolVar(&ctx.JSON, "json", false,
 		"emit machine-readable JSON where supported")
 	root.PersistentFlags().BoolVarP(&ctx.Verbose, "verbose", "V", false,

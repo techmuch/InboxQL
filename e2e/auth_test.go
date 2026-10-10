@@ -104,6 +104,8 @@ func TestHeaderlessProxyIsTheKnownLimit(t *testing.T) {
 
 	// What must hold: the same deployment with a public listen address is
 	// refused, which is the configuration someone would actually reach.
+	s.stop()
+
 	public := e.startServerAt(":" + itoa(freePort(t)))
 	if got := getStatus(t, "http://"+startTCPProxy(t, public.Addr)+"/api/messages", nil); got != http.StatusUnauthorized {
 		t.Errorf("a proxied request to a public bind returned %d, want 401", got)
@@ -156,6 +158,8 @@ func TestRequirePasswordFromEnvironment(t *testing.T) {
 
 	// Anything not clearly true leaves the default alone rather than being
 	// read as an instruction nobody gave.
+	required.stop()
+
 	garbage := e.startServerEnv([]string{"INBOXQL_REQUIRE_PASSWORD=banana"})
 	if code, _ := garbage.get(t, "/api/messages", nil); code == 401 {
 		t.Error("an unrecognised value was read as true")

@@ -503,7 +503,7 @@ func TestContactNotesTagsAndResponsiveness(t *testing.T) {
 	var alice struct {
 		Address string   `json:"address"`
 		Notes   string   `json:"notes"`
-		Labels    []string `json:"labels"`
+		Labels  []string `json:"labels"`
 	}
 	r.JSON(t, &alice)
 	if alice.Notes != "Important partner lead" {

@@ -1,0 +1,46 @@
+# Publishes site/ — the install page and the install scripts — to GitHub Pages.
+#
+# The scripts live on the Pages site rather than being fetched from the
+# repository's raw files so the install command is short, stable and on a
+# domain that says what it is: https://techmuch.github.io/InboxQL/install.sh
+#
+# Enable once: repository Settings → Pages → Source: GitHub Actions.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The installer is what most people run first; a syntax error in it
+      # would break every install, so it is checked before it is published.
+      - name: Check the install script
+        run: |
+          sh -n site/install.sh
+          shellcheck -s sh site/install.sh
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

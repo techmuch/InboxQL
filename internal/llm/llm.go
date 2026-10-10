@@ -63,6 +63,7 @@ func New(cfg store.LLMConfig) (Provider, error) {
 	if cfg.Provider == "" {
 		return nil, ErrNotConfigured
 	}
+	startIfDeferred(cfg)
 
 	endpoint := cfg.Endpoint
 	if endpoint == "" {

@@ -16,8 +16,10 @@ import (
 	"github.com/user/inboxql/internal/auth"
 	"github.com/user/inboxql/internal/embed"
 	"github.com/user/inboxql/internal/health"
+	"github.com/user/inboxql/internal/machine"
 	"github.com/user/inboxql/internal/maintenance"
 	"github.com/user/inboxql/internal/message"
+	"github.com/user/inboxql/internal/power"
 	"github.com/user/inboxql/internal/query"
 	"github.com/user/inboxql/internal/store"
 	"github.com/user/inboxql/internal/sync"
@@ -255,7 +257,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.81",
+	Version: "0.0.82",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.
@@ -438,6 +440,15 @@ func handleAccountSync(w http.ResponseWriter, r *http.Request) {
 		//
 		// A failure to start is not worth reporting — it means a sweep is
 		// already running, which is the outcome this wanted anyway.
+		//
+		// Not on battery, unless the machine settings allow it: a sweep can be
+		// twenty minutes of extraction that nobody asked for. Nothing is lost
+		// by waiting — what is pending stays pending, and the first sync on
+		// mains power drains it.
+		if deferHeavyWork() {
+			log.Printf("[annotate] after-sync sweep deferred: on battery (heavyWorkOnBattery is off in %s)", machine.Path())
+			return
+		}
 		_, _ = maintenanceJobs().Start(health.JobAnnotators, maintenance.Options{
 			Profile: store.TriggerAfterSync,
 		})
@@ -1027,4 +1038,13 @@ func handleContactResponsiveness(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// deferHeavyWork reports whether automatic heavy work should wait for mains
+// power: the machine is on battery, and its settings do not allow it.
+var deferHeavyWork = func() bool {
+	if s, found, err := machine.Load(); err == nil && found && s.HeavyWorkOnBattery {
+		return false
+	}
+	return power.OnBattery()
 }

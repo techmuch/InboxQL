@@ -62,7 +62,7 @@ The project provides several ways to run the application using `make`:
     Use this if you want to see the logs directly in your terminal.
 
 3.  **Access the Dashboard:**
-    Once running, open your browser to `http://localhost:8080`.
+    Once running, open your browser to `http://localhost:8420`.
 
 ## 3. Development Workflows
 
@@ -158,7 +158,7 @@ For a faster development loop with hot-module replacement (HMR), you can run the
     ```bash
     go run ./cmd/iql/main.go
     ```
-    (Defaults to `http://localhost:8080`)
+    (Defaults to `http://localhost:8420`)
 
 2.  **Start the Frontend Dev Server:**
     ```bash

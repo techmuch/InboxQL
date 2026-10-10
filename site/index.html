@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InboxQL — install</title>
+<meta name="description" content="Install InboxQL as a background service on macOS, Linux or Windows: one command, verified download, starts at login.">
+<style>
+  :root {
+    --bg: #fafaf9; --fg: #1c1917; --muted: #57534e; --faint: #e7e5e4;
+    --card: #ffffff; --code: #f5f5f4; --accent: #2563eb; --warn: #b45309;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0c0a09; --fg: #f5f5f4; --muted: #a8a29e; --faint: #292524;
+            --card: #1c1917; --code: #171412; --accent: #60a5fa; --warn: #fbbf24; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 96px; }
+  header h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  header p { margin: 0; color: var(--muted); }
+  h2 { font-size: 1.15rem; margin: 48px 0 8px; letter-spacing: -0.01em; }
+  h3 { font-size: 1rem; margin: 24px 0 4px; }
+  p, li { color: var(--fg); }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  code { font-family: var(--mono); font-size: 0.9em; background: var(--code);
+         padding: 1px 5px; border-radius: 4px; }
+  .tabs { display: flex; gap: 4px; margin: 24px 0 0; border-bottom: 1px solid var(--faint); }
+  .tabs button { font: inherit; background: none; border: 0; color: var(--muted);
+                 padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
+  .panel { display: none; padding-top: 16px; }
+  .panel.active { display: block; }
+  .cmd { position: relative; background: var(--card); border: 1px solid var(--faint);
+         border-radius: 8px; padding: 14px 72px 14px 14px; margin: 12px 0;
+         font-family: var(--mono); font-size: 0.9rem; overflow-x: auto; white-space: pre; }
+  .cmd button { position: absolute; top: 8px; right: 8px; font: 12px/1 inherit;
+                font-family: -apple-system, system-ui, sans-serif; background: var(--code);
+                color: var(--fg); border: 1px solid var(--faint); border-radius: 6px;
+                padding: 6px 8px; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--faint); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  .note { border-left: 3px solid var(--warn); padding: 4px 12px; margin: 16px 0; color: var(--muted); }
+  details { border-bottom: 1px solid var(--faint); padding: 10px 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  footer { margin-top: 64px; color: var(--muted); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>InboxQL</h1>
+  <p>Email for engineers — a mailbox you can query. Installed as your own background service, served at
+     <code>http://localhost:8420</code>.</p>
+</header>
+
+<h2 id="install">Install</h2>
+<p class="muted">One command. It verifies the download against the release's published checksums, installs to
+  <code>~/.iql</code>, and starts InboxQL when you log in.</p>
+
+<div class="tabs" role="tablist">
+  <button role="tab" data-os="mac" aria-selected="true">macOS</button>
+  <button role="tab" data-os="linux" aria-selected="false">Linux</button>
+  <button role="tab" data-os="windows" aria-selected="false">Windows</button>
+</div>
+
+<section class="panel active" data-os="mac">
+  <div class="cmd">curl -fsSL https://techmuch.github.io/InboxQL/install.sh | sh<button>Copy</button></div>
+  <p>Then open <a href="http://localhost:8420">http://localhost:8420</a>. Works on Apple Silicon and Intel.</p>
+  <div class="note">InboxQL is not notarised by Apple. Installing with the command above avoids any
+    warning; if you download the archive in a browser instead, clear the quarantine flag with
+    <code>xattr -d com.apple.quarantine iql</code> before running it.</div>
+</section>
+
+<section class="panel" data-os="linux">
+  <div class="cmd">curl -fsSL https://techmuch.github.io/InboxQL/install.sh | sh<button>Copy</button></div>
+  <p>Then open <a href="http://localhost:8420">http://localhost:8420</a>. Release builds are for x86-64; on
+    other architectures, build from <a href="https://github.com/techmuch/InboxQL">source</a>.</p>
+  <p class="muted">The service is a systemd user unit and runs while you are logged in. To have it start at boot
+    instead: <code>loginctl enable-linger $USER</code>.</p>
+</section>
+
+<section class="panel" data-os="windows">
+  <p>In PowerShell:</p>
+  <div class="cmd">irm https://techmuch.github.io/InboxQL/install.ps1 | iex<button>Copy</button></div>
+  <p>Then open <a href="http://localhost:8420">http://localhost:8420</a>. Release builds are for x86-64.</p>
+  <p class="muted">The service is a task that runs at logon with no window. Unlike macOS and Linux it is not
+    restarted after a crash — <code>iql service start</code> starts it again.</p>
+</section>
+
+<h2 id="what">What it installs, and where</h2>
+<table>
+  <tr><th>Path</th><th>What it is</th></tr>
+  <tr><td><code>~/.iql/bin/iql</code></td><td>The program — the server and every command.</td></tr>
+  <tr><td><code>~/.iql/settings.json</code></td><td>Which mailbox this machine uses, the address, the models folder.
+    Every <code>iql</code> command and the service read it.</td></tr>
+  <tr><td><code>~/.iql/data</code></td><td>Your mailbox: the database, its encryption key, attachments, backups.</td></tr>
+  <tr><td><code>~/.iql/models</code></td><td>Model weights, downloaded once per machine when first needed.</td></tr>
+  <tr><td><code>~/.iql/logs/service.log</code></td><td>What the service printed.</td></tr>
+</table>
+<p class="muted">Back up <code>~/.iql/data</code> — the database and <code>vault.key</code> together. Without the key,
+  stored account passwords cannot be decrypted.</p>
+
+<h2 id="service">The service</h2>
+<p>InboxQL runs as <em>your</em> background service, not a system one: it starts when you log in, stops when you
+  log out, and restarts itself if it crashes (macOS and Linux). It never keeps a laptop awake — closing the lid
+  sleeps the machine and the service with it.</p>
+<p>On battery it also holds off the heavy work nobody asked for: the annotation pass that follows a sync waits
+  for mains power. Set <code>"heavyWorkOnBattery": true</code> in <code>settings.json</code> to let it run anyway.</p>
+<div class="cmd">iql service status      # installed? running? at what address?
+iql service stop        # until the next login
+iql service start
+iql service restart     # after editing settings.json
+iql where               # which mailbox, and why<button>Copy</button></div>
+
+<h2 id="update">Updating</h2>
+<div class="cmd">iql update<button>Copy</button></div>
+<p>It checks the newest release, verifies it, <strong>backs up your mailbox</strong>, stops the service, replaces the
+  binary and starts it again. <code>iql update --check</code> only says whether there is one. Running the install
+  command again does the same thing.</p>
+<div class="note">macOS: importing from Apple Mail needs Full Disk Access for <code>~/.iql/bin/iql</code>. Because
+  InboxQL is not signed with an Apple Developer ID, macOS forgets that grant whenever the binary is replaced —
+  re-grant it in System Settings → Privacy &amp; Security → Full Disk Access after each update.</div>
+
+<h2 id="name">A name instead of a port</h2>
+<p>Give the site an address you can remember:</p>
+<div class="cmd">iql hosts set inboxql.localhost<button>Copy</button></div>
+<p>That records the name and adds two lines to your hosts file. Changing the hosts file needs administrator rights,
+  so the command tells you exactly what to run next — on macOS and Linux, <code>sudo iql hosts set inboxql.localhost</code>;
+  on Windows, the same command from a PowerShell opened with “Run as administrator”. Then open
+  <a href="http://inboxql.localhost:8420">http://inboxql.localhost:8420</a>.</p>
+<p class="muted">Use a name ending in <code>.localhost</code> or <code>.test</code>. Names ending in <code>.local</code>
+  are refused: macOS looks those up on the network before reading the hosts file, so every page would wait.
+  <code>iql hosts remove</code> takes the lines out again.</p>
+
+<h2 id="uninstall">Uninstalling</h2>
+<div class="cmd">iql service uninstall
+rm -rf ~/.iql/bin<button>Copy</button></div>
+<p>That leaves your mailbox in <code>~/.iql/data</code>. Delete <code>~/.iql</code> to remove everything, and
+  <code>iql hosts remove</code> first if you set a name. The installer also added one line to your shell's profile,
+  marked <code># added by the InboxQL installer</code>.</p>
+
+<h2 id="help">When something is wrong</h2>
+<details><summary>The page does not load</summary>
+  <p>Run <code>iql service status</code>. If it is installed but not running, the reason is at the end of
+    <code>~/.iql/logs/service.log</code>. The most common one is another program using port 8420: change
+    <code>"addr"</code> in <code>~/.iql/settings.json</code>, then <code>iql service restart</code>.</p>
+</details>
+<details><summary>“InboxQL is already running”</summary>
+  <p>One server per mailbox. Typing <code>iql start</code> while the service runs points you at the running one
+    rather than starting a second copy that would sync the same mail twice.</p>
+</details>
+<details><summary>A command uses a different mailbox than I expected</summary>
+  <p><code>iql where</code> says which mailbox and why. The order is: <code>--data</code>, then
+    <code>$INBOXQL_DATA</code>, then <code>~/.iql/settings.json</code>, then a <code>./data</code> folder — the last only
+    when there are no settings.</p>
+</details>
+<details><summary>macOS says the program cannot be opened</summary>
+  <p>It was downloaded through a browser, which marks it as quarantined. Install with the <code>curl</code> command
+    above, or run <code>xattr -d com.apple.quarantine ~/.iql/bin/iql</code>.</p>
+</details>
+<details><summary>Apple Mail import says it is blocked</summary>
+  <p>Grant Full Disk Access to <code>~/.iql/bin/iql</code> in System Settings → Privacy &amp; Security, then
+    <code>iql service restart</code>. After an update, grant it again.</p>
+</details>
+
+<footer>
+  <a href="https://github.com/techmuch/InboxQL">Source</a> ·
+  <a href="https://github.com/techmuch/InboxQL/releases">Releases</a> ·
+  <a href="https://github.com/techmuch/InboxQL/blob/main/AGENTS.md">Driving InboxQL from an agent</a>
+</footer>
+</main>
+<script>
+  // Open the tab for the visitor's platform; it is the command they want.
+  const tabs = document.querySelectorAll('.tabs button');
+  const panels = document.querySelectorAll('.panel');
+  function show(os) {
+    tabs.forEach(t => t.setAttribute('aria-selected', String(t.dataset.os === os)));
+    panels.forEach(p => p.classList.toggle('active', p.dataset.os === os));
+  }
+  tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.os)));
+  const ua = navigator.userAgent;
+  show(/Windows/.test(ua) ? 'windows' : /Linux|X11/.test(ua) && !/Android/.test(ua) ? 'linux' : 'mac');
+
+  document.querySelectorAll('.cmd button').forEach(b => {
+    b.addEventListener('click', async () => {
+      const text = b.parentElement.firstChild.textContent.trim();
+      try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+      catch { b.textContent = 'Select it'; }
+      setTimeout(() => { b.textContent = 'Copy'; }, 1500);
+    });
+  });
+</script>
+</body>
+</html>

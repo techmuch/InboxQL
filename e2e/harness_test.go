@@ -153,6 +153,10 @@ func (e *env) runFull(stdin io.Reader, extra map[string]string, args ...string) 
 		"INBOXQL_NEW_PASSWORD="+adminPassword,
 		"INBOXQL_DATA=", // must not leak in from the developer's shell
 		"NO_COLOR=1",    // assert on text, not escape sequences
+		// Nor the developer's machine settings: a test that read the real
+		// ~/.iql would find the real models folder, and without --data the
+		// real mailbox.
+		"INBOXQL_HOME="+filepath.Join(e.dataDir, ".iql-home"),
 	)
 	for k, v := range extra {
 		cmd.Env = append(cmd.Env, k+"="+v)
@@ -229,7 +233,8 @@ func (e *env) start(addr string, extraEnv []string, extraArgs ...string) *server
 
 	args := append([]string{"start", "--addr", addr, "--data", e.dataDir}, extraArgs...)
 	cmd := exec.Command(e.bin, args...)
-	cmd.Env = append(os.Environ(), "INBOXQL_DATA=", "NO_COLOR=1", "INBOXQL_TRUST_LOCAL=", "INBOXQL_REQUIRE_PASSWORD=")
+	cmd.Env = append(os.Environ(), "INBOXQL_DATA=", "NO_COLOR=1", "INBOXQL_TRUST_LOCAL=", "INBOXQL_REQUIRE_PASSWORD=",
+		"INBOXQL_HOME="+filepath.Join(e.dataDir, ".iql-home"))
 	cmd.Env = append(cmd.Env, extraEnv...)
 
 	out := &safeBuffer{}

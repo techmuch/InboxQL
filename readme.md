@@ -39,9 +39,23 @@ InboxQL is in active early development. The table below is the honest state of p
 
 ## Running it
 
+Installed, InboxQL is your own background service — it starts at login and is at
+`http://localhost:8420`:
+
 ```bash
-iql init  --data ~/.inboxql
-iql start --data ~/.inboxql
+curl -fsSL https://techmuch.github.io/InboxQL/install.sh | sh     # macOS, Linux
+irm https://techmuch.github.io/InboxQL/install.ps1 | iex          # Windows
+```
+
+Full instructions, updating and uninstalling: https://techmuch.github.io/InboxQL/
+
+By hand, or for a second mailbox:
+
+```bash
+iql setup                  # ~/.iql/settings.json and ~/.iql/data — the machine's mailbox
+iql service install        # start it at login
+iql where                  # which mailbox a command will use, and why
+iql start --data ./other   # any other mailbox, in the foreground
 ```
 
 InboxQL listens on `localhost` only and does not ask for a password there. It
@@ -52,7 +66,7 @@ That changes as soon as you serve it to anyone else:
 | How you start it | Password |
 |---|---|
 | `iql start` | not required — localhost only |
-| `iql start --addr :8080` | required — reachable from the network |
+| `iql start --addr :8420` | required — reachable from the network |
 | behind a reverse proxy | required — the request was relayed |
 | `iql start --require-password` | required — always |
 
@@ -64,7 +78,7 @@ access for any request carrying `X-Forwarded-For`, `X-Real-Ip`, `Forwarded` or
 
 Neither is the other one: **a page on another site cannot drive the API.**
 Passwordless access authenticates a request with no cookie, so `SameSite` does
-not help — any page you visited could otherwise have reached `localhost:8080`.
+not help — any page you visited could otherwise have reached `localhost:8420`.
 InboxQL refuses passwordless access, and refuses writes outright, for any
 request a browser marks as coming from elsewhere (`Sec-Fetch-Site`, or an
 `Origin` that does not match the address asked for). Command-line tools send
@@ -85,18 +99,20 @@ It prints a warning, and you should not need it.
 
 InboxQL is distributed as a single, zero-dependency binary.
 
-### Download Release
+### Install
 
-Download the latest release for your operating system, prepare a data directory,
-then start the server:
+Use the one-line install above: it verifies the download, installs to
+`~/.iql/bin`, writes `~/.iql/settings.json` and installs the login service.
+
+Or download a release archive yourself, then:
 
 ```bash
-./iql init      # creates ./data with the database and encryption key
-./iql start
+./iql setup              # the machine's mailbox, in ~/.iql
+./iql service install    # start it at login
 ```
 
-`./iql` on its own lists every subcommand — it is an administrative CLI as well
-as a server. You can then access the InboxQL dashboard by opening your web browser and navigating to `http://localhost:8080`.
+`iql` on its own lists every subcommand — it is an administrative CLI as well
+as a server. The dashboard is at `http://localhost:8420`.
 
 ### Build from Source
 

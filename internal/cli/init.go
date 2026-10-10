@@ -132,6 +132,12 @@ func runInit(ctx *Context, args []string) error {
 
 	ctx.Printf("Back up %s together with the database — without it,\n", vault.KeyFileName)
 	ctx.Printf("stored account passwords cannot be decrypted.\n\n")
+	// From `iql setup` the next step is the service, and setup says so; the
+	// --data advice below would be wrong there, since the settings now name
+	// this directory and no flag is needed.
+	if ctx.suppressInitNext {
+		return nil
+	}
 	ctx.Printf("Next:\n")
 	ctx.Printf("  iql account add --data %s    connect a mailbox\n", out.DataDir)
 	ctx.Printf("  iql doctor      --data %s    check everything is healthy\n", out.DataDir)

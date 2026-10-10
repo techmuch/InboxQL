@@ -16,7 +16,7 @@ frontend:
 	mkdir -p internal/embed/static
 	cp -r frontend/dist/* internal/embed/static/
 
-VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.81")
+VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.82")
 LDFLAGS := -X github.com/user/inboxql/internal/cli.Version=$(VERSION)
 
 # FTS5 is a compile-time option in mattn/go-sqlite3, not a runtime one. Without
@@ -79,7 +79,7 @@ else
 	@echo "Running backend in background..."
 	nohup ./bin/iql start --data ./data $(AUTH) > iql.log 2>&1 &
 	@echo "Backend started. Check iql.log for output."
-	@echo "Access the frontend at http://localhost:8080"
+	@echo "Access the frontend at http://localhost:8420"
 endif
 
 # Allow --foreground as a flag-like target

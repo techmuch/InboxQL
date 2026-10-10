@@ -24,6 +24,9 @@ import (
 	"strings"
 
 	"github.com/user/inboxql/internal/logging"
+	"github.com/user/inboxql/internal/machine"
+	"github.com/user/inboxql/internal/modelpath"
+	"github.com/user/inboxql/internal/serverlock"
 	"github.com/user/inboxql/internal/store"
 )
 
@@ -56,7 +59,19 @@ func Fail(code int, format string, args ...any) *Error {
 // reached for globally so commands stay testable.
 type Context struct {
 	DataDir string
-	JSON    bool
+	// DataSource says why DataDir is what it is: "flag", "env", "settings"
+	// or "local". `iql where` reports it, because "which mailbox is this"
+	// should never need guessing.
+	DataSource string
+	// Machine is the machine settings, when ~/.iql/settings.json exists.
+	Machine *machine.Settings
+	// machineErr is a settings file that exists and could not be read. Kept
+	// rather than fatal at resolve time, so `iql where` can say what is wrong
+	// with it; anything that opens the store refuses.
+	machineErr error
+	// suppressInitNext is set by `iql setup`, which prints its own next step.
+	suppressInitNext bool
+	JSON             bool
 	// Verbose surfaces the database and migration logging that is otherwise
 	// suppressed. Off by default: three lines of schema chatter before every
 	// command's real output is noise for a person and clutter in a terminal.
@@ -74,10 +89,85 @@ type Context struct {
 // The data directory becomes absolute so error messages and the vault key
 // path do not shift if something changes the working directory mid-run.
 func (c *Context) resolve() {
-	if abs, err := filepath.Abs(c.DataDir); err == nil {
+	configureLogging(c.Verbose, c.Stderr)
+
+	settings, found, err := machine.Load()
+	switch {
+	case err != nil:
+		c.machineErr = err
+	case found:
+		c.Machine = settings
+		// Models are the machine's whatever mailbox is in use: a --data
+		// pointing at a test mailbox still finds the weights already on disk.
+		modelpath.SetRoot(settings.Models)
+	}
+
+	// Which mailbox, first match wins. The explicit ways of saying so come
+	// first; the settings file is the machine's answer; ./data — what every
+	// command assumed before there were machine settings — is used only when
+	// there are none.
+	switch {
+	case c.DataDir != "":
+		c.DataSource = "flag"
+	case strings.TrimSpace(os.Getenv("INBOXQL_DATA")) != "":
+		c.DataDir, c.DataSource = os.Getenv("INBOXQL_DATA"), "env"
+	case c.Machine != nil:
+		c.DataDir, c.DataSource = c.Machine.DataDir, "settings"
+	default:
+		c.DataDir, c.DataSource = "./data", "local"
+	}
+	if abs, err := filepath.Abs(machine.Expand(c.DataDir)); err == nil {
 		c.DataDir = abs
 	}
-	configureLogging(c.Verbose, c.Stderr)
+	c.warnAboutLocalData()
+}
+
+// warnAboutLocalData says so when a mailbox sits in this folder and another
+// one is in use.
+//
+// Running `iql start` inside a project folder used to mean that folder's
+// ./data. Once machine settings exist it means the machine's mailbox, which is
+// what was asked for — and is also exactly the change that would otherwise go
+// unnoticed until somebody wondered where their mail went.
+func (c *Context) warnAboutLocalData() {
+	if c.DataSource != "settings" && c.DataSource != "env" {
+		return
+	}
+	local, err := filepath.Abs("./data")
+	if err != nil || local == c.DataDir {
+		return
+	}
+	if _, err := os.Stat(filepath.Join(local, store.DBNAME)); err != nil {
+		return
+	}
+	fmt.Fprintf(c.Stderr, "iql: using %s (from %s), not the mailbox in ./data — pass --data ./data for that one\n",
+		c.DataDir, sourceWords(c.DataSource))
+}
+
+// sourceWords says where a data directory came from, in words.
+func sourceWords(source string) string {
+	switch source {
+	case "flag":
+		return "--data"
+	case "env":
+		return "$INBOXQL_DATA"
+	case "settings":
+		return machine.Path()
+	default:
+		return "the current folder, because there are no machine settings"
+	}
+}
+
+// defaultAddr is where a server listens, or is looked for, unless told:
+// $INBOXQL_ADDR, then the machine settings, then the built-in default.
+func (c *Context) defaultAddr() string {
+	if a := strings.TrimSpace(os.Getenv("INBOXQL_ADDR")); a != "" {
+		return a
+	}
+	if c.Machine != nil && c.Machine.Addr != "" {
+		return c.Machine.Addr
+	}
+	return machine.DefaultAddr
 }
 
 // Command is one iql subcommand.
@@ -125,6 +215,18 @@ func (c *Context) dbPath() string {
 // misconfigured — the old behaviour, when the path was hardcoded relative to
 // the process's cwd.
 func (c *Context) OpenStore() error {
+	if c.machineErr != nil && c.DataSource != "flag" && c.DataSource != "env" {
+		return Fail(ExitNotConfigured, "%v", c.machineErr)
+	}
+	// A server holding this mailbox with an older schema would have the
+	// database migrated out from under it. Refused: stop it, or update it.
+	if info, held := serverlock.Held(c.DataDir); held && info.Schema > 0 && info.Schema < store.SchemaVersion {
+		return Fail(ExitError,
+			"a server is running for %s with an older version of InboxQL (schema %d; this is %d).\n"+
+				"Opening it here would upgrade the database underneath it. Stop that server first —\n"+
+				"`iql service stop` if it is the service — or run `iql update`.",
+			c.DataDir, info.Schema, store.SchemaVersion)
+	}
 	_ = store.MigrateLegacyDatabase(c.DataDir)
 	if _, err := os.Stat(c.dbPath()); err != nil {
 		if os.IsNotExist(err) {
@@ -222,4 +324,9 @@ func flagNeedsValue(fs *flag.FlagSet, arg string) bool {
 	}
 	boolFlag, ok := f.Value.(interface{ IsBoolFlag() bool })
 	return !(ok && boolFlag.IsBoolFlag())
+}
+
+// readServerLock reports the server holding a data directory, if any.
+func readServerLock(dataDir string) (*serverlock.Info, bool) {
+	return serverlock.Held(dataDir)
 }

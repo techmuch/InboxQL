@@ -59,6 +59,8 @@ import (
 	"github.com/gomlx/onnx-gomlx/onnx"
 	"github.com/gomlx/onnx-gomlx/onnx/parser"
 	sp "github.com/tggo/goSentencePiece"
+
+	"github.com/user/inboxql/internal/modelpath"
 )
 
 // Special token ids, from the checkpoint's tokenizer_config.json.
@@ -178,7 +180,7 @@ type Model struct {
 }
 
 // Dir is where the weights live under a data directory.
-func Dir(dataDir string) string { return filepath.Join(dataDir, "models", "laya") }
+func Dir(dataDir string) string { return modelpath.For(dataDir, "laya") }
 
 // Installed reports whether a usable checkpoint is on disk.
 func Installed(dataDir string) bool {

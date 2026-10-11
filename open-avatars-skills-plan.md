@@ -55,10 +55,19 @@ Gravatar server.
 ### Buttons
 nexus-shell ships Tailwind v3's reset unlayered, and unlayered CSS beats every
 layered Tailwind v4 utility: `px-5` lost to `button { padding: 0 }` unless
-nexus-shell's own bundle happened to contain the same class. It is now
-imported from index.css as `layer(nexus)`, between Tailwind's base and its
-utilities. Save Profile measures 20px a side (was 0); the shell's tabs and rail
-look as before. Every button in the app benefits, not just this one.
+nexus-shell's own bundle happened to contain the same class.
+
+**First fix, reverted:** putting nexus-shell in a cascade layer. It broke every
+theme but Light — nexus-shell's JavaScript also imports flexlayout's own
+`light.css`, unlayered, which then beat the shell's themed colours for the tab
+strip and tabsets (the header and tabs stayed white in Dark and Georgia Tech).
+Light looked right only because flexlayout's defaults are light.
+
+**The fix now:** nexus-shell stays unlayered as before; Tailwind is imported in
+parts (`theme.css` and `preflight.css` layered, `utilities.css` unlayered), so a
+utility meets nexus-shell's reset on specificity and a class beats an element.
+Checked in Light, Dark and Georgia Tech: no light surfaces left in Dark, the
+tab strip and header follow each theme, Save Profile keeps 20px a side.
 
 ### `iql open`
 Opens the URL the running server recorded in its lock file (so a site name is

@@ -30,7 +30,7 @@ import { fetchGravatar } from './lib/avatars';
 import { Docs } from './views/Docs';
 import { openDoc, DOCS_TAB } from './lib/docsNav';
 import { version as appVersion } from '../package.json';
-// nexus-shell's stylesheet is imported from index.css, inside a layer.
+import 'nexus-shell/style.css';
 import './App.css';
 
 // --- Login View ---

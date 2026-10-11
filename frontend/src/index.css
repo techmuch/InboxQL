@@ -1,18 +1,25 @@
 /*
+ * Tailwind is imported in parts, so that its utilities are unlayered.
+ *
  * nexus-shell ships its stylesheet compiled with Tailwind v3 and unlayered,
  * reset included — `button { padding: 0 }` among it. Unlayered rules beat
- * every layered one whatever their specificity, so each of this app's
- * Tailwind v4 utilities lost to that reset unless nexus-shell's bundle
- * happened to contain the same class: `px-4` worked, `px-5` did nothing, and
- * Save Profile's text touched its edges.
+ * every layered one whatever their specificity, so with Tailwind v4's usual
+ * single import every utility here lost to that reset unless nexus-shell's
+ * own bundle happened to contain the same class: `px-4` worked, `px-5` did
+ * nothing, and Save Profile's text touched its edges.
  *
- * In a layer of its own, between Tailwind's reset and its utilities, the
- * shell still styles its own components over the reset, and a utility on an
- * element always wins — which is what writing it means.
+ * Unlayered, a utility meets the reset on specificity, and a class beats an
+ * element — which is what writing the class means.
+ *
+ * The obvious fix, putting nexus-shell in a layer instead, broke every theme
+ * but Light: nexus-shell's JavaScript also imports flexlayout's own light.css,
+ * unlayered, and that then beat the shell's themed colours for the tab strip.
+ * Do not move nexus-shell into a layer.
  */
-@layer theme, base, nexus, components, utilities;
-@import "nexus-shell/style.css" layer(nexus);
-@import "tailwindcss";
+@layer theme, base, components;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
 
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;

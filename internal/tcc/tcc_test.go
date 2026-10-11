@@ -8,7 +8,7 @@ import (
 
 func TestBundleOfTakesTheOutermostApp(t *testing.T) {
 	cases := map[string]string{
-		"/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal":                                  "/System/Applications/Utilities/Terminal.app",
+		"/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal":                                 "/System/Applications/Utilities/Terminal.app",
 		"/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper": "/Applications/Visual Studio Code.app",
 		"/Users/me/.iql/bin/iql": "",
 		"/bin/zsh":               "",

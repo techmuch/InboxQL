@@ -105,6 +105,7 @@ case ":$PATH:" in
         *)      rc="$HOME/.profile" ;;
       esac
       if ! grep -qs '# added by the InboxQL installer' "$rc"; then
+        # shellcheck disable=SC2016
         printf '\nexport PATH="%s:$PATH"  # added by the InboxQL installer\n' "$BIN_DIR" >> "$rc"
         say "Added $BIN_DIR to your PATH in $rc (open a new terminal to use it)"
       fi

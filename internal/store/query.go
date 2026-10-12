@@ -43,6 +43,7 @@ type QueryResult struct {
 	Topics      []ContactTopic     `json:"topics,omitempty"`
 	Threads     []*Thread          `json:"threads,omitempty"`
 	Logs        []*LoggedError     `json:"logs,omitempty"`
+	Events      []OccurrenceView   `json:"events,omitempty"`
 	Groups      []QueryGroup       `json:"groups,omitempty"`
 	Total       int64              `json:"total,omitempty"`
 	// GroupField and Bucket describe an aggregate result, so a chart can turn
@@ -246,6 +247,14 @@ func RunQueryContext(ctx context.Context, src string, limit, offset int) (res *Q
 			return nil, err
 		}
 		res.Kind, res.Drafts, res.Count = "drafts", drafts, len(drafts)
+		return res, nil
+
+	case query.PlanEvents:
+		events, err := scanEventRows(ctx, plan)
+		if err != nil {
+			return nil, err
+		}
+		res.Kind, res.Events, res.Count = "events", events, len(events)
 		return res, nil
 
 	case query.PlanLogs:
@@ -533,6 +542,8 @@ func ExplainQuery(src string) (*QueryResult, error) {
 		kind = "topics"
 	case query.PlanLogs:
 		kind = "logs"
+	case query.PlanEvents:
+		kind = "events"
 	}
 	return &QueryResult{Query: src, Kind: kind, SQL: plan.SQL, Args: plan.Args}, nil
 }
@@ -659,6 +670,28 @@ func scanLogs(ctx context.Context, plan *query.Plan) ([]*LoggedError, error) {
 		}
 		e.CreatedAt = time.UnixMilli(created)
 		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// scanEventRows reads event occurrences in query.EventSelectList order.
+func scanEventRows(ctx context.Context, plan *query.Plan) ([]OccurrenceView, error) {
+	rows, err := planRows(ctx, plan)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []OccurrenceView{}
+	for rows.Next() {
+		var v OccurrenceView
+		var s, e int64
+		if err := rows.Scan(&v.EventID, &v.CalendarID, &v.CalendarName, &v.Color, &v.UID, &s, &e, &v.AllDay,
+			&v.Summary, &v.Location, &v.ConferenceURL, &v.Status, &v.ShowAs, &v.MyStatus, &v.Recurring,
+			&v.Proposed, &v.Organizer, &v.Attendees, &v.Charge, &v.ThreadKey, &v.SourceMessageID); err != nil {
+			return nil, err
+		}
+		v.Start, v.End = time.UnixMilli(s).UTC(), time.UnixMilli(e).UTC()
+		out = append(out, v)
 	}
 	return out, rows.Err()
 }

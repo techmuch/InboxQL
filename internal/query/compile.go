@@ -145,6 +145,8 @@ func (c *compiler) idColumn() string {
 		return "c.address"
 	case EntityLog:
 		return "l.id"
+	case EntityEvent:
+		return "o.event_id"
 	case EntityAttachment:
 		// A file's identity is its bytes. Falling back to the row's own id
 		// keeps a part whose bytes were never stored — too large, or arriving
@@ -299,6 +301,11 @@ func (c *compiler) term(t *Term, negated bool) (string, error) {
 
 	if c.entity == EntityLog {
 		sql, err := c.logTerm(t, negated)
+		return sql, at(t, err)
+	}
+
+	if c.entity == EntityEvent {
+		sql, err := c.eventTerm(t, negated)
 		return sql, at(t, err)
 	}
 

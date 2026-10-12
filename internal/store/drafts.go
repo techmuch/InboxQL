@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -231,4 +232,30 @@ func draftThreadKey(inReplyTo string) (string, error) {
 		return "", err
 	}
 	return key.String, nil
+}
+
+// DraftCalendar is the iCalendar part a draft carries, if any: an iMIP REPLY
+// answering an invitation.
+type DraftCalendar struct {
+	Method string `json:"method"`
+	ICS    string `json:"ics"`
+}
+
+// SetDraftCalendar attaches an iCalendar part to a draft.
+func SetDraftCalendar(draftID, method, ics string) error {
+	_, err := db.Exec(`INSERT OR REPLACE INTO draft_calendar (draft_id, method, ics) VALUES (?, ?, ?)`, draftID, method, ics)
+	return err
+}
+
+// GetDraftCalendar returns a draft's iCalendar part, or nil.
+func GetDraftCalendar(draftID string) (*DraftCalendar, error) {
+	var c DraftCalendar
+	err := db.QueryRow(`SELECT method, ics FROM draft_calendar WHERE draft_id = ?`, draftID).Scan(&c.Method, &c.ICS)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
 }

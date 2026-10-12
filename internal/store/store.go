@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 40
+	SchemaVersion = 41
 )
 
 var (
@@ -139,6 +139,13 @@ func InitDB(dataDir string) (*sql.DB, error) {
 		err = migrateDB(db)
 		if err != nil {
 			err = fmt.Errorf("failed to run database migrations: %w", err)
+			return
+		}
+
+		// Every mailbox has a calendar of its own and one for invitations
+		// that arrive by mail, whether or not any account is connected.
+		if err = EnsureDefaultCalendars(); err != nil {
+			err = fmt.Errorf("failed to create the default calendars: %w", err)
 			return
 		}
 
@@ -1723,6 +1730,143 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 40
+	}
+
+	if currentVersion < 41 {
+		log.Println("Applying schema migration v41 (calendars)...")
+		// A calendar event is its own kind of thing, beside mail, contacts,
+		// files and tickets.
+		//
+		// events.raw keeps the iCalendar the event came as, the way a message
+		// keeps its RFC 822: a provider's fields this program does not model
+		// survive a round trip, which is the usual way calendars corrupt each
+		// other. The columns beside it are derived, for querying.
+		//
+		// recurrence_id is 0 for a series (or a single event) and the original
+		// start, in epoch ms, for an override of one occurrence — NOT NULL so
+		// the unique key means what it says; SQLite treats NULLs as distinct.
+		//
+		// event_occurrences is the expansion of every series over a window,
+		// rebuilt when a rule or an exception changes. Views and queries read
+		// it. Its charge columns are reserved for time tracking: a recurring
+		// meeting can be billed to different clients from week to week, so the
+		// charge belongs to an occurrence, not to the series.
+		if _, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS calendar_accounts (
+				id          TEXT PRIMARY KEY,
+				provider    TEXT NOT NULL,
+				name        TEXT NOT NULL,
+				email       TEXT,
+				config_json TEXT NOT NULL DEFAULT '{}',
+				secret      TEXT,
+				status      TEXT NOT NULL DEFAULT 'new',
+				last_error  TEXT,
+				synced_at   INTEGER,
+				created_at  INTEGER NOT NULL
+			);
+
+			CREATE TABLE IF NOT EXISTS calendars (
+				id          TEXT PRIMARY KEY,
+				account_id  TEXT REFERENCES calendar_accounts(id) ON DELETE CASCADE,
+				provider    TEXT NOT NULL,
+				remote_id   TEXT,
+				name        TEXT NOT NULL,
+				color       TEXT,
+				time_zone   TEXT,
+				access      TEXT NOT NULL DEFAULT 'owner',
+				hidden      INTEGER NOT NULL DEFAULT 0,
+				is_primary  INTEGER NOT NULL DEFAULT 0,
+				sync_token  TEXT,
+				synced_at   INTEGER,
+				created_at  INTEGER NOT NULL
+			);
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_calendars_remote ON calendars(account_id, remote_id);
+
+			CREATE TABLE IF NOT EXISTS events (
+				id                TEXT PRIMARY KEY,
+				calendar_id       TEXT NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
+				uid               TEXT NOT NULL,
+				recurrence_id     INTEGER NOT NULL DEFAULT 0,
+				remote_id         TEXT,
+				etag              TEXT,
+				summary           TEXT NOT NULL DEFAULT '',
+				description       TEXT NOT NULL DEFAULT '',
+				location          TEXT NOT NULL DEFAULT '',
+				conference_url    TEXT NOT NULL DEFAULT '',
+				start_at          INTEGER NOT NULL,
+				end_at            INTEGER NOT NULL,
+				all_day           INTEGER NOT NULL DEFAULT 0,
+				tz                TEXT NOT NULL DEFAULT '',
+				rrule             TEXT NOT NULL DEFAULT '',
+				status            TEXT NOT NULL DEFAULT 'confirmed',
+				show_as           TEXT NOT NULL DEFAULT 'busy',
+				private           INTEGER NOT NULL DEFAULT 0,
+				organizer         TEXT NOT NULL DEFAULT '',
+				my_status         TEXT NOT NULL DEFAULT '',
+				sequence          INTEGER NOT NULL DEFAULT 0,
+				alarms            TEXT NOT NULL DEFAULT '[]',
+				raw               TEXT NOT NULL DEFAULT '',
+				source_message_id TEXT,
+				thread_key        TEXT,
+				origin            TEXT NOT NULL DEFAULT 'human',
+				proposed          INTEGER NOT NULL DEFAULT 0,
+				created_at        INTEGER NOT NULL,
+				updated_at        INTEGER NOT NULL,
+				UNIQUE (calendar_id, uid, recurrence_id)
+			);
+			CREATE INDEX IF NOT EXISTS idx_events_uid ON events(uid);
+			CREATE INDEX IF NOT EXISTS idx_events_remote ON events(calendar_id, remote_id);
+			CREATE INDEX IF NOT EXISTS idx_events_thread ON events(thread_key);
+			CREATE INDEX IF NOT EXISTS idx_events_message ON events(source_message_id);
+
+			CREATE TABLE IF NOT EXISTS event_attendees (
+				event_id  TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+				address   TEXT NOT NULL,
+				name      TEXT NOT NULL DEFAULT '',
+				role      TEXT NOT NULL DEFAULT 'required',
+				status    TEXT NOT NULL DEFAULT 'needs-action',
+				PRIMARY KEY (event_id, address)
+			);
+			CREATE INDEX IF NOT EXISTS idx_event_attendees_address ON event_attendees(address);
+
+			CREATE TABLE IF NOT EXISTS event_occurrences (
+				event_id      TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+				start_at      INTEGER NOT NULL,
+				end_at        INTEGER NOT NULL,
+				all_day       INTEGER NOT NULL DEFAULT 0,
+				charge        TEXT,
+				charge_source TEXT,
+				PRIMARY KEY (event_id, start_at)
+			);
+			CREATE INDEX IF NOT EXISTS idx_event_occurrences_start ON event_occurrences(start_at);
+
+			CREATE TABLE IF NOT EXISTS calendar_changes (
+				id          TEXT PRIMARY KEY,
+				event_id    TEXT,
+				calendar_id TEXT NOT NULL,
+				op          TEXT NOT NULL,
+				payload     TEXT NOT NULL DEFAULT '{}',
+				state       TEXT NOT NULL DEFAULT 'pending',
+				origin      TEXT NOT NULL DEFAULT 'human',
+				error       TEXT,
+				created_at  INTEGER NOT NULL,
+				updated_at  INTEGER NOT NULL
+			);
+			CREATE INDEX IF NOT EXISTS idx_calendar_changes_state ON calendar_changes(state);
+
+			-- The calendar part of an outgoing message: an answer to an
+			-- invitation goes as mail, through the outbox like any other.
+			CREATE TABLE IF NOT EXISTS draft_calendar (
+				draft_id TEXT PRIMARY KEY REFERENCES drafts(id) ON DELETE CASCADE,
+				method   TEXT NOT NULL,
+				ics      TEXT NOT NULL
+			);`); err != nil {
+			return fmt.Errorf("failed to apply schema v41: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 41;"); err != nil {
+			return err
+		}
+		currentVersion = 41
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

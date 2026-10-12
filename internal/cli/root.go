@@ -26,6 +26,7 @@ var subcommands = map[string][]string{
 	"maintenance": {"vacuum", "analyze", "integrity", "checkpoint"},
 	"import":      {"sources", "mailboxes", "scan", "run", "eml"},
 	"skills":      {"list", "install", "remove"},
+	"calendar":    {"agenda", "calendars", "show", "create", "update", "delete", "respond", "changes", "approve", "reject", "import", "export", "invitations", "accounts", "connect", "sync", "disconnect"},
 	"draft":       {"create", "list", "show", "delete"},
 	"outbox":      {"list", "show", "approve", "reject"},
 	"service":     {"install", "uninstall", "start", "stop", "restart", "status"},
@@ -141,7 +142,7 @@ const (
 var commandOrder = []string{
 	"setup", "where", "service", "update", "hosts", "init", "start", "open", "version", "doctor",
 	"account", "user", "vault", "llm", "maintenance", "ocr", "gliner", "laya", "backup", "restore",
-	"import", "export", "log", "ui", "skills", "annotate", "ticket", "contact",
+	"import", "export", "log", "ui", "skills", "annotate", "ticket", "contact", "calendar",
 	"query", "saved", "sql", "search", "read", "analyze", "draft", "send", "outbox",
 }
 
@@ -161,7 +162,7 @@ var commandGroup = map[string]string{
 	"account": groupAdmin, "user": groupAdmin, "vault": groupAdmin, "llm": groupAdmin,
 	"maintenance": groupAdmin, "ocr": groupAdmin, "gliner": groupAdmin, "laya": groupAdmin,
 	"backup": groupAdmin, "restore": groupAdmin,
-	"import": groupAdmin, "export": groupAdmin, "log": groupAdmin, "ui": groupAdmin, "skills": groupAdmin,
+	"import": groupAdmin, "export": groupAdmin, "log": groupAdmin, "ui": groupAdmin, "skills": groupAdmin, "calendar": groupAdmin,
 	"annotate": groupAdmin, "ticket": groupAdmin, "contact": groupAdmin,
 	// query and sql lead the agent group: they are the general tools, and
 	// search is the narrow one kept for compatibility with existing callers.

@@ -412,7 +412,7 @@ func runSend(ctx *Context, args []string) error {
 	}
 	// Validate before queueing so a malformed draft is rejected while it can
 	// still be fixed, rather than at the approval prompt.
-	msg, err := mailer.FromDraft(d, acc)
+	msg, err := mailer.FromDraftWithCalendar(d, acc)
 	if err != nil {
 		return Fail(ExitUsage, "%v", err)
 	}
@@ -494,7 +494,7 @@ func runOutbox(ctx *Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		msg, err := mailer.FromDraft(d, acc)
+		msg, err := mailer.FromDraftWithCalendar(d, acc)
 		if err != nil {
 			return Fail(ExitUsage, "%v", err)
 		}
@@ -549,7 +549,7 @@ func outboxApprove(ctx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	msg, err := mailer.FromDraft(d, acc)
+	msg, err := mailer.FromDraftWithCalendar(d, acc)
 	if err != nil {
 		return Fail(ExitUsage, "%v", err)
 	}

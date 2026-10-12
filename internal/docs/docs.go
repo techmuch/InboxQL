@@ -53,6 +53,8 @@ var Guides = []Guide{
 		Summary: "Every term, match mode and pipeline stage, with examples."},
 	{Slug: "labels", Group: "Using it", file: "docs/labels.md",
 		Summary: "Annotators: labels and extractors, the engines, and teaching them with rulings."},
+	{Slug: "calendar", Group: "Using it", file: "docs/calendar.md",
+		Summary: "Your calendars — invitations from mail, Google, Exchange — and answering, editing and asking."},
 	{Slug: "contacts", Group: "Using it", file: "docs/contacts.md",
 		Summary: "People and systems, contact labels and notes, and open loops."},
 	{Slug: "files", Group: "Using it", file: "docs/files.md",

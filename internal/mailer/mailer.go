@@ -31,6 +31,10 @@ type Message struct {
 	Body      string
 	InReplyTo string // Message-ID of the message being replied to, if any
 	Date      time.Time
+	// Calendar is an iCalendar part sent beside the text — an answer to an
+	// invitation — with its METHOD, which the Content-Type must repeat.
+	Calendar       string
+	CalendarMethod string
 }
 
 // FromDraft builds a Message from a stored draft and its sending account.
@@ -56,6 +60,19 @@ func FromDraft(d *store.Draft, acc *account.Account) (*Message, error) {
 		InReplyTo: d.InReplyTo,
 		Date:      time.Now(),
 	}, nil
+}
+
+// FromDraftWithCalendar is FromDraft plus the draft's calendar part, if it
+// has one.
+func FromDraftWithCalendar(d *store.Draft, acc *account.Account) (*Message, error) {
+	m, err := FromDraft(d, acc)
+	if err != nil {
+		return nil, err
+	}
+	if cal, err := store.GetDraftCalendar(d.ID); err == nil && cal != nil {
+		m.Calendar, m.CalendarMethod = cal.ICS, cal.Method
+	}
+	return m, nil
 }
 
 // Recipients is every address the message is delivered to, Bcc included.
@@ -95,22 +112,37 @@ func (m *Message) Render() []byte {
 		fmt.Fprintf(&b, "References: %s\r\n", m.InReplyTo)
 	}
 	b.WriteString("MIME-Version: 1.0\r\n")
+	if m.Calendar != "" {
+		// An answer to an invitation: the text, and the iCalendar REPLY as
+		// an alternative body — the shape Outlook and Gmail send and read.
+		const boundary = "inboxql-calendar-part"
+		b.WriteString("Content-Type: multipart/alternative; boundary=\"" + boundary + "\"\r\n\r\n")
+		b.WriteString("--" + boundary + "\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n")
+		writeLines(&b, m.Body)
+		b.WriteString("--" + boundary + "\r\nContent-Type: text/calendar; charset=utf-8; method=" + m.CalendarMethod +
+			"\r\nContent-Transfer-Encoding: 8bit\r\n\r\n")
+		writeLines(&b, m.Calendar)
+		b.WriteString("--" + boundary + "--\r\n")
+		return []byte(b.String())
+	}
 	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	b.WriteString("Content-Transfer-Encoding: 8bit\r\n")
 	b.WriteString("\r\n")
+	writeLines(&b, m.Body)
+	return []byte(b.String())
+}
 
-	// Normalise to CRLF and dot-stuff, so a line consisting of a single dot in
-	// the body cannot terminate the DATA command early.
-	body := strings.ReplaceAll(m.Body, "\r\n", "\n")
-	for _, line := range strings.Split(body, "\n") {
+// writeLines normalises to CRLF and dot-stuffs, so a line consisting of a
+// single dot cannot terminate the DATA command early.
+func writeLines(b *strings.Builder, text string) {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
 		if strings.HasPrefix(line, ".") {
 			line = "." + line
 		}
 		b.WriteString(line)
 		b.WriteString("\r\n")
 	}
-
-	return []byte(b.String())
 }
 
 // Validate checks the message is deliverable before any connection is opened.

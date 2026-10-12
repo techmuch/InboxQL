@@ -539,10 +539,10 @@ func (p *parser) parseStage() (Stage, error) {
 		s.Annotator, s.Field = splitPath(f)
 		skipBy()
 		if b, ok := word(); ok {
+			// A time bucket, or — for events, whose quantity is their own
+			// length — a field: `| sum hours by attendee`. The planner for
+			// each kind decides what it can group by and says so.
 			s.Bucket = strings.ToLower(b)
-			if !validBucket(s.Bucket) {
-				return Stage{}, &Error{Pos: verb.pos, Msg: fmt.Sprintf("%s: %q is not a bucket (day, week, month, year)", name, s.Bucket)}
-			}
 		}
 		return s, nil
 

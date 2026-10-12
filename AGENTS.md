@@ -98,7 +98,7 @@ A query is a **filter**, optionally followed by **pipeline stages** after `|`.
 | `extract:name` `extract:name.field>10` | extracted structured data |
 | `thread:<message-id>` | every message in that conversation |
 | `saved:<name>` | everything a saved query matches |
-| `in:<kind>` | what the query is about: `mail`, `drafts`, `tickets`, `contacts`, `attachments`, `logs` |
+| `in:<kind>` | what the query is about: `mail`, `drafts`, `tickets`, `contacts`, `attachments`, `logs`, `events` |
 | a bare word | full-text search |
 
 **A query is about one kind of thing.** Mail is the default. `in:` says
@@ -1114,6 +1114,69 @@ written, the pack just does not start anyone on them.
 `--disable-dependents` switches those off in the same step — off, not deleted.
 
 ---
+
+## `calendar` / `in:events` — the calendar
+
+Events come from three places: invitations in mail (read automatically into the
+Invitations calendar), connected Google and Exchange Server accounts, and the
+user's own calendar. They are queried as **occurrences** — one row each time a
+meeting happens:
+
+```
+iql --json query "in:events next:7d"
+iql --json query "in:events status:needs-action"
+iql --json query "in:events attendee:*@acme.com after:90d | sum hours by week"
+iql --json calendar agenda --next 7d
+iql --json calendar show <event-id>
+```
+
+| Term | Matches |
+|---|---|
+| `next:` | now until this far ahead (`7d`, `2w`) — `after:7d` still means the *last* seven days |
+| `after: before: on: during:` | the occurrence's time; `during:` a moment or a day |
+| `calendar: attendee: organizer:` | where and who; `me()` works |
+| `status:` | the user's answer: `accepted tentative declined needs-action organizer` — needs `in:events` |
+| `show:` | `busy free` |
+| `has:` | `conference attendees recurrence reminder location thread` |
+| `is:` | `recurring allday private invitation proposed past upcoming` |
+| `duration>` | minutes |
+
+Aggregate with `| sum hours [by bucket|attendee|calendar|domain]`. Proposals
+are excluded from lists and sums unless the query says `is:proposed`.
+
+### You propose; a person approves
+
+Every change you make goes through `--origin agent`, and **every agent change
+is a proposal**:
+
+```
+iql --json calendar create --title "Prep" --start "2026-10-15 09:00" --duration 30m --origin agent
+iql --json calendar update <id> --start "…" --scope this --occurrence "…" --origin agent
+iql --json calendar respond <id> declined --origin agent
+iql --json calendar changes
+```
+
+A proposal changes nothing and reaches nobody. It shows on the calendar, marked,
+until the user approves it in the Calendar tab or with `iql calendar approve
+<change-id>` — which **exits 4 for you**, like `outbox approve`, with no flag
+around it. Tell the user what you proposed and the command. `iql calendar
+reject` is safe for you to call.
+
+A repeating event has three different edits — `--scope this|following|all` —
+and `this` and `following` need `--occurrence` with that occurrence's start.
+
+Answering an invitation that only arrived by mail queues the answer **as mail**,
+through the outbox; a person sends it with `iql outbox approve`.
+
+### Accounts
+
+`iql calendar accounts`, `iql calendar sync <id>`. Connecting
+(`iql calendar connect google|exchange`) needs the user's credentials and a
+browser sign-in — theirs to do. **Exchange Online (Microsoft 365) is not
+supported**: EWS is being switched off there; only Exchange Server on-premises.
+
+**Time tracking is not built yet.** `charge:` and `| sum hours by charge` exist
+in the language and return nothing charged until it is.
 
 ## `ticket` — work derived from mail
 

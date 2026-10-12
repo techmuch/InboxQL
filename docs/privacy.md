@@ -27,6 +27,11 @@ An annotator that would send mail to a remote provider refuses to run until you
 have agreed to it, for that annotator, and its **Plan** says how many messages
 and roughly how much text would be sent, and where.
 
+A connected **Google** or **Exchange** calendar is talked to directly, from
+this computer, with credentials kept encrypted in your mailbox's vault: a
+refresh token for Google, the password for Exchange. Disconnecting removes
+them.
+
 Two other requests ever leave, each only when you press its button: checking
 for an update (to GitHub), and fetching a picture from **Gravatar** — one
 address per press, after which the picture is kept here. A Gravatar lookup

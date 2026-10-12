@@ -17,6 +17,7 @@ import (
 
 	"github.com/user/inboxql/internal/api"
 	"github.com/user/inboxql/internal/auth"
+	"github.com/user/inboxql/internal/calsync"
 	"github.com/user/inboxql/internal/llm"
 	"github.com/user/inboxql/internal/machine"
 	"github.com/user/inboxql/internal/serverlock"
@@ -28,7 +29,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.85"
+var Version = "0.0.86"
 
 func init() {
 	register(&Command{
@@ -321,6 +322,15 @@ func runStart(ctx *Context, args []string) error {
 			log.Printf("[skills] refreshed %s for iql %s", path, Version)
 		}
 	}
+
+	// The calendar: invitations from mail, connected accounts, changes going
+	// up, recurring events kept expanded. Runs for as long as the server.
+	calEngine := newCalendarEngine()
+	api.SetCalendarEngine(calEngine)
+	calCtx, stopCalendar := context.WithCancel(context.Background())
+	defer stopCalendar()
+	go calEngine.Run(calCtx)
+	go calsync.RunReminders(calCtx, api.DeliverReminder)
 
 	// The API needs the data directory for the attachment blob store and LLM logs.
 	api.SetDataDir(ctx.DataDir)

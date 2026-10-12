@@ -3,6 +3,8 @@ module github.com/user/inboxql
 go 1.27
 
 require (
+	github.com/Azure/go-ntlmssp v0.1.1
+	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/emersion/go-imap v1.2.1
 	github.com/emersion/go-message v0.15.0
 	github.com/gomlx/compute v0.1.14
@@ -12,6 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/spf13/cobra v1.10.2
+	github.com/teambition/rrule-go v1.8.2
 	github.com/tggo/goSentencePiece v1.1.0
 	github.com/yuin/goldmark v1.7.8
 	golang.org/x/crypto v0.48.0

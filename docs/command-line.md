@@ -102,6 +102,7 @@ mailbox by accident: with none to use, it stops and says how to make one.
 | `laya` | the local judgement model — `install` `status` `calibrate` `remove` |
 | `gliner` | the local extraction model — `install` `status` `remove` |
 | `contact` | `list` `show` `set` `label` `note` `responsiveness` `classify` |
+| `calendar` | `agenda` `create` `update` `delete` `respond` `changes` `approve` `import` `export` `connect` `sync` — see [Calendar](calendar.md) |
 | `ticket` | `list` `show` `new` `move` `accept` `reject` `merge` `propose` `board` |
 
 ### Looking after it

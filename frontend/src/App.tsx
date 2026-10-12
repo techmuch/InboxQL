@@ -14,7 +14,7 @@ import { Desk } from './views/Desk';
 import { Board } from './views/Board';
 import { openTool, openErrorLog, openQuery, useViewerStore, type ViewerMode } from './lib/tabs';
 import { useAttachmentTargetStore, type AttachmentTarget } from './lib/attachmentTarget';
-import { Radio, RadioTower, ScrollText } from 'lucide-react';
+import { CalendarDays, Radio, RadioTower, ScrollText } from 'lucide-react';
 import { useThreadingStore, type Threading } from './lib/threading';
 import { ENTRY_CAP, useThreadExpansionStore, type ThreadExpansion } from './lib/threadExpansion';
 import { startWindowSession, useWindowsStore, WINDOWS_TAB } from './lib/windows';
@@ -28,6 +28,10 @@ import { requestSettingsSection, takeSettingsSection, SETTINGS_SECTION_EVENT } f
 import { SystemPanel } from './views/SystemPanel';
 import { fetchGravatar } from './lib/avatars';
 import { Docs } from './views/Docs';
+import { Calendar } from './views/Calendar';
+import { CalendarSettings } from './views/CalendarSettings';
+import { ReminderToasts } from './views/ReminderToasts';
+import { CALENDAR_TAB } from './lib/calendarNav';
 import { openDoc, DOCS_TAB } from './lib/docsNav';
 import { version as appVersion } from '../package.json';
 import 'nexus-shell/style.css';
@@ -793,6 +797,7 @@ const SettingsView = () => {
     // runs, the settings file, restart and update.
     { id: 'system', label: 'System', icon: Server },
     { id: 'accounts', label: 'Mail Accounts', icon: Mail },
+    { id: 'calendars', label: 'Calendars', icon: CalendarDays },
     { id: 'import', label: 'Import Mail', icon: Download },
     { id: 'ai', label: 'AI Configuration', icon: Cpu },
     { id: 'security', label: 'Security', icon: Shield },
@@ -1238,6 +1243,8 @@ const SettingsView = () => {
 
           {activeCategory === 'system' && <SystemPanel />}
 
+          {activeCategory === 'calendars' && <CalendarSettings />}
+
           {activeCategory === 'maintenance' && <MaintenancePanel />}
 
           {activeCategory === 'data' && (
@@ -1291,6 +1298,7 @@ componentRegistry.register('query', Desk);
 componentRegistry.register('search', Desk);
 componentRegistry.register('settings', SettingsView);
 componentRegistry.register(DOCS_TAB, Docs);
+componentRegistry.register(CALENDAR_TAB, Calendar);
 componentRegistry.register('agents', AgentManager);
 componentRegistry.register('viewer', () => <MessageViewer only="message" />);
 // The old id, so a layout persisted before the rename still resolves.
@@ -1478,6 +1486,12 @@ function App() {
       execute: handleLogout,
     });
     commandRegistry.registerCommand({
+      id: 'iql.open-calendar',
+      label: 'Calendar',
+      keybinding: 'Control+Shift+Y',
+      execute: () => openToolCb(CALENDAR_TAB, 'Calendar'),
+    });
+    commandRegistry.registerCommand({
       id: 'iql.open-docs',
       label: 'Documentation',
       keybinding: 'F1',
@@ -1495,6 +1509,7 @@ function App() {
       'Tools': [
         { id: 'tools.dashboard', label: 'Analytics Dashboard', commandId: 'iql.open-dashboard' },
         { id: 'tools.desk', label: 'Desk', commandId: 'iql.open-desk' },
+        { id: 'tools.calendar', label: 'Calendar', commandId: 'iql.open-calendar', keybinding: 'Control+Shift+Y' },
         { id: 'tools.board', label: 'Ticket Board', commandId: 'iql.open-board' },
         { id: 'tools.contacts', label: 'Contacts', commandId: 'iql.open-contacts' },
         { id: 'tools.annotators', label: 'Annotators', commandId: 'iql.open-annotators' },
@@ -1559,6 +1574,7 @@ function App() {
       {/* Outside the shell, because it explains something that happened to the
           whole window rather than to any one panel. */}
       <WindowNote />
+      <ReminderToasts />
       <ShellLayout
         // `app-lockup` keeps the QL in InboxQL; see App.css for why a Tailwind
         // class could not do it.

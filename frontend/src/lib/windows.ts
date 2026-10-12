@@ -1,3 +1,4 @@
+import { deliverReminder } from './reminders';
 import { create } from 'zustand';
 import { openTool, openMessageByID, openQuery, openErrorLog, DESK_TAB } from './tabs';
 import { useLayoutStore } from 'nexus-shell';
@@ -43,7 +44,7 @@ export interface WindowInfo {
 }
 
 interface Command {
-  verb: 'query' | 'open' | 'notice';
+  verb: 'query' | 'open' | 'notice' | 'reminder';
   arg: string;
   note?: string;
   at: string;
@@ -117,6 +118,9 @@ function apply(c: Command) {
       break;
     case 'notice':
       store.note(c.arg);
+      break;
+    case 'reminder':
+      deliverReminder(c.arg);
       break;
     case 'open':
       openNamed(c.arg);

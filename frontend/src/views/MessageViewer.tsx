@@ -8,6 +8,7 @@ import {
 import { ContactCard } from './ContactCard';
 import { SpanPanel } from './SpanPanel';
 import { LabelChips } from './LabelChips';
+import { InvitationCard } from './InvitationCard';
 import { useMessageSpans } from './MarkedText';
 import { RunAnnotator, useMessageOffers } from './RunAnnotator';
 import { SimilarButton } from './SimilarButton';
@@ -436,6 +437,8 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
             <button className="p-2 hover:bg-accent transition-colors"><MoreVertical className="w-4 h-4" /></button>
           </div>
         </div>
+
+        {!isDraft && message.id && <InvitationCard messageId={message.id} />}
 
         {attachments.length > 0 && (
           <div className="mb-6 space-y-3">

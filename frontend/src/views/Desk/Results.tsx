@@ -1,3 +1,4 @@
+import { openCalendar } from '../../lib/calendarNav';
 import { Avatar } from '../Avatar';
 import { useEffect, useState } from 'react';
 import { ArrowUpDown, Inbox } from 'lucide-react';
@@ -8,7 +9,7 @@ import {
 import { movedByKeyboard, navRow } from '../../lib/rovingFocus';
 import { refKey, useSelectionStore } from '../../lib/selection';
 import { ariaCurrent, rowStateClasses, useIsCurrent } from '../../lib/rowState';
-import { contactName, drillDownTerm, type AttachmentFile, type Contact, type QueryResult } from './api';
+import { contactName, drillDownTerm, type AttachmentFile, type Contact, type EventRow, type QueryResult } from './api';
 import { fileTypeLabel, formatBytes } from '../AttachmentPreview';
 import { ThreadResult } from './Timeline';
 
@@ -52,6 +53,11 @@ export const Results = ({ result, onDrillDown, onScroll }: ResultsProps) => {
       return <TicketResult result={result} onDrillDown={onDrillDown} onScroll={onScroll} />;
     case 'drafts':
       return <DraftResult result={result} onScroll={onScroll} />;
+    case 'events': {
+      const events = result.events ?? [];
+      if (events.length === 0) return <Empty label="No events matched" />;
+      return <EventResult events={events} onScroll={onScroll} />;
+    }
     case 'contacts': {
       const contacts = result.contacts ?? [];
       if (contacts.length === 0) return <Empty label="No contacts matched" />;
@@ -735,6 +741,60 @@ const ContactResult = ({ contacts, onScroll }: { contacts: Contact[] } & Pick<Re
               contact={c}
               selected={Boolean(selection[refKey({ kind: 'contact', id: c.address })])}
             />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+/**
+ * Calendar events: one row per occurrence, soonest first. A row opens the
+ * calendar at that event; the query is still the thing to refine.
+ */
+const EventResult = ({ events, onScroll }: { events: EventRow[]; onScroll?: (e: React.UIEvent<HTMLDivElement>) => void }) => {
+  const fmt = (iso: string, allDay: boolean) => {
+    const d = new Date(iso);
+    return allDay
+      ? d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+      : d.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  };
+  const hours = (e: EventRow) => (new Date(e.end).getTime() - new Date(e.start).getTime()) / 3600_000;
+  return (
+    <div className="h-full overflow-auto" onScroll={onScroll}>
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-background text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+          <tr className="border-b border-border">
+            <th className="px-4 py-2 font-medium">When</th>
+            <th className="px-4 py-2 font-medium">Event</th>
+            <th className="px-4 py-2 font-medium">Calendar</th>
+            <th className="px-4 py-2 font-medium text-right">Hours</th>
+            <th className="px-4 py-2 font-medium text-right">People</th>
+          </tr>
+        </thead>
+        <tbody>
+          {events.map(e => (
+            <tr
+              key={e.eventId + e.start}
+              {...navRow}
+              tabIndex={0}
+              onClick={() => openCalendar({ date: e.start, eventId: e.eventId })}
+              onKeyDown={k => { if (k.key === 'Enter') openCalendar({ date: e.start, eventId: e.eventId }); }}
+              className="cursor-pointer border-b border-border/50 hover:bg-accent/50"
+              title="Open in the calendar"
+            >
+              <td className="px-4 py-1.5 whitespace-nowrap text-muted-foreground tabular-nums">{e.allDay ? `${fmt(e.start, true)}, all day` : fmt(e.start, false)}</td>
+              <td className="px-4 py-1.5 truncate max-w-0">
+                <span className="mr-2 inline-block h-2 w-2" style={{ background: e.color || '#2563eb' }} />
+                <span className={e.myStatus === 'declined' ? 'line-through opacity-60' : ''}>{e.summary}</span>
+                {e.proposed && <span className="ml-2 text-[10px] uppercase text-amber-600">proposed</span>}
+                {e.myStatus === 'needs-action' && <span className="ml-2 text-[10px] uppercase text-amber-600">not answered</span>}
+                {e.location && <span className="ml-2 text-xs text-muted-foreground">{e.location}</span>}
+              </td>
+              <td className="px-4 py-1.5 text-xs text-muted-foreground">{e.calendarName}</td>
+              <td className="px-4 py-1.5 text-right tabular-nums">{e.allDay ? '' : hours(e).toFixed(hours(e) % 1 ? 1 : 0)}</td>
+              <td className="px-4 py-1.5 text-right tabular-nums text-muted-foreground">{e.attendees || ''}</td>
+            </tr>
           ))}
         </tbody>
       </table>

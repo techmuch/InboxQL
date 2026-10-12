@@ -1,6 +1,6 @@
 ---
 name: iql
-description: Use when the user asks about their email, or anything InboxQL holds — finding or summarising mail, who someone is or who is waiting on whom, attachments and files, labels, receipts and other extracted values, tickets, or drafting a reply. InboxQL is a local mailbox driven by the `iql` command. Not for sending mail without the user, which iql cannot do.
+description: Use when the user asks about their email, their calendar, or anything InboxQL holds — finding or summarising mail, what is on and when people are free, who someone is or who is waiting on whom, attachments and files, labels, receipts and other extracted values, tickets, or drafting a reply. InboxQL is a local mailbox driven by the `iql` command. Not for sending mail without the user, which iql cannot do.
 ---
 
 <!-- Installed by iql {{VERSION}}. `iql skills remove` deletes this folder; `iql update` refreshes it. -->
@@ -79,6 +79,19 @@ iql --json outbox show <draft-id>              the exact bytes, to check your wo
 
 `analyze` with `"mode": "context"` means no AI provider is set up: there is no
 `answer`, so read the messages it returns and answer yourself. That is normal.
+
+## The calendar
+
+```
+iql --json query "in:events next:7d"
+iql --json query "in:events status:needs-action"
+iql --json calendar create --title "…" --start "2026-10-15 09:00" --duration 30m --origin agent
+```
+
+One row per occurrence. **Every calendar change you make is a proposal**
+(`--origin agent`): it shows, marked, until a person approves it —
+`iql calendar approve` exits 4 for you. Tell them the command. Answering an
+invitation that came by mail queues mail, sent with `iql outbox approve`.
 
 ## Contacts, files, tickets
 

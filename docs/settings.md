@@ -140,6 +140,13 @@ each.
 Add, edit, test and remove IMAP accounts, with per-account message counts.
 [Accounts](accounts-and-import.md) covers the fields.
 
+## Calendars
+
+Connected Google and Exchange accounts, with when each last synced, **Sync
+now** and **Disconnect** (which removes them from InboxQL only). Connecting
+Google needs a client ID from your own Google Cloud project; the page walks
+through it. [Calendar](calendar.md#connecting-google-calendar) has the details.
+
 ## Import Mail
 
 Bring in mail from Apple Mail, read-only. See

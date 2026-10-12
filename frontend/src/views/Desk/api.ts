@@ -161,7 +161,7 @@ export const contactName = (c: Contact): string =>
 
 export interface QueryResult {
   query: string;
-  kind: 'messages' | 'groups' | 'count' | 'tickets' | 'drafts' | 'threads' | 'contacts' | 'attachments';
+  kind: 'messages' | 'groups' | 'count' | 'tickets' | 'drafts' | 'threads' | 'contacts' | 'attachments' | 'events';
   count: number;
   messages?: QueryMessage[];
   groups?: QueryGroup[];
@@ -170,6 +170,7 @@ export interface QueryResult {
   threads?: Thread[];
   contacts?: Contact[];
   attachments?: AttachmentFile[];
+  events?: EventRow[];
   total?: number;
   /** What an aggregate grouped by, so a chart click can build a drill-down. */
   groupField?: string;
@@ -395,3 +396,22 @@ export async function modifyContactLabel(
   return body;
 }
 
+
+/** One occurrence of a calendar event, as `in:events` returns it. */
+export interface EventRow {
+  eventId: string;
+  calendarId: string;
+  calendarName?: string;
+  color?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  summary: string;
+  location?: string;
+  myStatus?: string;
+  recurring: boolean;
+  proposed: boolean;
+  attendees: number;
+  organizer?: string;
+  charge?: string;
+}

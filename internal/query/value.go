@@ -164,8 +164,13 @@ func ParseSize(v string) (int64, error) {
 // calendar bucket, and the label it produces.
 //
 // Weeks start on Monday: '%W' counts from Sunday and produces a label that
-// disagrees with every calendar the user owns. The -3 days / +4 days shift is
-// the standard ISO-week trick.
+// disagrees with every calendar the user owns. The label is the Monday the
+// week begins on: back six days, then forward to the next Monday — which is
+// the same day when the date is itself a Monday.
+//
+// It used to be "-3 days, weekday 1, -7 days", which labels most dates with
+// the Monday of the week before; found when a calendar's weekly totals came
+// out a week early.
 func bucketExpr(col, bucket string) (string, error) {
 	sec := col + " / 1000, 'unixepoch', 'localtime'"
 	switch bucket {
@@ -174,7 +179,7 @@ func bucketExpr(col, bucket string) (string, error) {
 	case "day", "":
 		return "strftime('%Y-%m-%d', " + sec + ")", nil
 	case "week":
-		return "strftime('%Y-%m-%d', " + col + " / 1000, 'unixepoch', 'localtime', '-3 days', 'weekday 1', '-7 days')", nil
+		return "strftime('%Y-%m-%d', " + col + " / 1000, 'unixepoch', 'localtime', '-6 days', 'weekday 1')", nil
 	case "month":
 		return "strftime('%Y-%m', " + sec + ")", nil
 	case "year":

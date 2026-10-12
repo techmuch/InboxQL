@@ -148,6 +148,7 @@ A query is about one kind of thing. Mail is the default; `in:` says otherwise:
 | `in:contacts` | the people and systems you have corresponded with |
 | `in:attachments` | files, each one once however many times it was sent |
 | `in:tickets` | tickets |
+| `in:events` | calendar events, one row per occurrence |
 | `in:logs` | what InboxQL itself has been doing |
 
 A field that only one kind has implies it: `due:7d` is about tickets,
@@ -156,6 +157,36 @@ contacts, `filetype:pdf` for files, `level>warn` for the log — and the guides
 for [contacts](contacts.md), [files](files.md) and [tickets](tickets.md) list
 them. Message fields still work inside them and ask about the mail behind the
 thing: `in:attachments from:*@acme.com` is files that came from Acme.
+
+## Calendar events
+
+`in:events` asks about the calendar. A row is one **occurrence** — a weekly
+meeting is fifty-two rows a year — because that is what "what is on" and "how
+many hours" are about.
+
+| Term | Matches |
+|---|---|
+| `next:` | from now until this far ahead: `next:7d`, `next:2w` |
+| `after:` `before:` `on:` | the occurrence's own time, as for mail |
+| `during:` | going on at a moment (`2026-10-15T14:00`) or on a day |
+| `calendar:` | which calendar, by name |
+| `attendee:` `organizer:` | who; `me()` is you |
+| `status:` | your answer: `accepted` `tentative` `declined` `needs-action` `organizer` |
+| `show:` | `busy` or `free` |
+| `title:` `location:`, a bare word | the words |
+| `duration>` | length in minutes |
+| `has:` | `conference` `attendees` `recurrence` `reminder` `location` `thread` |
+| `is:` | `recurring` `allday` `private` `invitation` `proposed` `past` `upcoming` |
+
+A proposal an agent made is left out of lists and totals unless you ask for it
+with `is:proposed`. Group events by `calendar`, `attendee`, `domain`,
+`organizer`, `status`, `title`, or a time bucket, and add up their length with
+`| sum hours` or `| sum minutes`:
+
+```
+in:events after:30d | sum hours by attendee
+in:events next:14d | count by day
+```
 
 ## Stages
 

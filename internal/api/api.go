@@ -81,6 +81,13 @@ func Router() (http.Handler, error) {
 	mux.Handle("/api/system", auth.Middleware(systemMux))
 	mux.Handle("/api/system/", auth.Middleware(systemMux))
 
+	// Google's redirect back after sign-in; see RegisterOAuthRoutes.
+	RegisterOAuthRoutes(mux)
+
+	calendarMux := http.NewServeMux()
+	registerCalendarRoutes(calendarMux)
+	mux.Handle("/api/calendar/", auth.Middleware(calendarMux))
+
 	avatarMux := http.NewServeMux()
 	registerAvatarRoutes(avatarMux)
 	mux.Handle("/api/avatars", auth.Middleware(avatarMux))
@@ -275,7 +282,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.85",
+	Version: "0.0.86",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.
@@ -451,6 +458,9 @@ func handleAccountSync(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		syncManager.StartSync(acc)
+		// New mail can carry invitations; the calendar reads them now rather
+		// than at its next pass.
+		engine().Kick()
 		// New mail has landed, so anything asking for after-sync now has
 		// something to read. Started as a job rather than run here: it takes
 		// minutes, and the maintenance surface is what can show progress and

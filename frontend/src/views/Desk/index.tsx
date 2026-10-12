@@ -91,6 +91,7 @@ const PAGED_ROWS: Record<string, string | undefined> = {
   tickets: 'tickets',
   drafts: 'drafts',
   logs: 'logs',
+  events: 'events',
 };
 
 export const Desk = () => {

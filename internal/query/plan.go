@@ -23,6 +23,8 @@ const (
 	PlanContacts
 	// PlanLogs returns log lines.
 	PlanLogs
+	// PlanEvents returns calendar event occurrences.
+	PlanEvents
 	// PlanTopics returns a contact's topics with their association strength.
 	PlanTopics
 	// PlanAttachments returns one row per distinct file, not per occurrence.
@@ -191,6 +193,9 @@ func (p *pipeline) build() (*Plan, error) {
 	}
 	if p.entity == EntityLog {
 		return p.buildLogs()
+	}
+	if p.entity == EntityEvent {
+		return p.buildEvents()
 	}
 	if p.terminal == nil {
 		return p.buildMessages()

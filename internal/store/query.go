@@ -87,6 +87,7 @@ func queryOptions(limit, offset int) query.Options {
 		SelfAddresses:      selfAddresses,
 		TimeField:          annotatorTimeField,
 		KnownAnnotator:     annotatorExists,
+		KnownMailLabel:     LabelExists,
 		FullText:           ftsEnabled.Load(),
 		DefaultLimit:       limit,
 		Offset:             offset,
@@ -292,6 +293,9 @@ func RunQueryContext(ctx context.Context, src string, limit, offset int) (res *Q
 	default:
 		msgs, err := scanMessages(ctx, plan)
 		if err != nil {
+			return nil, err
+		}
+		if err := attachLabels(msgs); err != nil {
 			return nil, err
 		}
 		res.Kind, res.Messages, res.Count = "messages", msgs, len(msgs)

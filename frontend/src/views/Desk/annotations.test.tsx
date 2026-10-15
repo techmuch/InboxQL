@@ -83,7 +83,7 @@ describe('Desk annotations rail', () => {
     mockServer();
     render(<Desk />);
 
-    expect(await screen.findByText('Annotations')).toBeTruthy();
+    expect(await screen.findByText('Labels')).toBeTruthy();
     expect(screen.getByText('money')).toBeTruthy();
     expect(screen.getByText('receipts')).toBeTruthy();
     expect(screen.getByText('34')).toBeTruthy();
@@ -118,7 +118,7 @@ describe('Desk annotations rail', () => {
     mockServer();
     render(<Desk />);
 
-    await screen.findByText('Annotations');
+    await screen.findByText('Labels');
     // Eleven starters, most empty on a fresh mailbox, would bury the entries
     // that lead somewhere. An empty annotator is a job to run, not a place.
     expect(screen.queryByText('parcels')).toBeNull();
@@ -148,6 +148,6 @@ describe('Desk annotations rail', () => {
     // queries written in a component, and they are seeded rows now. Saved is
     // the heading that is always there.
     await screen.findByText('Saved');
-    expect(screen.queryByText('Annotations')).toBeNull();
+    expect(screen.queryByText('Labels')).toBeNull();
   });
 });

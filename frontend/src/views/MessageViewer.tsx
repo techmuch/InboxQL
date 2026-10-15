@@ -3,8 +3,11 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Archive, AlertOctagon, Trash, Mail, MoreVertical,
   CornerUpLeft, CornerUpRight, Inbox, FileText,
-  Globe, Code, Copy, Check, Tag,
+  Globe, Code, Copy, Check, Tag, MailOpen, X, Undo2, Send,
 } from 'lucide-react';
+import { sendDraft } from '../lib/sending';
+import { LabelPicker } from './LabelPicker';
+import { moveMessages, setFlag, changeLabels, shownLabels, labelQuery, type Move } from '../lib/mail';
 import { ContactCard } from './ContactCard';
 import { SpanPanel } from './SpanPanel';
 import { LabelChips } from './LabelChips';
@@ -16,7 +19,7 @@ import {
   AttachmentChip, AttachmentViewer, useAttachmentFile,
   type MessageAttachment,
 } from './AttachmentPreview';
-import { useViewerStore, openContact, openAttachmentByKey, type ViewerKind } from '../lib/tabs';
+import { useViewerStore, openContact, openAttachmentByKey, openQuery, type ViewerKind } from '../lib/tabs';
 import { previewPlaces, useAttachmentTargetStore } from '../lib/attachmentTarget';
 
 /**
@@ -145,6 +148,8 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
   // gated on marks alone would hide the button that produces the first ones.
   const hasValues = markCount > 0 || offers.length > 0;
   const [copied, setCopied] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  useEffect(() => setActionError(null), [message?.id]);
 
   // Set default view mode based on message content
   useEffect(() => {
@@ -361,20 +366,59 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
         </div>
 
         <div className="w-px h-6 bg-border mx-1" />
-        {!isDraft && <>
-          <button className="p-2 hover:bg-accent text-muted-foreground" title="Archive"><Archive className="w-4 h-4" /></button>
-          <button className="p-2 hover:bg-accent text-muted-foreground" title="Report spam"><AlertOctagon className="w-4 h-4" /></button>
-        </>}
-        <button className="p-2 hover:bg-accent text-muted-foreground" title="Delete"><Trash className="w-4 h-4" /></button>
-        <div className="w-px h-6 bg-border mx-1" />
-        {!isDraft && <button className="p-2 hover:bg-accent text-muted-foreground" title="Mark unread"><Mail className="w-4 h-4" /></button>}
+        {isDraft && (
+          <button
+            className="inline-flex items-center gap-1.5 bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
+            title="Send it; you can undo for a few seconds"
+            onClick={() => { sendDraft(message.id).catch(e => setActionError(String(e?.message ?? e))); }}
+          >
+            <Send className="w-3.5 h-3.5" /> Send
+          </button>
+        )}
+        {!isDraft && (() => {
+          const labels: string[] = message.labels ?? [];
+          const has = (l: string) => labels.includes(l);
+          const act = (to: Move) => () => { moveMessages([message.id], to).catch(e => setActionError(String(e?.message ?? e))); };
+          const unread = !message.flags?.includes('\\Seen');
+          const btn = 'p-2 hover:bg-accent text-muted-foreground';
+          return <>
+            {has('trash') || has('spam')
+              ? <button className={btn} title="Move to Inbox" aria-label="Move to Inbox" onClick={act(has('trash') ? 'untrash' : 'notspam')}><Undo2 className="w-4 h-4" /></button>
+              : has('inbox')
+                ? <button className={btn} title="Archive (e)" aria-label="Archive" onClick={act('archive')}><Archive className="w-4 h-4" /></button>
+                : <button className={btn} title="Move to Inbox" aria-label="Move to Inbox" onClick={act('inbox')}><Inbox className="w-4 h-4" /></button>}
+            {!has('spam') && <button className={btn} title="Report spam (!)" aria-label="Report spam" onClick={act('spam')}><AlertOctagon className="w-4 h-4" /></button>}
+            {!has('trash') && <button className={btn} title="Move to Trash (#)" aria-label="Move to Trash" onClick={act('trash')}><Trash className="w-4 h-4" /></button>}
+            <div className="w-px h-6 bg-border mx-1" />
+            <button className={btn} title={unread ? 'Mark read' : 'Mark unread'} aria-label={unread ? 'Mark read' : 'Mark unread'}
+              onClick={() => { setFlag([message.id], '\\Seen', unread).catch(e => setActionError(String(e?.message ?? e))); }}>
+              {unread ? <MailOpen className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
+            </button>
+            <LabelPicker ids={[message.id]} current={[labels]} compact />
+          </>;
+        })()}
         <button className="p-2 hover:bg-accent text-muted-foreground"><MoreVertical className="w-4 h-4" /></button>
       </div>
 
       <div className="flex-1 overflow-auto p-8 max-w-5xl mx-auto w-full">
-        <h1 className="text-2xl font-normal mb-8 text-foreground/90">
+        <h1 className="text-2xl font-normal mb-2 text-foreground/90">
           {message.subject || '(No Subject)'}
         </h1>
+        <div className="mb-6 flex flex-wrap items-center gap-1.5 min-h-[1.25rem]">
+          {!isDraft && (message.labels ?? []).includes('inbox') && (
+            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary border border-primary/20">Inbox</span>
+          )}
+          {!isDraft && shownLabels(message.labels).map((l: string) => (
+            <span key={l} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border/60">
+              <button type="button" className="hover:underline" title={`Show everything labelled ${l}`}
+                onClick={() => openQuery(labelQuery(l))}>{l}</button>
+              <button type="button" aria-label={`Remove label ${l}`} title={`Remove ${l}`}
+                onClick={() => { changeLabels([message.id], [], [l]).catch(e => setActionError(String(e?.message ?? e))); }}
+                className="hover:text-destructive"><X className="w-2.5 h-2.5" /></button>
+            </span>
+          ))}
+          {actionError && <span className="text-[11px] text-destructive">{actionError}</span>}
+        </div>
 
         <div className="flex items-start gap-4 mb-8">
           <div

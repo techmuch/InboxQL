@@ -125,7 +125,7 @@ func TestDataDrivenFieldsNameTheirSource(t *testing.T) {
 	cases := map[string]string{
 		"from:":      ValuesAddresses,
 		"account:":   ValuesAccounts,
-		"label:":     ValuesAnnotators,
+		"label:":     ValuesLabels,
 		"saved:":     ValuesSaved,
 		"mailbox:":   ValuesMailboxes,
 		"unlabeled:": ValuesAnnotators,

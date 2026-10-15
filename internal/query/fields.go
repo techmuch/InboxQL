@@ -110,6 +110,7 @@ const (
 	ValuesAnnotators = "annotators"
 	ValuesSaved      = "saved"
 	ValuesFolders    = "folders"
+	ValuesLabels     = "labels"
 	ValuesFileTypes  = "filetypes"
 	// ValuesExtractPaths offers `<annotator>.<field>` — the one spelling for
 	// naming an extracted value, used by the filter term and by every stage
@@ -205,9 +206,9 @@ var Registry = []Field{
 	},
 	{
 		Name: "folder", Entity: EntityMessage, Type: TypeEnum,
-		Enum:    []string{"inbox", "starred", "sent", "archive", "drafts", "spam", "trash", "all"},
+		Enum:    []string{"inbox", "starred", "sent", "drafts", "allmail", "archive", "important", "spam", "trash", "all"},
 		Values:  ValuesFolders,
-		Summary: "the mailbox view", Example: "folder:sent",
+		Summary: "a view over labels: inbox is label:inbox and not binned", Example: "folder:sent",
 	},
 	{
 		Name: "mailbox", Entity: EntityMessage, Type: TypeText,
@@ -216,8 +217,9 @@ var Registry = []Field{
 	},
 	{
 		Name: "label", Entity: EntityMessage, Type: TypeAnnotator,
-		Values:  ValuesAnnotators,
-		Summary: "an annotator said yes; add @0.9 for a confidence floor", Example: "label:invoice",
+		Ops:     matchOps,
+		Values:  ValuesLabels,
+		Summary: "has this label — yours, Gmail's, or an annotator's yes; @0.9 sets an annotator's confidence floor", Example: "label:receipts",
 	},
 	{
 		Name: "unlabeled", Entity: EntityMessage, Type: TypeAnnotator,
@@ -303,7 +305,7 @@ var Registry = []Field{
 	{
 		Name: "status", Entity: EntityDraft, Type: TypeEnum,
 		Ops:     []Op{OpMatch, OpGlob},
-		Enum:    []string{"draft", "queued", "sent", "failed"},
+		Enum:    []string{"draft", "queued", "sending", "sent", "failed"},
 		Summary: "where a draft sits; needs in:drafts", Example: "in:drafts status:queued",
 	},
 	{

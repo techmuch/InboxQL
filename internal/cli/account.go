@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
+	"fmt"
+	"time"
 
 	"github.com/user/inboxql/internal/account"
 	"github.com/user/inboxql/internal/autoconfig"
@@ -25,7 +27,9 @@ func init() {
   list         show configured accounts
   discover     work out an address's mail servers
   verify       sign in to the incoming and outgoing servers
-  sync         fetch new mail now
+  sync         sync now: send changes made here, read every folder, and
+               read all older mail (--no-history to leave that to the
+               running server, which keeps every account live anyway)
   disconnect   forget the login and stop syncing; the mail stays
   remove       delete an account and its messages
 
@@ -452,8 +456,15 @@ func accountDisconnect(ctx *Context, args []string) error {
 }
 
 func accountSync(ctx *Context, args []string) error {
+	fs := flag.NewFlagSet("account sync", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	noHistory := fs.Bool("no-history", false, "new mail and changes only; leave older mail for the running server")
+	if err := parseArgs(fs, args); err != nil {
+		return Fail(ExitUsage, "invalid flags")
+	}
+	args = fs.Args()
 	if len(args) != 1 {
-		return Fail(ExitUsage, "usage: iql account sync <id>")
+		return Fail(ExitUsage, "usage: iql account sync <id> [--no-history]")
 	}
 	if err := ctx.OpenStore(); err != nil {
 		return err
@@ -467,12 +478,31 @@ func accountSync(ctx *Context, args []string) error {
 	if acc == nil {
 		return Fail(ExitNotFound, "no account with id %q", args[0])
 	}
+	if acc.Disconnected {
+		return Fail(ExitError, "%s is disconnected: its mail is kept, but it has no login to sync with", acc.ID)
+	}
 
 	// Run inline rather than in a goroutine: a CLI invocation that returned
-	// before the work finished would be useless in a cron job.
+	// before the work finished would be useless in a cron job. It pushes
+	// changes queued here, reads every folder, and reads all of the older
+	// mail unless told not to — which on a large first sync is hours, so the
+	// progress goes to stderr.
 	manager := sync.NewSyncManager(1)
 	manager.Blobs = blobstore.New(ctx.DataDir)
-	manager.StartSync(acc)
+	store.UpdateAccountStatus(acc.ID, "syncing", "")
+	last := time.Time{}
+	report, err := manager.RunToCompletion(acc, !*noHistory, func(p store.MirrorProgress) {
+		if time.Since(last) > 2*time.Second {
+			fmt.Fprintf(ctx.Stderr, "  history: %d of %d\n", p.Stored, p.OnServer)
+			last = time.Now()
+		}
+	})
+	if err != nil {
+		store.UpdateAccountStatus(acc.ID, "error", err.Error())
+	} else {
+		store.UpdateAccountStatus(acc.ID, "success", "")
+		store.MarkAccountSynced(acc.ID)
+	}
 
 	updated, err := store.GetAccount(acc.ID)
 	if err != nil {
@@ -480,16 +510,24 @@ func accountSync(ctx *Context, args []string) error {
 	}
 	stats, _ := store.GetAccountStats(acc.ID)
 
+	progress, _ := store.MirrorProgressFor(acc.ID)
 	if ctx.JSON {
 		return ctx.EmitJSON(map[string]any{
-			"id":     updated.ID,
-			"status": updated.LastSyncStatus,
-			"error":  updated.LastSyncError,
-			"stats":  stats,
+			"id":       updated.ID,
+			"status":   updated.LastSyncStatus,
+			"error":    updated.LastSyncError,
+			"stats":    stats,
+			"report":   report,
+			"progress": progress,
 		})
 	}
 
 	ctx.Printf("Sync %s: %s\n", updated.ID, updated.LastSyncStatus)
+	ctx.Printf("  %d new, %d matched to mail already here, %d changed on the server, %d changes sent to it\n",
+		report.New, report.Linked, report.Changed, report.Pushed)
+	if !progress.HistoryDone {
+		ctx.Printf("  older mail: %d of %d here so far\n", progress.Stored, progress.OnServer)
+	}
 	reportWaitingAnnotators(ctx)
 	if updated.LastSyncError != "" {
 		ctx.Printf("  %s\n", updated.LastSyncError)

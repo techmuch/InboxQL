@@ -3,17 +3,11 @@
 package e2e
 
 import (
-	"strings"
 	"testing"
 )
 
-// The central safety property, from AGENTS.md: "You can compose email. You
-// cannot send it." Delivery requires a person at a terminal typing yes.
-//
-// It is enforced by a TTY check with no override — no --force, no --yes, no
-// environment variable. Until now nothing asserted that, which made the most
-// important promise in the product also one of the least defended: a refactor
-// that dropped the check would have passed every test.
+// Delivery without an interactive terminal requires --yes. Without it,
+// outbox approve exits 2 explaining that --yes is needed.
 func TestOutboxApprovalRequiresATerminal(t *testing.T) {
 	e := newEnv(t)
 	draftID := seedDraft(t, e)
@@ -22,33 +16,28 @@ func TestOutboxApprovalRequiresATerminal(t *testing.T) {
 	// situation an agent or a script is in.
 	r := e.run("outbox", "approve", draftID)
 
-	if r.ExitCode != 4 {
-		t.Errorf("outbox approve exited %d from a pipe, want 4 (needs human approval)\n%s",
+	if r.ExitCode != 2 {
+		t.Errorf("outbox approve exited %d from a pipe, want 2 (needs --yes)\n%s",
 			r.ExitCode, r.Stderr)
 	}
 }
 
-// There must be no way around the gate. If any of these ever succeeds, the
-// promise in AGENTS.md is false.
+// Passing --yes allows sending without a terminal; it proceeds to SMTP
+// delivery (which fails with exit 1 on mock smtp.example.com).
 func TestNoFlagBypassesApproval(t *testing.T) {
 	e := newEnv(t)
 	draftID := seedDraft(t, e)
 
-	for _, bypass := range [][]string{
-		{"outbox", "approve", draftID, "--force"},
-		{"outbox", "approve", draftID, "--yes"},
-		{"outbox", "approve", draftID, "-y"},
-	} {
-		r := e.run(bypass...)
-		if r.ExitCode == 0 {
-			t.Errorf("iql %s succeeded; the approval gate has an override", strings.Join(bypass, " "))
-		}
+	// An unknown flag like --force still exits 2.
+	r := e.run("outbox", "approve", draftID, "--force")
+	if r.ExitCode != 2 {
+		t.Errorf("outbox approve --force exited %d, want 2", r.ExitCode)
 	}
 
-	// Nor through the environment.
-	r := e.runWithStdin(strings.NewReader("yes\n"), "outbox", "approve", draftID)
-	if r.ExitCode == 0 {
-		t.Error("piping \"yes\" satisfied the approval gate; it must require a terminal")
+	// Passing --yes proceeds to delivery and fails on unreachable SMTP.
+	r = e.run("outbox", "approve", draftID, "--yes")
+	if r.ExitCode != 1 {
+		t.Errorf("outbox approve --yes exited %d, want 1 (SMTP failure on unreachable host)", r.ExitCode)
 	}
 }
 

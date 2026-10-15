@@ -66,17 +66,43 @@ export function ago(iso?: string, now = Date.now()): string {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/** What the server's live connection to an account is doing. */
+export interface Live {
+  worker: { state: 'connecting' | 'live' | 'history' | 'waiting' | 'stopped'; since?: string; lastError?: string; nextTry?: string };
+  progress: { onServer: number; stored: number; historyDone: boolean; folders: number };
+  pending: { waiting: number; failed: number; lastError?: string };
+}
+
+/** Why a sync failed, in words. */
+const why = (err?: string) => {
+  const e = (err || '').toLowerCase();
+  return /auth|password|credential|login/.test(e) ? 'the server rejected the sign-in'
+    : /no such host/.test(e) ? 'the server name was not found'
+    : /certificate|x509/.test(e) ? "the server's certificate is not trusted"
+    : /asleep/.test(e) ? 'the computer was asleep'
+    : /timeout|refused|unreachable/.test(e) ? 'the server did not answer' : 'it failed';
+};
+
 /** The card's one-line state, and how much it wants attention. */
-export function statusOf(a: Account): { text: string; tone: 'ok' | 'busy' | 'bad' | 'off' } {
+export function statusOf(a: Account, live?: Live): { text: string; tone: 'ok' | 'busy' | 'bad' | 'off' } {
   if (a.disconnected) return { text: 'Disconnected — its mail is kept; it does not sync or send', tone: 'off' };
+  switch (live?.worker.state) {
+    case 'live':
+      return { text: `Live — new mail arrives as it comes${a.lastSyncedAt ? ` · checked ${ago(a.lastSyncedAt)}` : ''}`, tone: 'ok' };
+    case 'history': {
+      const { stored, onServer } = live.progress;
+      return { text: `Live, and fetching older mail: ${stored.toLocaleString()} of ${onServer.toLocaleString()}`, tone: 'busy' };
+    }
+    case 'connecting':
+      return { text: 'Connecting…', tone: 'busy' };
+    case 'waiting': {
+      const at = live.worker.nextTry ? new Date(live.worker.nextTry).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      return { text: `Not connected: ${why(live.worker.lastError)}${at ? ` — trying again at ${at}` : ''}`, tone: 'bad' };
+    }
+  }
   if (a.lastSyncStatus === 'syncing') return { text: 'Syncing…', tone: 'busy' };
   if (a.lastSyncStatus === 'error') {
-    const e = (a.lastSyncError || '').toLowerCase();
-    const why = /auth|password|credential|login/.test(e) ? 'the server rejected the sign-in'
-      : /no such host/.test(e) ? 'the server name was not found'
-      : /certificate|x509/.test(e) ? "the server's certificate is not trusted"
-      : /timeout|refused|unreachable/.test(e) ? 'the server did not answer' : 'it failed';
-    return { text: `Last sync: ${why} — ${ago(a.lastSyncedAt) === 'never' ? 'never synced' : `last good sync ${ago(a.lastSyncedAt)}`}`, tone: 'bad' };
+    return { text: `Last sync: ${why(a.lastSyncError)} — ${ago(a.lastSyncedAt) === 'never' ? 'never synced' : `last good sync ${ago(a.lastSyncedAt)}`}`, tone: 'bad' };
   }
   if (!a.lastSyncedAt) return { text: 'Not synced yet', tone: 'off' };
   return { text: `Synced ${ago(a.lastSyncedAt)}`, tone: 'ok' };
@@ -85,6 +111,7 @@ export function statusOf(a: Account): { text: string; tone: 'ok' | 'busy' | 'bad
 export const MailAccounts = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [stats, setStats] = useState<Record<string, Stats>>({});
+  const [live, setLive] = useState<Record<string, Live>>({});
   const [mode, setMode] = useState<{ kind: 'list' } | { kind: 'add' } | { kind: 'edit'; account: Account | null; prefill?: Partial<Form> }>({ kind: 'list' });
   const [removing, setRemoving] = useState<Account | null>(null);
 
@@ -93,6 +120,9 @@ export const MailAccounts = () => {
     if (!r?.ok) return;
     const list = r.data ?? [];
     setAccounts(list);
+    send<Record<string, Live>>('GET', '/api/accounts/live')
+      .then(l => l.ok && setLive(l.data ?? {}))
+      .catch(() => {});
     for (const a of list) {
       send<Stats>('GET', `/api/accounts/stats?id=${encodeURIComponent(a.id)}`)
         .then(s => s.ok && setStats(p => ({ ...p, [a.id]: s.data })))
@@ -101,7 +131,8 @@ export const MailAccounts = () => {
   }, []);
   useEffect(() => { void load(); }, [load]);
   // Quicker while something is syncing, so the card follows it.
-  const syncing = accounts.some(a => a.lastSyncStatus === 'syncing');
+  const syncing = accounts.some(a => a.lastSyncStatus === 'syncing'
+    || ['connecting', 'history'].includes(live[a.id]?.worker.state ?? ''));
   useEffect(() => {
     const t = setInterval(() => void load(), syncing ? 3000 : 15000);
     return () => clearInterval(t);
@@ -133,7 +164,7 @@ export const MailAccounts = () => {
       ) : (
         <div className="space-y-4">
           {accounts.map(a => (
-            <AccountCard key={a.id} account={a} stats={stats[a.id]} onChanged={load}
+            <AccountCard key={a.id} account={a} stats={stats[a.id]} live={live[a.id]} onChanged={load}
               onEdit={() => setMode({ kind: 'edit', account: a })} onRemove={() => setRemoving(a)} />
           ))}
         </div>
@@ -147,13 +178,14 @@ export const MailAccounts = () => {
 
 // --- the card ----------------------------------------------------------------
 
-const AccountCard = ({ account: a, stats, onChanged, onEdit, onRemove }: {
-  account: Account; stats?: Stats; onChanged: () => void; onEdit: () => void; onRemove: () => void;
+const AccountCard = ({ account: a, stats, live, onChanged, onEdit, onRemove }: {
+  account: Account; stats?: Stats; live?: Live; onChanged: () => void; onEdit: () => void; onRemove: () => void;
 }) => {
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [testing, setTesting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const status = statusOf(a);
+  const status = statusOf(a, live);
+  const pending = live?.pending;
   const dot = { ok: 'bg-green-500', busy: 'bg-primary animate-pulse', bad: 'bg-red-500', off: 'bg-muted-foreground/40' }[status.tone];
 
   const test = async () => {
@@ -206,12 +238,32 @@ const AccountCard = ({ account: a, stats, onChanged, onEdit, onRemove }: {
         </div>
       </div>
 
-      {status.tone === 'bad' && a.lastSyncError && (
-        <p className="mt-3 border border-red-500/20 bg-red-500/5 p-2 text-xs text-red-600 dark:text-red-400">
-          {a.lastSyncError}
-          {/auth|password|credential/i.test(a.lastSyncError) && (
-            <> — <button className="underline" onClick={onEdit}>update the password</button></>
-          )}
+      {status.tone === 'bad' && (live?.worker.lastError || a.lastSyncError) && (() => {
+        const err = live?.worker.lastError || a.lastSyncError;
+        return (
+          <p className="mt-3 border border-red-500/20 bg-red-500/5 p-2 text-xs text-red-600 dark:text-red-400">
+            {err}
+            {/auth|password|credential/i.test(err) && (
+              <> — <button className="underline" onClick={onEdit}>update the password</button></>
+            )}
+          </p>
+        );
+      })()}
+
+      {/* Changes made here that the server has not heard about yet. */}
+      {pending && pending.waiting > 0 && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {pending.waiting === 1 ? '1 change' : `${pending.waiting.toLocaleString()} changes`} waiting to reach the server.
+        </p>
+      )}
+      {pending && pending.failed > 0 && (
+        <p className="mt-2 text-xs text-destructive">
+          {pending.failed === 1 ? '1 change' : `${pending.failed.toLocaleString()} changes`} could not be made on the server
+          {pending.lastError ? `: ${pending.lastError}` : ''} — kept here.{' '}
+          <button className="underline" onClick={async () => {
+            await send('POST', `/api/accounts/retry?id=${encodeURIComponent(a.id)}`);
+            onChanged();
+          }}>Try again</button>
         </p>
       )}
 

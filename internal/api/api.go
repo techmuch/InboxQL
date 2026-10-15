@@ -15,9 +15,7 @@ import (
 	"github.com/user/inboxql/internal/account"
 	"github.com/user/inboxql/internal/auth"
 	"github.com/user/inboxql/internal/embed"
-	"github.com/user/inboxql/internal/health"
 	"github.com/user/inboxql/internal/machine"
-	"github.com/user/inboxql/internal/maintenance"
 	"github.com/user/inboxql/internal/message"
 	"github.com/user/inboxql/internal/power"
 	"github.com/user/inboxql/internal/query"
@@ -92,6 +90,7 @@ func Router() (http.Handler, error) {
 	draftMux := http.NewServeMux()
 	registerDraftRoutes(draftMux)
 	mux.Handle("/api/drafts", auth.Middleware(draftMux))
+	mux.Handle("/api/drafts/", auth.Middleware(draftMux))
 
 	avatarMux := http.NewServeMux()
 	registerAvatarRoutes(avatarMux)
@@ -158,7 +157,14 @@ func Router() (http.Handler, error) {
 	registerSpanRoutes(spanMux)
 	// Label verdicts and rulings share the prefix, so they share the mux.
 	registerLabelRoutes(spanMux)
+	registerMessageLabelRoutes(spanMux)
 	mux.Handle("/api/messages/", auth.Middleware(spanMux))
+
+	// Mail labels: inbox, trash and the user's own.
+	mailLabelMux := http.NewServeMux()
+	registerMailLabelRoutes(mailLabelMux)
+	mux.Handle("/api/labels", auth.Middleware(mailLabelMux))
+	mux.Handle("/api/labels/", auth.Middleware(mailLabelMux))
 
 	// The starter pack. Its own routes rather than part of the annotator
 	// surface, because listing one reports what it would reach in this
@@ -287,7 +293,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.90",
+	Version: "0.0.91",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.
@@ -408,6 +414,7 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		restartWorker(acc.ID)
 		// Content-Type before WriteHeader: headers set after the status line
 		// has been written are discarded, and this response was going out as
 		// text/plain with a JSON body.
@@ -420,6 +427,10 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 		if id == "" {
 			http.Error(w, "missing id parameter", http.StatusBadRequest)
 			return
+		}
+		// Stopped first, so nothing writes mail for an account being removed.
+		if workers != nil {
+			workers.Stop(id)
 		}
 		if err := store.DeleteAccount(id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -480,31 +491,15 @@ func handleAccountSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() {
-		syncManager.StartSync(acc)
-		// New mail can carry invitations; the calendar reads them now rather
-		// than at its next pass.
-		engine().Kick()
-		// New mail has landed, so anything asking for after-sync now has
-		// something to read. Started as a job rather than run here: it takes
-		// minutes, and the maintenance surface is what can show progress and
-		// be told to stop.
-		//
-		// A failure to start is not worth reporting — it means a sweep is
-		// already running, which is the outcome this wanted anyway.
-		//
-		// Not on battery, unless the machine settings allow it: a sweep can be
-		// twenty minutes of extraction that nobody asked for. Nothing is lost
-		// by waiting — what is pending stays pending, and the first sync on
-		// mains power drains it.
-		if deferHeavyWork() {
-			log.Printf("[annotate] after-sync sweep deferred: on battery (heavyWorkOnBattery is off in %s)", machine.Path())
-			return
-		}
-		_, _ = maintenanceJobs().Start(health.JobAnnotators, maintenance.Options{
-			Profile: store.TriggerAfterSync,
-		})
-	}()
+	// A live account's worker does it: everything now, rather than at its
+	// next look. Without one (a server started before the account existed,
+	// or tests), a pass runs here.
+	if workers == nil || !workers.Wake(acc.ID) {
+		go func() {
+			syncManager.StartSync(acc)
+			afterNewMail()
+		}()
+	}
 
 	w.WriteHeader(http.StatusAccepted)
 	fmt.Fprint(w, "Sync started")

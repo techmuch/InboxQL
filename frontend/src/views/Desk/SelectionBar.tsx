@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { useState } from 'react';
-import { Filter, Mail, MailOpen, Star, X } from 'lucide-react';
+import { AlertOctagon, Archive, Filter, Inbox, Mail, MailOpen, Star, Trash2, X } from 'lucide-react';
+import { LabelPicker } from '../LabelPicker';
+import type { Move } from '../../lib/mail';
 import {
   describeSelection, narrowable, selectedRefs, useSelectionStore,
 } from '../../lib/selection';
@@ -12,6 +14,13 @@ interface SelectionBarProps {
   messageIds: string[];
   /** Mark those messages read, unread or starred. */
   onSetFlag: (flag: '\\Seen' | '\\Flagged', on: boolean) => Promise<void>;
+  /** Archive, trash, spam or back to the inbox. */
+  onMove?: (to: Move) => Promise<void>;
+  /** Each selected message's labels, for the label picker. */
+  messageLabels?: string[][];
+  /** Open the label picker from the keyboard. */
+  labelOpen?: boolean;
+  onLabelOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -30,7 +39,9 @@ interface SelectionBarProps {
  * it is the one that composes with everything the user already knows. Bulk
  * actions sit beside it as they arrive.
  */
-export const SelectionBar = ({ onNarrow, messageIds, onSetFlag }: SelectionBarProps) => {
+export const SelectionBar = ({
+  onNarrow, messageIds, onSetFlag, onMove, messageLabels, labelOpen, onLabelOpenChange,
+}: SelectionBarProps) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The selector returns the stored object, which is a stable reference. A
@@ -89,6 +100,24 @@ export const SelectionBar = ({ onNarrow, messageIds, onSetFlag }: SelectionBarPr
               busy={busy}
               onClick={() => run('\\Flagged', true)}
             />
+            {onMove && (
+              <>
+                <FlagButton icon={<Archive className="h-3 w-3" />} label="Archive" keys="e"
+                  busy={busy} onClick={() => move('archive')} />
+                <FlagButton icon={<Inbox className="h-3 w-3" />} label="Move to Inbox"
+                  busy={busy} onClick={() => move('inbox')} />
+                <FlagButton icon={<Trash2 className="h-3 w-3" />} label="Trash" keys="#"
+                  busy={busy} onClick={() => move('trash')} />
+                <FlagButton icon={<AlertOctagon className="h-3 w-3" />} label="Spam" keys="!"
+                  busy={busy} onClick={() => move('spam')} />
+              </>
+            )}
+            <LabelPicker
+              ids={messageIds}
+              current={messageLabels ?? messageIds.map(() => [])}
+              open={labelOpen}
+              onOpenChange={onLabelOpenChange}
+            />
           </>
         )}
       </div>
@@ -105,6 +134,19 @@ export const SelectionBar = ({ onNarrow, messageIds, onSetFlag }: SelectionBarPr
     </div>
   );
 
+  async function move(to: Move) {
+    if (!onMove) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onMove(to);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function run(flag: '\\Seen' | '\\Flagged', on: boolean) {
     setBusy(true);
     setError(null);
@@ -119,17 +161,17 @@ export const SelectionBar = ({ onNarrow, messageIds, onSetFlag }: SelectionBarPr
 };
 
 const FlagButton = ({
-  icon, label, busy, onClick,
+  icon, label, busy, onClick, keys,
 }: {
-  icon: React.ReactNode; label: string; busy: boolean; onClick: () => void;
+  icon: React.ReactNode; label: string; busy: boolean; onClick: () => void; keys?: string;
 }) => (
   <button
     type="button"
     onClick={onClick}
     disabled={busy}
-    // Said on the control rather than in a footnote: this changes what InboxQL
-    // knows, and sync is one-way.
-    title={`${label} in InboxQL. Sync is one-way, so the mail server is not told.`}
+    // Made here at once and sent to the account's server, which applies it
+    // within seconds.
+    title={keys ? `${label} (${keys})` : label}
     className="flex items-center gap-1 border border-border px-2 py-0.5 hover:bg-accent/40 disabled:opacity-40"
   >
     {icon} {label}

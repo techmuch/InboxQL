@@ -62,14 +62,9 @@ delete one.
 - For an event in a **Google** or **Exchange** calendar, the answer goes through
   that provider, which tells the organizer.
 - For an invitation that only arrived **by mail**, the answer goes back by mail,
-  as a calendar reply the organizer's calendar understands. Like all mail from
-  InboxQL it waits in the outbox until you send it:
-
-  ```sh
-  iql outbox approve <draft-id>
-  ```
-
-  The card shows the exact command.
+  as a calendar reply the organizer's calendar understands. It waits in the
+  outbox until you send it, from **Intelligence → Waiting for approval** or
+  with `iql outbox approve <draft-id>`.
 
 ## Connecting Google Calendar
 
@@ -164,8 +159,8 @@ An AI agent driving InboxQL can read the calendar and find times, and it can
 **propose** changes — a new event, a move, a cancellation, an answer to an
 invitation. A proposal changes nothing and tells nobody: it shows on the
 calendar, striped, and under **Waiting for you**, until you **Approve** or
-**Reject** it. From a terminal, `iql calendar approve <id>` — which, like
-`iql outbox approve`, works only at a terminal, typed by a person.
+**Reject** it. From a terminal, `iql calendar approve <id>` — which works only
+at a terminal, typed by a person.
 
 ## On the command line
 

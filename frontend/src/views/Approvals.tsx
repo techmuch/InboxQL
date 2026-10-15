@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarDays, Check, Copy, Loader2, Mail, RefreshCw, SquareKanban, X } from 'lucide-react';
+import { CalendarDays, Check, Loader2, Mail, RefreshCw, Send, SquareKanban, X } from 'lucide-react';
+import { sendDraft } from '../lib/sending';
 import { approveChange, listChanges, rejectChange, type Change } from './Calendar/api';
 import { openCalendar } from '../lib/calendarNav';
 import { openMessageByID } from '../lib/tabs';
@@ -50,6 +51,16 @@ export const Approvals = () => {
     setChanges(cs => cs.filter(x => x.id !== c.id));
     try { await (approve ? approveChange(c.id) : rejectChange(c.id)); }
     catch (e: any) { setError(e.message ?? 'Could not decide that change'); void load(); }
+  };
+
+  const send = async (d: Draft) => {
+    setDrafts(ds => ds.filter(x => x.id !== d.id));
+    try { await sendDraft(d.id); } catch (e: any) { setError(e.message ?? 'Could not send'); void load(); }
+  };
+  const reject = async (d: Draft) => {
+    setDrafts(ds => ds.filter(x => x.id !== d.id));
+    const r = await fetch(`/api/drafts/${encodeURIComponent(d.id)}/reject`, { method: 'POST' }).catch(() => null);
+    if (!r?.ok) { setError(`Could not take “${d.subject}” back`); void load(); }
   };
 
   const total = tickets.length + changes.length + drafts.length;
@@ -110,27 +121,28 @@ export const Approvals = () => {
 
         <Section icon={<Mail className="h-4 w-4" />} title="Mail in the outbox" count={drafts.length}
           empty="Nothing is queued to send.">
-          {drafts.map(d => {
-            const cmd = `iql outbox approve ${d.id}`;
-            return (
-              <li key={d.id} className="py-2">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium">{d.subject || '(no subject)'}</div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      to {d.to.join(', ')}{d.origin === 'agent' && <span className="ml-1 font-semibold text-amber-600">· written by an agent</span>}
-                    </div>
+          {drafts.map(d => (
+            <li key={d.id} className="py-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium">{d.subject || '(no subject)'}</div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    to {d.to.join(', ')}{d.origin === 'agent' && <span className="ml-1 font-semibold text-amber-600">· written by an agent</span>}
                   </div>
-                  <button className={btn} onClick={() => navigator.clipboard?.writeText(cmd)}><Copy className="h-3 w-3" /> Copy command</button>
                 </div>
-                <code className="mt-1 block font-mono text-[11px] text-muted-foreground">{cmd}</code>
-              </li>
-            );
-          })}
+                <div className="flex shrink-0 gap-1">
+                  <button className={btn} onClick={() => void send(d)}><Send className="h-3 w-3" /> Send</button>
+                  <button className={btn} onClick={() => void reject(d)}><X className="h-3 w-3" /> Back to drafts</button>
+                </div>
+              </div>
+              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground whitespace-pre-wrap">{d.body}</p>
+            </li>
+          ))}
         </Section>
         {drafts.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            Mail is sent from a terminal: run the command, read the message it shows, and type yes.
+            Send holds a message for a few seconds, with Undo, then sends it. From a terminal it is
+            <code className="mx-1 font-mono">iql outbox approve &lt;id&gt;</code>.
           </p>
         )}
       </div>

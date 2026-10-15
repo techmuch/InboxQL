@@ -10,30 +10,34 @@ import (
 
 // Folders the mailbox UI offers.
 //
-// These are views over one flat table rather than real IMAP folders, because
-// that is what InboxQL actually has: sync flattens every folder it fetches into
-// `messages`, and the only per-message signals are the IMAP flags, the sender,
-// and — since schema v14 — the folder name it was read from.
+// These are views over labels, not places. A message carries a set of labels
+// (maillabels.go), and each folder is a question about them: Inbox is "has the
+// inbox label and is not binned", All Mail is "not binned", Trash is "has the
+// trash label". Unlike the folders they replace they overlap, as Gmail's do:
+// your own reply to a thread is in Sent and, if you starred it, in Starred.
 const (
-	FolderAll     = "all"
-	FolderInbox   = "inbox"
-	FolderStarred = "starred"
-	FolderSent    = "sent"
-	FolderArchive = "archive"
-	FolderDrafts  = "drafts"
-	FolderSpam    = "spam"
-	FolderTrash   = "trash"
+	FolderAll       = "all"
+	FolderInbox     = "inbox"
+	FolderStarred   = "starred"
+	FolderSent      = "sent"
+	FolderDrafts    = "drafts"
+	FolderAllMail   = "allmail"
+	FolderArchive   = "archive"
+	FolderImportant = "important"
+	FolderSpam      = "spam"
+	FolderTrash     = "trash"
 )
 
-// Folders in display order.
+// Folders in display order: the rail's rows.
 var Folders = []string{
-	FolderInbox, FolderStarred, FolderSent, FolderArchive,
-	FolderDrafts, FolderSpam, FolderTrash,
+	FolderInbox, FolderStarred, FolderSent, FolderDrafts,
+	FolderAllMail, FolderSpam, FolderTrash,
 }
 
-// ValidFolder reports whether a name is one InboxQL knows.
+// ValidFolder reports whether a name is one InboxQL knows. Archive and
+// Important are valid in a query without being rows of the rail.
 func ValidFolder(name string) bool {
-	if name == "" || name == FolderAll {
+	if name == "" || name == FolderAll || name == FolderArchive || name == FolderImportant {
 		return true
 	}
 	for _, f := range Folders {
@@ -52,115 +56,38 @@ func ValidFolder(name string) bool {
 // deduplicated against real mail.
 func IsDraftFolder(name string) bool { return name == FolderDrafts }
 
-// Flag predicates. IMAP flags are stored as a JSON array, so these match the
-// quoted flag inside it — `"\\Deleted"` in the JSON text.
-const (
-	sqlIsDeleted = `flags LIKE '%\\Deleted%'`
-	sqlIsFlagged = `flags LIKE '%\\Flagged%'`
-	sqlIsJunk    = `(flags LIKE '%\\Junk%' OR flags LIKE '%$Junk%')`
+// sqlIsFlagged is starred. Starred is a flag, as it is in IMAP and in Gmail's
+// IMAP, not a label.
+const sqlIsFlagged = `flags LIKE '%\\Flagged%'`
+
+var (
+	sqlInTrash = hasLabelSQL(LabelTrash)
+	sqlInSpam  = hasLabelSQL(LabelSpam)
+	// Binned mail — Trash and Spam — is left out of every other view, as
+	// Gmail leaves it out.
+	sqlBinned = "(" + sqlInTrash + " OR " + sqlInSpam + ")"
 )
-
-// sqlIsSent identifies mail the account sent.
-//
-// Two independent signals, because neither is sufficient alone. The folder it
-// was read from is authoritative when present, but is NULL for everything
-// synced before v14. The sender address covers those, and also covers mail
-// sent from another client that never landed in a folder InboxQL fetched — but it
-// would wrongly claim a message you merely appear in the From of, which is why
-// the folder check comes first.
-// The sender test goes through message_participants rather than from_addr.
-// from_addr holds the raw header, so `Me <me@example.com>` never equalled the
-// bare account address and mail sent from any client that writes a display
-// name — which is most of them — was missing from Sent. The participant row
-// carries the normalised address, which is what the account list holds too.
-//
-// The correlation is written as an unqualified `id` on purpose: this predicate
-// is spliced into statements that sometimes alias the table (`FROM messages m`,
-// in the query compiler) and sometimes do not (FolderCounts). Unqualified, it
-// resolves to the outer row either way; `messages.id` would fail wherever the
-// alias is in force.
-// sqlIsArchived identifies mail the user filed away.
-//
-// # Why this had to exist
-//
-// The inbox was defined as the remainder — not sent, not deleted, not junk —
-// which is tidy until a mailbox is mostly archive. On a real one of 43,553
-// messages, *zero* were in anything named INBOX and the rail reported
-// "Inbox 39,068", every one of them read out of Archive.mbox. The count was
-// right and the word was wrong, and there was no way to ask for Archive as
-// Archive.
-//
-// # Why the mailbox name and not a flag
-//
-// Because there is no \Archived flag; IMAP has no such thing. Archive is a
-// place, recorded in `mailbox` since schema v14, and the special-use mailbox is
-// named "Archive" by the RFC, by Apple Mail (Archive.mbox) and by every client
-// that implements it.
-//
-// # Why not Gmail's "All Mail"
-//
-// It looks like the same idea and is not: All Mail contains the inbox too, so
-// counting it as archive would empty the inbox of mail that really is in it.
-// Gmail archiving is the *absence* of the Inbox label, which this schema does
-// not record, so those accounts keep the old behaviour rather than getting a
-// wrong answer confidently.
-//
-// Matched on the trailing segment so a folder merely *containing* the word —
-// "Archived invoices", a parent directory — is not swept in.
-const sqlIsArchived = `(
-	LOWER(COALESCE(mailbox, '')) = 'archive'
-	OR LOWER(COALESCE(mailbox, '')) LIKE '%/archive'
-	OR LOWER(COALESCE(mailbox, '')) LIKE '%/archive.mbox'
-)`
-
-const sqlIsSent = `(
-	LOWER(COALESCE(mailbox, '')) LIKE '%sent%'
-	OR EXISTS (
-		SELECT 1 FROM message_participants p
-		WHERE p.message_id = id AND p.role = 'from'
-		  AND p.address IN (
-			SELECT LOWER(email) FROM accounts WHERE email IS NOT NULL AND email != ''
-			UNION
-			SELECT LOWER(user)  FROM accounts WHERE user  IS NOT NULL AND user  != ''
-		  )
-	)
-)`
 
 // folderClause returns the SQL predicate for a folder.
 func folderClause(folder string) string {
 	switch folder {
 	case FolderTrash:
-		return sqlIsDeleted
+		return sqlInTrash
 	case FolderSpam:
-		return sqlIsJunk + " AND NOT " + sqlIsDeleted
+		return "(" + sqlInSpam + " AND NOT " + sqlInTrash + ")"
 	case FolderStarred:
-		// Starred is a property, not a place: a flagged message in Sent is
-		// still starred. Only deleted mail drops out.
-		return sqlIsFlagged + " AND NOT " + sqlIsDeleted
+		return "(" + sqlIsFlagged + " AND NOT " + sqlBinned + ")"
 	case FolderSent:
-		return sqlIsSent + " AND NOT " + sqlIsDeleted
+		return "(" + hasLabelSQL(LabelSent) + " AND NOT " + sqlBinned + ")"
+	case FolderImportant:
+		return "(" + hasLabelSQL(LabelImportant) + " AND NOT " + sqlBinned + ")"
+	case FolderAllMail:
+		return "(NOT " + sqlBinned + ")"
 	case FolderArchive:
-		// Filed away, but not thrown away — and not instead of being sent.
-		//
-		// The folders have to partition, or the sidebar's counts add up to more
-		// than the mailbox. On a real one they did: 4,295 messages were both in
-		// Archive and sent by the user, so Archive and Sent each claimed them
-		// and the six totals exceeded 43,553.
-		//
-		// Sent wins, because the two are not the same kind of fact. Sent is
-		// about who wrote it and never stops being true; archive is about where
-		// it is filed, and filing your own sent mail is what every client does
-		// to it eventually. A Sent folder missing everything you have tidied
-		// away would be the more surprising of the two.
-		return sqlIsArchived + " AND NOT " + sqlIsSent +
-			" AND NOT " + sqlIsDeleted + " AND NOT " + sqlIsJunk
+		// Archived is the absence of Inbox, which is all it ever was in Gmail.
+		return "(NOT " + hasLabelSQL(LabelInbox) + " AND NOT " + sqlBinned + ")"
 	case FolderInbox:
-		// Everything that is not filed somewhere else. Defining the inbox as
-		// the remainder keeps a message from appearing in two folders — and
-		// archive is somewhere else, which it was not before: a mailbox where
-		// everything had been filed reported all of it as inbox.
-		return "NOT " + sqlIsSent + " AND NOT " + sqlIsDeleted +
-			" AND NOT " + sqlIsJunk + " AND NOT " + sqlIsArchived
+		return "(" + hasLabelSQL(LabelInbox) + " AND NOT " + sqlBinned + ")"
 	default:
 		return ""
 	}

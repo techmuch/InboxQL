@@ -204,6 +204,30 @@ func (r *Registry) Send(name string, c Command) error {
 	}
 }
 
+// Broadcast tells every connected window something happened — new mail —
+// without it counting as a command to any of them: it changes nothing on
+// screen by itself and is not what a window "was last told".
+func (r *Registry) Broadcast(c Command) int {
+	c.At = time.Now()
+	r.mu.Lock()
+	var targets []*Session
+	for _, s := range r.byID {
+		if s.Connected {
+			targets = append(targets, s)
+		}
+	}
+	r.mu.Unlock()
+	n := 0
+	for _, s := range targets {
+		select {
+		case s.commands <- c:
+			n++
+		default:
+		}
+	}
+	return n
+}
+
 // List returns the open windows, oldest first.
 //
 // Oldest first because the names are assigned in that order, so the list reads

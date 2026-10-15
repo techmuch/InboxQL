@@ -13,15 +13,14 @@ describe('AppDialogs', () => {
     for (const k of ['compose', 'task', 'palette', 'keys'] as const) useAppUi.getState().set(k, false);
   });
 
-  it('queues a new message and shows the command that sends it', async () => {
-    const posted: any[] = [];
+  it('sends a new message, with a few seconds to undo it', async () => {
+    const posted: { url: string; body: any }[] = [];
     vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
       if (url === '/api/accounts') return json([{ id: 'acc', name: 'Work', email: 'me@x.com' }]);
-      if (url === '/api/drafts') {
-        posted.push(JSON.parse(String(init?.body)));
-        return json({ draft: { id: 'd1' }, note: 'Queued in the outbox. Nothing is sent until you run: iql outbox approve d1' }, 201);
-      }
+      if (init?.method === 'POST') posted.push({ url, body: init.body ? JSON.parse(String(init.body)) : null });
+      if (url === '/api/drafts') return json({ draft: { id: 'd1', subject: 'Hello' }, undoMs: 10000 }, 201);
+      if (url === '/api/drafts/d1/undo') return json({ draft: { id: 'd1', status: 'draft' } });
       return json({});
     });
     useAppUi.getState().set('compose', true);
@@ -29,9 +28,34 @@ describe('AppDialogs', () => {
     await waitFor(() => expect(screen.getByLabelText('To')).toBeTruthy());
     fireEvent.change(screen.getByLabelText('To'), { target: { value: 'ada@example.com' } });
     fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Hello' } });
-    fireEvent.click(screen.getByText('Queue to send'));
-    await waitFor(() => expect(screen.getByText(/iql outbox approve d1/)).toBeTruthy());
-    expect(posted[0]).toMatchObject({ accountId: 'acc', to: ['ada@example.com'], subject: 'Hello', queue: true });
+    fireEvent.click(screen.getByText('Send'));
+    await waitFor(() => expect(screen.getByText(/Sending “Hello” in \d+s/)).toBeTruthy());
+    expect(posted[0]).toMatchObject({ url: '/api/drafts', body: { accountId: 'acc', to: ['ada@example.com'], subject: 'Hello', send: true } });
+    // The window closes; the toast stays.
+    expect(useAppUi.getState().compose).toBe(false);
+
+    fireEvent.click(screen.getByText('Undo'));
+    await waitFor(() => expect(screen.getByText(/back in Drafts/)).toBeTruthy());
+    expect(posted.map(p => p.url)).toContain('/api/drafts/d1/undo');
+  });
+
+  it('saves a draft without sending it', async () => {
+    const posted: any[] = [];
+    vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/accounts') return json([{ id: 'acc', name: 'Work', email: 'me@x.com' }]);
+      if (url === '/api/drafts') {
+        posted.push(JSON.parse(String(init?.body)));
+        return json({ draft: { id: 'd2' }, note: 'Saved as a draft.' }, 201);
+      }
+      return json({});
+    });
+    useAppUi.getState().set('compose', true);
+    render(<AppDialogs />);
+    await waitFor(() => expect(screen.getByLabelText('To')).toBeTruthy());
+    fireEvent.click(screen.getByText('Save draft'));
+    await waitFor(() => expect(screen.getByText('Saved as a draft.')).toBeTruthy());
+    expect(posted[0].send).toBeUndefined();
   });
 
   it('adds a task to the board as To do', async () => {

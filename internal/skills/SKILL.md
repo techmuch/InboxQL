@@ -1,6 +1,6 @@
 ---
 name: iql
-description: Use when the user asks about their email, their calendar, or anything InboxQL holds — finding or summarising mail, what is on and when people are free, who someone is or who is waiting on whom, attachments and files, labels, receipts and other extracted values, tickets, or drafting a reply. InboxQL is a local mailbox driven by the `iql` command. Not for sending mail without the user, which iql cannot do.
+description: Use when the user asks about their email, their calendar, or anything InboxQL holds — finding or summarising mail, archiving and labelling it, what is on and when people are free, who someone is or who is waiting on whom, attachments and files, receipts and other extracted values, tickets, or drafting and sending a reply. InboxQL is a local mailbox driven by the `iql` command. Send mail only when the user asks you to.
 ---
 
 <!-- Installed by iql {{VERSION}}. `iql skills remove` deletes this folder; `iql update` refreshes it. -->
@@ -14,14 +14,14 @@ answer here seems not to fit.
 
 ## Rules that are not negotiable
 
-- **You can compose mail. You cannot send it.** `iql send` only queues. A person
-  delivers it with `iql outbox approve <id>` at a terminal; for you that command
-  exits 4, and there is no flag or variable around it. Do not look for one.
-  After queueing, tell the user the exact command to approve it.
-- **Always `--origin agent`** when you create a draft.
+- **Send only when the user asks you to.** Compose with `iql draft create
+  --origin agent`, queue with `iql send <id>` — which sends nothing — and tell
+  the user it is waiting in their outbox. When they ask you to send it,
+  `iql outbox approve <id> --yes`. Mail cannot be recalled.
+- **Always `--origin agent`** when you create a draft or change mail.
 - **Always pass `--json`**, and read the exit code: 2 your command was wrong,
-  3 not found (do not retry), 4 needs a person, 5 something is not set up
-  (stderr says what).
+  3 not found (do not retry), 4 needs a person (calendar approvals), 5
+  something is not set up (stderr says what).
 - **Do not change the machine unasked**: no `service install|start|stop`,
   `update` (without `--check`), `hosts set`, `setup`, `account remove`,
   `vault rotate`, `annotate delete`, and no `POST /api/system/restart` or
@@ -59,13 +59,29 @@ iql --json query "extract:receipts after:2026 | sum receipts.amount by month"
 - `iql --json sql "SELECT …"` is read-only SQL for anything the language
   cannot say; `iql --json sql --schema` lists tables.
 
-## Labels are three-valued
+## Labels, two kinds, one `label:`
 
-`label:x` said yes, `-label:x` **looked and said no**, `unlabeled:x` never
-looked. `-label:x` does not include unevaluated mail. Before concluding "there
-are no more", check coverage with `iql --json annotate show x`. Scores on the
-local models rank rather than measure unless calibrated: `label:x@0.9` is "the
-more confident ones", not "90% right".
+Mail carries labels, as in Gmail, not folders: `inbox`, `sent`, `spam`,
+`trash` and the user's own (`label:Receipts`). Archived is not in the inbox.
+`folder:inbox` still works and means the same. `iql --json labels` lists them.
+
+An **annotator** label is the other kind, and `label:` answers for both. For
+an annotator it is three-valued: `label:x` said yes, `-label:x` **looked and
+said no**, `unlabeled:x` never looked. Before concluding "there are no more",
+check coverage with `iql --json annotate show x`. Scores on the local models
+rank rather than measure unless calibrated: `label:x@0.9` is "the more
+confident ones", not "90% right".
+
+## Changing mail
+
+```
+iql --json mail archive <id>... --origin agent
+iql --json mail label Receipts <id>... --origin agent
+iql --json mail trash|spam|inbox|read|unread|star <id>...
+```
+
+Changes are made here and on the user's mail server (Gmail included) within
+seconds. Archive and label when asked; trash only when asked.
 
 ## Reading and replying
 
@@ -75,6 +91,7 @@ iql --json analyze <message-id> --prompt "what is still outstanding?"
 iql --json draft create --reply-to <message-id> --origin agent --body -   (body on stdin)
 iql --json send <draft-id>                     queues; does not send
 iql --json outbox show <draft-id>              the exact bytes, to check your work
+iql --json outbox approve <draft-id> --yes     sends — only when the user asked
 ```
 
 `analyze` with `"mode": "context"` means no AI provider is set up: there is no

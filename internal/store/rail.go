@@ -20,7 +20,7 @@ import (
 // facet rather than to a query somebody wrote. So they can be hidden and they
 // cannot be deleted — a rail with no Inbox and no obvious way back is a bad
 // afternoon, and the badges are half the point of these rows.
-var RailFolders = []string{"inbox", "starred", "sent", "drafts", "spam", "trash"}
+var RailFolders = []string{"inbox", "starred", "sent", "drafts", "allmail", "spam", "trash"}
 
 const hiddenFoldersSetting = "rail.hiddenFolders"
 

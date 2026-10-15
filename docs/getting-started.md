@@ -19,9 +19,10 @@ read something — and even then, InboxQL asks first. See [Privacy](privacy.md).
 you use it at `http://localhost:8420`. That makes it one program on every
 platform, and it means an agent or a script can use the same mailbox you do.
 
-**It does not send mail on its own.** You can write and queue replies in it,
-and an agent can draft them, but a message leaves only when a person approves
-it at a terminal.
+**It is your mail client.** It keeps a full copy of each account, current both
+ways: new mail arrives in seconds, and archiving, labelling or reading here
+does the same on the server. It sends mail, with a few seconds to undo. Mail
+has labels, as in Gmail, rather than folders.
 
 **It is early.** The mail client, the query language, labels, contacts, files
 and tickets all work. Some things are deliberately not there yet — there is no
@@ -76,9 +77,10 @@ before saving and says exactly what went wrong if something does: a rejected
 password, a server name that does not exist, a server that did not answer.
 [Accounts](accounts-and-import.md#adding-an-account) has the details.
 
-Saving the account starts the first sync. A large mailbox takes a while; the
-status bar at the bottom of the window shows how far it has got, and you can
-use everything that has arrived while the rest comes in.
+Saving the account connects it, and it stays connected: you never need to
+press Sync. The first time, it reads the whole account, newest first, so this
+week's mail is there in minutes and older mail fills in behind it — a large
+Gmail account can take a few days. The account's card says how far it has got.
 
 Already have years of mail in Apple Mail? [Importing](accounts-and-import.md#importing-from-apple-mail)
 reads it straight from Mail's own files, without changing them.

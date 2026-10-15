@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CommandPalette, commandRegistry } from 'nexus-shell';
-import { Copy, Loader2, X } from 'lucide-react';
+import { Loader2, Send, X } from 'lucide-react';
+import { sendNew, undoSend, useSendingStore } from '../lib/sending';
 import { useAppUi } from '../lib/appUi';
 import { BINDINGS } from '../lib/keySequences';
 import { openQuery } from '../lib/tabs';
@@ -19,6 +20,7 @@ export const AppDialogs = () => {
       {ui.task && <NewTaskDialog onClose={() => ui.set('task', false)} />}
       {ui.keys && <KeyboardHelp onClose={() => ui.set('keys', false)} />}
       <FindAnything open={ui.palette} onClose={() => ui.set('palette', false)} />
+      <SendingToast />
     </>
   );
 };
@@ -47,8 +49,50 @@ const field = 'w-full bg-background border border-border px-2 py-1.5 text-sm';
 const label = 'block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1';
 
 /**
- * New message. Saved as a draft or queued in the outbox; mail leaves from
- * the outbox, approved at a terminal, until sending from here is built.
+ * Sending… with Undo, then whether it went. Bottom left, as Gmail has it,
+ * out of the way of the message list.
+ */
+const SendingToast = () => {
+  const cur = useSendingStore(s => s.current);
+  const clear = () => useSendingStore.getState().set(null);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!cur) return;
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [cur]);
+  useEffect(() => {
+    if (!cur || cur.state === 'waiting' || cur.state === 'failed') return;
+    const t = setTimeout(clear, 4000);
+    return () => clearTimeout(t);
+  }, [cur]);
+  if (!cur) return null;
+  const left = Math.max(0, Math.ceil((cur.until - now) / 1000));
+  const subject = cur.subject || '(no subject)';
+  return (
+    <div role="status" aria-live="polite"
+      className="fixed bottom-4 left-4 z-50 flex max-w-md items-center gap-3 border border-border bg-foreground px-4 py-2.5 text-sm text-background shadow-lg">
+      {cur.state === 'waiting' && (
+        <>
+          <span className="truncate">{left > 0 ? `Sending “${subject}” in ${left}s` : `Sending “${subject}”…`}</span>
+          {left > 0 && <button onClick={() => void undoSend()} className="font-semibold underline">Undo</button>}
+        </>
+      )}
+      {cur.state === 'sent' && <span className="truncate">Sent “{subject}”.</span>}
+      {cur.state === 'undone' && <span className="truncate">Not sent. “{subject}” is back in Drafts.</span>}
+      {cur.state === 'failed' && (
+        <>
+          <span className="min-w-0">Not sent: {cur.error || 'the server refused it'}. It is in Drafts.</span>
+          <button onClick={clear} aria-label="Dismiss" className="shrink-0"><X className="h-4 w-4" /></button>
+        </>
+      )}
+    </div>
+  );
+};
+
+/**
+ * New message. Send holds it for a few seconds, with Undo, then sends it;
+ * Save draft keeps it in Drafts.
  */
 const ComposeDialog = ({ onClose }: { onClose: () => void }) => {
   const [accounts, setAccounts] = useState<{ id: string; name: string; email?: string }[]>([]);
@@ -60,6 +104,7 @@ const ComposeDialog = ({ onClose }: { onClose: () => void }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const canSend = to.trim() !== '' && subject.trim() !== '';
 
   useEffect(() => {
     fetch('/api/accounts').then(r => r.json()).then((a: any[]) => {
@@ -68,29 +113,30 @@ const ComposeDialog = ({ onClose }: { onClose: () => void }) => {
     }).catch(() => {});
   }, []);
 
-  const save = async (queue: boolean) => {
+  const save = async () => {
     setBusy(true); setError(null);
     try {
       const r = await fetch('/api/drafts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountId, to: [to], cc: [cc], subject, body, queue }),
+        body: JSON.stringify({ accountId, to: [to], cc: [cc], subject, body }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? 'could not save');
       setDone(d.note);
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
+  const send = async () => {
+    setBusy(true); setError(null);
+    try {
+      await sendNew({ accountId, to: [to], cc: [cc], subject, body });
+      onClose();
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
 
   if (done) {
-    const cmd = done.includes('iql outbox approve') ? done.slice(done.indexOf('iql outbox approve')) : null;
     return (
       <Shell title="New message" onClose={onClose}>
         <p className="text-sm">{done}</p>
-        {cmd && (
-          <button onClick={() => navigator.clipboard?.writeText(cmd)} className="mt-3 inline-flex items-center gap-1.5 border border-border px-3 py-1 text-xs hover:bg-accent">
-            <Copy className="h-3 w-3" /> Copy the command
-          </button>
-        )}
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={() => openQuery('folder:drafts')} className="border border-border px-3 py-1.5 text-sm hover:bg-accent">Open drafts</button>
           <button onClick={onClose} className="bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground">Done</button>
@@ -125,15 +171,14 @@ const ComposeDialog = ({ onClose }: { onClose: () => void }) => {
             <label className={label} htmlFor="c-subj">Subject</label>
             <input id="c-subj" className={field} value={subject} onChange={e => setSubject(e.target.value)} />
           </div>
-          <textarea aria-label="Message" className={`${field} min-h-[10rem]`} value={body} onChange={e => setBody(e.target.value)} />
-          <p className="text-[11px] text-muted-foreground">
-            Mail leaves InboxQL from the outbox: queue it here, then approve it with <span className="font-mono">iql outbox approve</span>.
-          </p>
+          <textarea aria-label="Message" className={`${field} min-h-[10rem]`} value={body} onChange={e => setBody(e.target.value)}
+            onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canSend && !busy) { e.preventDefault(); void send(); } }} />
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <button disabled={busy} onClick={() => save(false)} className="border border-border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50">Save draft</button>
-            <button disabled={busy || !to.trim() || !subject.trim()} onClick={() => save(true)} className="bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Queue to send'}
+          <div className="flex items-center justify-end gap-2">
+            <span className="mr-auto text-[11px] text-muted-foreground">⌘/Ctrl+Enter sends; you can undo for a few seconds.</span>
+            <button disabled={busy} onClick={() => void save()} className="border border-border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50">Save draft</button>
+            <button disabled={busy || !canSend} onClick={() => void send()} className="inline-flex items-center gap-1.5 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="h-3.5 w-3.5" /> Send</>}
             </button>
           </div>
         </div>
@@ -201,6 +246,16 @@ export const KeyboardHelp = ({ onClose }: { onClose: () => void }) => {
     { keys: 'Ctrl+,', label: 'Settings' },
     { keys: 't · ← → · d w m a · n', label: 'In the calendar: today, previous/next, views, new event' },
   ];
+  // The Desk's keys act on the selection, or else the row with focus.
+  const mail = [
+    { keys: 'e', label: 'Archive' },
+    { keys: '#', label: 'Trash' },
+    { keys: '!', label: 'Spam' },
+    { keys: 'l', label: 'Label' },
+    { keys: 's', label: 'Star or unstar' },
+    { keys: 'I', label: 'Mark read (Shift+i)' },
+    { keys: 'U', label: 'Mark unread (Shift+u)' },
+  ];
   const Key = ({ k }: { k: string }) => (
     <span className="inline-flex gap-1">{k.split(' ').map((p, i) => <kbd key={i} className="border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px]">{p}</kbd>)}</span>
   );
@@ -217,6 +272,12 @@ export const KeyboardHelp = ({ onClose }: { onClose: () => void }) => {
             </ul>
           </section>
         ))}
+        <section>
+          <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Mail, in the Desk</h3>
+          <ul className="space-y-1">
+            {mail.map(m => <li key={m.keys} className="flex items-center justify-between"><span>{m.label}</span><Key k={m.keys} /></li>)}
+          </ul>
+        </section>
         <section>
           <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Everywhere</h3>
           <ul className="space-y-1">

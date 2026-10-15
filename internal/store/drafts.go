@@ -13,8 +13,11 @@ import (
 const (
 	// DraftStatusDraft is being composed; not eligible for delivery.
 	DraftStatusDraft = "draft"
-	// DraftStatusQueued is in the outbox awaiting human approval.
+	// DraftStatusQueued is in the outbox: waiting for approval, or — with a
+	// SendAt — sent by a person and inside its Undo window.
 	DraftStatusQueued = "queued"
+	// DraftStatusSending is being handed to the SMTP server right now.
+	DraftStatusSending = "sending"
 	// DraftStatusSent has been handed to an SMTP server.
 	DraftStatusSent = "sent"
 	// DraftStatusFailed was approved but delivery failed.
@@ -50,6 +53,9 @@ type Draft struct {
 	UpdatedAt time.Time  `json:"updatedAt"`
 	QueuedAt  *time.Time `json:"queuedAt,omitempty"`
 	SentAt    *time.Time `json:"sentAt,omitempty"`
+	// SendAt is when a draft someone pressed Send on goes out: the end of
+	// its Undo window. Nil for a draft waiting in the outbox for approval.
+	SendAt    *time.Time `json:"sendAt,omitempty"`
 	LastError string     `json:"lastError,omitempty"`
 }
 
@@ -83,8 +89,8 @@ func SaveDraft(d *Draft) error {
 	_, err := db.Exec(`
 		INSERT INTO drafts (id, account_id, in_reply_to, thread_key, to_addrs, cc_addrs, bcc_addrs,
 		                    subject, body, status, origin, created_at, updated_at,
-		                    queued_at, sent_at, last_error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                    queued_at, sent_at, last_error, send_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			account_id  = EXCLUDED.account_id,
 			in_reply_to = EXCLUDED.in_reply_to,
@@ -99,11 +105,12 @@ func SaveDraft(d *Draft) error {
 			updated_at  = EXCLUDED.updated_at,
 			queued_at   = EXCLUDED.queued_at,
 			sent_at     = EXCLUDED.sent_at,
-			last_error  = EXCLUDED.last_error;
+			last_error  = EXCLUDED.last_error,
+			send_at     = EXCLUDED.send_at;
 	`, d.ID, d.AccountID, d.InReplyTo, nullIfEmpty(d.ThreadKey), string(to), string(cc), string(bcc),
 		d.Subject, d.Body, d.Status, d.Origin,
 		d.CreatedAt.UnixMilli(), d.UpdatedAt.UnixMilli(),
-		millisOrNil(d.QueuedAt), millisOrNil(d.SentAt), d.LastError)
+		millisOrNil(d.QueuedAt), millisOrNil(d.SentAt), d.LastError, millisOrNil(d.SendAt))
 	return err
 }
 
@@ -115,18 +122,18 @@ func millisOrNil(t *time.Time) any {
 }
 
 const draftColumns = `id, account_id, in_reply_to, thread_key, to_addrs, cc_addrs, bcc_addrs,
-	subject, body, status, origin, created_at, updated_at, queued_at, sent_at, last_error`
+	subject, body, status, origin, created_at, updated_at, queued_at, sent_at, last_error, send_at`
 
 func scanDraft(scan func(dest ...any) error) (*Draft, error) {
 	d := &Draft{}
 	var to, cc, bcc string
 	var inReplyTo, threadKey, lastError sql.NullString
 	var created, updated int64
-	var queued, sent sql.NullInt64
+	var queued, sent, sendAt sql.NullInt64
 
 	if err := scan(&d.ID, &d.AccountID, &inReplyTo, &threadKey, &to, &cc, &bcc,
 		&d.Subject, &d.Body, &d.Status, &d.Origin,
-		&created, &updated, &queued, &sent, &lastError); err != nil {
+		&created, &updated, &queued, &sent, &lastError, &sendAt); err != nil {
 		return nil, err
 	}
 
@@ -146,7 +153,77 @@ func scanDraft(scan func(dest ...any) error) (*Draft, error) {
 		t := time.UnixMilli(sent.Int64)
 		d.SentAt = &t
 	}
+	if sendAt.Valid {
+		t := time.UnixMilli(sendAt.Int64)
+		d.SendAt = &t
+	}
 	return d, nil
+}
+
+// ScheduleSend puts a draft in the outbox to go at a time: the end of its
+// Undo window. Pressing Send is the approval.
+func ScheduleSend(id string, at time.Time) (*Draft, error) {
+	d, err := GetDraft(id)
+	if err != nil || d == nil {
+		return d, err
+	}
+	switch d.Status {
+	case DraftStatusSent, DraftStatusSending:
+		return d, fmt.Errorf("this message has already been sent")
+	}
+	now := time.Now()
+	d.Status = DraftStatusQueued
+	if d.QueuedAt == nil {
+		d.QueuedAt = &now
+	}
+	d.SendAt = &at
+	d.LastError = ""
+	return d, SaveDraft(d)
+}
+
+// CancelSend takes back a draft still inside its Undo window. False means it
+// is too late — it has gone, or is going.
+func CancelSend(id string) (bool, error) {
+	res, err := db.Exec(`UPDATE drafts SET status = ?, send_at = NULL, queued_at = NULL, updated_at = ?
+		WHERE id = ? AND status = ? AND send_at IS NOT NULL`,
+		DraftStatusDraft, time.Now().UnixMilli(), id, DraftStatusQueued)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// DueDrafts are the drafts whose Undo window has passed.
+func DueDrafts(now time.Time) ([]*Draft, error) {
+	rows, err := db.Query("SELECT "+draftColumns+" FROM drafts WHERE status = ? AND send_at IS NOT NULL AND send_at <= ?",
+		DraftStatusQueued, now.UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Draft
+	for rows.Next() {
+		d, err := scanDraft(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// ClaimDraft marks a queued draft as going out, so that two senders — the
+// server's loop and a person at a terminal — cannot both send it. False
+// means somebody else has it, or it was taken back.
+func ClaimDraft(id string) (bool, error) {
+	res, err := db.Exec(`UPDATE drafts SET status = ?, updated_at = ? WHERE id = ? AND status = ?`,
+		DraftStatusSending, time.Now().UnixMilli(), id, DraftStatusQueued)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // GetDraft returns a draft by id, or (nil, nil) when it does not exist.

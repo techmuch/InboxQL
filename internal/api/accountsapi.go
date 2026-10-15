@@ -23,6 +23,8 @@ func registerAccountRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/accounts/footprint", handleAccountFootprint)
 	mux.HandleFunc("/api/accounts/discover", handleAccountDiscover)
 	mux.HandleFunc("/api/accounts/google", handleMailGoogle)
+	mux.HandleFunc("GET /api/accounts/live", handleAccountsLive)
+	mux.HandleFunc("POST /api/accounts/retry", handleAccountRetry)
 }
 
 // handleMailGoogle starts Sign in with Google for a Gmail account (GET says
@@ -188,6 +190,9 @@ func handleAccountDisconnect(w http.ResponseWriter, r *http.Request) {
 	} else if err != nil {
 		writeError(w, http.StatusInternalServerError, "%v", err)
 		return
+	}
+	if workers != nil {
+		workers.Stop(id)
 	}
 	acc, _ := store.GetAccount(id)
 	writeJSON(w, http.StatusOK, acc.Redacted())

@@ -15,6 +15,11 @@ the point — once a question has been answered, it is as cheap to ask as
 
 Open **Intelligence → Labels & extractors** to see them.
 
+These are the labels a model or a rule decides. The labels **you** put on mail
+— Inbox, Receipts, the ones you made in Gmail — are the other kind, covered in
+[the Desk](desk.md#archiving-and-labelling). `label:` answers for both, and the
+rail lists both under **Labels**.
+
 ## Somewhere to start
 
 A new mailbox offers a starter pack. Each says how much of *your* mail it

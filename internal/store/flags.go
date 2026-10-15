@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // IMAP flag names, as stored.
@@ -25,13 +26,12 @@ var settableFlags = map[string]bool{
 
 // SetMessageFlag adds or removes one flag across a set of messages.
 //
-// # Local only, and honest about it
+// # Here first, then the server
 //
-// This writes InboxQL's copy. There is no IMAP write-back: the sync path is
-// one-way, so marking something read here does not mark it read on the server,
-// and the next sync of that mailbox may reassert what the server thinks. Said
-// plainly here because the alternative — a UI that looks like a mail client
-// and silently diverges from one — is worse than a documented limit.
+// This writes InboxQL's copy at once and queues the change for the message's
+// server (see pending.go), which the account's sync worker applies within
+// seconds. An account with no server — an imported archive — keeps the change
+// here only.
 //
 // Returns how many messages actually changed, which is what lets a caller say
 // "4 marked read" rather than "done".
@@ -50,17 +50,17 @@ func SetMessageFlag(ids []string, flag string, on bool) (int, error) {
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.Query("SELECT id, COALESCE(flags, '[]') FROM messages WHERE id IN ("+
+	rows, err := tx.Query("SELECT id, account_id, COALESCE(flags, '[]') FROM messages WHERE id IN ("+
 		placeholders(len(ids))+")", anySlice(ids)...)
 	if err != nil {
 		return 0, err
 	}
 
-	type update struct{ id, flags string }
+	type update struct{ id, acct, flags string }
 	var updates []update
 	for rows.Next() {
-		var id, raw string
-		if err := rows.Scan(&id, &raw); err != nil {
+		var id, acct, raw string
+		if err := rows.Scan(&id, &acct, &raw); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -76,21 +76,32 @@ func SetMessageFlag(ids []string, flag string, on bool) (int, error) {
 			rows.Close()
 			return 0, err
 		}
-		updates = append(updates, update{id: id, flags: string(encoded)})
+		updates = append(updates, update{id: id, acct: acct, flags: string(encoded)})
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
 
+	op := OpFlagAdd
+	if !on {
+		op = OpFlagRemove
+	}
+	now := time.Now().UnixMilli()
+	accounts := map[string]bool{}
 	for _, u := range updates {
 		if _, err := tx.Exec("UPDATE messages SET flags = ? WHERE id = ?", u.flags, u.id); err != nil {
 			return 0, err
 		}
+		if err := enqueue(tx, u.acct, u.id, op, flag, now); err != nil {
+			return 0, err
+		}
+		accounts[u.acct] = true
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
+	notifyPending(accounts)
 	return len(updates), nil
 }
 

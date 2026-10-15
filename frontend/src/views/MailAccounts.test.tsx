@@ -140,3 +140,27 @@ describe('MailAccounts', () => {
     expect(calls.find(c => c.url === '/api/accounts/verify')!.body).toEqual({ id: 'work' });
   });
 });
+
+describe('statusOf, with the live connection', () => {
+  const base = { id: 'g', name: 'Gmail', email: 'a@gmail.com', host: 'imap.gmail.com', port: 993, ssl: true,
+    user: 'a@gmail.com', lastSyncStatus: 'success', lastSyncError: '' } as any;
+  const live = (state: string, extra: any = {}) => ({
+    worker: { state, ...extra }, progress: { onServer: 140000, stored: 12400, historyDone: false, folders: 3 },
+    pending: { waiting: 0, failed: 0 },
+  }) as any;
+
+  it('says the account is live', () => {
+    expect(statusOf(base, live('live'))).toMatchObject({ tone: 'ok', text: expect.stringMatching(/^Live/) });
+  });
+  it('says how much history is here', () => {
+    expect(statusOf(base, live('history')).text).toContain('12,400 of 140,000');
+  });
+  it('says why it is not connected, and when it tries again', () => {
+    const s = statusOf(base, live('waiting', { lastError: 'dial tcp: i/o timeout', nextTry: new Date().toISOString() }));
+    expect(s.tone).toBe('bad');
+    expect(s.text).toMatch(/did not answer — trying again at/);
+  });
+  it('a disconnected account says so whatever the worker', () => {
+    expect(statusOf({ ...base, disconnected: true }, live('live')).tone).toBe('off');
+  });
+});

@@ -43,8 +43,16 @@ const editing = (el: EventTarget | null) => {
  *
  * `run` executes a command id; `palette` opens Find anything.
  */
+let pending: string | null = null;
+
+/**
+ * Whether a sequence has started — `g` was pressed and the next key finishes
+ * it. A pane with its own single keys (the Desk's `s` to star) leaves the
+ * key alone then, or `g s` would star a message instead of opening Settings.
+ */
+export const sequencePending = () => pending !== null;
+
 export function installKeySequences(run: (command: string) => void, palette: () => void): () => void {
-  let pending: string | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   const reset = () => { pending = null; if (timer) clearTimeout(timer); timer = null; };
 

@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  AlertOctagon, Archive, Bookmark, Code2, Eye, File, Inbox, Mail, MoreVertical,
+  AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Mail, Mails, MoreVertical,
   MessagesSquare, RefreshCw, Send, Sparkles, Star, Trash2,
 } from 'lucide-react';
+import {
+  labelQuery, listLabels, moveMessages, onMailChanged, setFlag, shownLabels,
+  type LabelCount, type Move,
+} from '../../lib/mail';
 import { openMessage, openTool, previewMessage, useViewerStore } from '../../lib/tabs';
 import { movedByKeyboard, navRow, useRovingFocus } from '../../lib/rovingFocus';
+import { sequencePending } from '../../lib/keySequences';
 import { refKey, refOf, useSelectionStore } from '../../lib/selection';
 import { ariaCurrent } from '../../lib/rowState';
 import { SelectionBar } from './SelectionBar';
@@ -13,7 +18,7 @@ import { Results } from './Results';
 import { Pills } from './Pills';
 import { Rail } from './Rail';
 import {
-  explainQuery, listSaved, runQuery, saveQuery, setMessageFlag, QueryFailed,
+  explainQuery, listSaved, runQuery, saveQuery, QueryFailed,
   deleteSaved, listRailFolders, moveSaved, resetFolders, setFolderHidden,
   type QueryResult, type SavedQuery,
 } from './api';
@@ -209,6 +214,16 @@ export const Desk = () => {
   // to run, and the Annotators panel is where that is done.
   const annotated = annotators.filter(a => (a.progress?.matched ?? 0) > 0);
 
+  // The mail labels — yours, and Gmail's — for the rail. The system ones are
+  // the rows above; Important is shown here only when something carries it.
+  const [mailLabels, setMailLabels] = useState<LabelCount[]>([]);
+  const fetchLabels = () => {
+    listLabels()
+      .then(ls => setMailLabels(ls.filter(l => !l.system || (l.name === 'important' && l.total > 0))))
+      .catch(() => {});
+  };
+  useEffect(fetchLabels, []);
+
   // Selection lives outside Desk and is typed, so it survives a mode change
   // and can describe a conversation without pretending to be a message.
   const selection = useSelectionStore(s => s.refs);
@@ -343,6 +358,50 @@ export const Desk = () => {
     fetchCounts();
   }, [effectiveQuery]);
 
+  // Mail changed — a move made here or in the viewer, or new mail the server
+  // reported. The list, the counts and the rail's labels all follow.
+  //
+  // Through a ref, because the handler is registered once and the query it
+  // must re-run changes.
+  //
+  // The server's reports are gathered for a moment and refresh the list only
+  // when it is scrolled to the first page: a first sync reports every few
+  // seconds for hours, and reloading under somebody reading page four would
+  // throw them back to the top each time. The counts always follow.
+  const refreshRef = useRef<(source: 'local' | 'server') => void>(() => {});
+  const serverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  refreshRef.current = (source) => {
+    if (source === 'local') {
+      fetchMessages(0); fetchCounts(); fetchLabels();
+      return;
+    }
+    if (serverTimer.current) return;
+    serverTimer.current = setTimeout(() => {
+      serverTimer.current = null;
+      if (offset <= 50) fetchMessages(0);
+      fetchCounts(); fetchLabels();
+    }, 1500);
+  };
+  useEffect(() => {
+    const off = onMailChanged(source => refreshRef.current(source));
+    return () => { off(); if (serverTimer.current) clearTimeout(serverTimer.current); };
+  }, []);
+
+  // What a mail shortcut acts on: the selection, or else the row with focus.
+  const targetIds = (): string[] => {
+    if (selectedMessageIds.length > 0) return selectedMessageIds;
+    const ref = refOf(document.activeElement);
+    return ref?.kind === 'message' ? [ref.id] : [];
+  };
+  const labelsOf = (ids: string[]) =>
+    ids.map(id => messages.find(m => m.id === id)?.labels ?? []);
+  const [labelOpen, setLabelOpen] = useState(false);
+  const move = async (to: Move, ids = targetIds()) => {
+    if (ids.length === 0) return;
+    await moveMessages(ids, to);
+    clearSelection();
+  };
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     const now = new Date();
@@ -364,8 +423,9 @@ export const Desk = () => {
     inbox:   { label: 'Inbox',   icon: Inbox,        empty: 'Nothing in the inbox. Sync an account or import mail to begin.' },
     starred: { label: 'Starred', icon: Star,         empty: 'No starred messages. Flagged mail collects here.' },
     sent:    { label: 'Sent',    icon: Send,         empty: 'No sent mail. Messages you sent — or imported from a Sent folder — appear here.' },
-    archive: { label: 'Archive', icon: Archive,      empty: 'Nothing archived. Mail filed away in your client — Archive, not All Mail — collects here.' },
-    drafts:  { label: 'Drafts',  icon: File,         empty: 'No drafts. Composed but unsent messages wait here for approval.' },
+    archive: { label: 'Archive', icon: Mails,        empty: 'Nothing archived. Archiving takes a message out of the inbox; it stays in All Mail.' },
+    drafts:  { label: 'Drafts',  icon: File,         empty: 'No drafts. Messages you start and have not sent wait here.' },
+    allmail: { label: 'All Mail', icon: Mails,       empty: 'No mail yet. Add an account, or import mail, to begin.' },
     spam:    { label: 'Spam',    icon: AlertOctagon, empty: 'No spam. Mail flagged as junk lands here.' },
     trash:   { label: 'Trash',   icon: Trash2,       empty: 'Trash is empty. Deleted mail is kept here, not removed.' },
   };
@@ -376,9 +436,9 @@ export const Desk = () => {
     { id: 'inbox',   label: 'Inbox',   icon: Inbox,        badge: counts.inbox?.unread },
     { id: 'starred', label: 'Starred', icon: Star,         badge: counts.starred?.total },
     { id: 'sent',    label: 'Sent',    icon: Send,         badge: counts.sent?.total },
-    // Total, not unread: filing something away is not a thing you act on.
-    { id: 'archive', label: 'Archive', icon: Archive,      badge: counts.archive?.total },
     { id: 'drafts',  label: 'Drafts',  icon: File,         badge: counts.drafts?.total },
+    // No badge: All Mail is everything, and its size is not a thing you act on.
+    { id: 'allmail', label: 'All Mail', icon: Mails },
     { id: 'spam',    label: 'Spam',    icon: AlertOctagon, badge: counts.spam?.unread },
     { id: 'trash',   label: 'Trash',   icon: Trash2,       badge: counts.trash?.total },
   ];
@@ -398,6 +458,31 @@ export const Desk = () => {
     // the row you extended *from*, and after the move there is no way to know
     // what that was.
     const from = refOf(document.activeElement);
+
+    // Gmail's keys, on the selection or the focused row. Never while typing:
+    // the query editor sits inside this pane.
+    const typing = (e.target as HTMLElement).closest?.('input, textarea, [contenteditable="true"], [role="dialog"]');
+    if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey && !sequencePending()) {
+      const ids = targetIds();
+      const shortcut: Record<string, () => void> = {
+        e: () => move('archive', ids),
+        '#': () => move('trash', ids),
+        '!': () => move('spam', ids),
+        l: () => setLabelOpen(true),
+        s: () => {
+          const starred = ids.every(id => messages.find(m => m.id === id)?.flags?.includes('\\Flagged'));
+          setFlag(ids, '\\Flagged', !starred);
+        },
+        I: () => setFlag(ids, '\\Seen', true),
+        U: () => setFlag(ids, '\\Seen', false),
+      };
+      if (ids.length > 0 && shortcut[e.key]) {
+        e.preventDefault();
+        if (e.key === 'l' && selectedMessageIds.length === 0) selectOnly(refOf(document.activeElement)!);
+        shortcut[e.key]();
+        return;
+      }
+    }
 
     navKeyDown(e);
     if (!moving) return;
@@ -445,6 +530,8 @@ export const Desk = () => {
         hiddenFolders={hiddenFolders}
         saved={saved}
         annotated={annotated}
+        labels={mailLabels}
+        labelQuery={labelQuery}
         queryText={queryText}
         onFolder={async id => {
           setFolder(id);
@@ -598,10 +685,12 @@ export const Desk = () => {
           // and a ticket do not have a read flag.
           messageIds={selectedMessageIds}
           onSetFlag={async (flag, on) => {
-            await setMessageFlag(selectedMessageIds, flag, on);
-            fetchMessages(0);
-            fetchCounts();
+            await setFlag(selectedMessageIds, flag, on);
           }}
+          onMove={to => move(to, selectedMessageIds)}
+          messageLabels={labelsOf(selectedMessageIds)}
+          labelOpen={labelOpen}
+          onLabelOpenChange={setLabelOpen}
         />
 
         {/* Anything that is not a list of messages renders through the shared
@@ -761,7 +850,21 @@ export const Desk = () => {
                     onClick={(e) => e.stopPropagation()}
                     aria-label={`Select ${msg.subject || 'message'}`}
                   />
-                  <Star className="w-4 h-4 text-muted-foreground/40 hover:text-yellow-500 transition-colors" />
+                  {(() => {
+                    const starred = msg.flags?.includes('\\Flagged');
+                    return (
+                      <button
+                        type="button"
+                        aria-label={starred ? 'Unstar' : 'Star'}
+                        aria-pressed={starred}
+                        title={starred ? 'Unstar (s)' : 'Star (s)'}
+                        onClick={(e) => { e.stopPropagation(); setFlag([msg.id], '\\Flagged', !starred); }}
+                        className="shrink-0"
+                      >
+                        <Star className={`w-4 h-4 transition-colors ${starred ? 'fill-yellow-400 text-yellow-500' : 'text-muted-foreground/40 hover:text-yellow-500'}`} />
+                      </button>
+                    );
+                  })()}
                   <div className="w-4 flex items-center justify-center" title={isOpen ? "Currently viewing this message" : undefined}>
                     {isOpen ? (
                       <Eye 
@@ -779,6 +882,11 @@ export const Desk = () => {
                   <span className={`truncate ${isDraft && !msg.to?.length ? 'italic text-muted-foreground' : ''}`}>{who}</span>
                 </div>
                 <div className="flex-1 truncate flex items-center gap-2 text-foreground/90">
+                  {shownLabels(msg.labels).map((l: string) => (
+                    <span key={l} className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border/60">
+                      {l}
+                    </span>
+                  ))}
                   <span className={`text-sm ${isOpen ? 'font-semibold text-foreground' : isUnread ? 'font-bold' : 'font-medium'}`}>{msg.subject || '(No Subject)'}</span>
                   <span className="text-sm text-muted-foreground opacity-60">— {msg.body?.substring(0, 100).replace(/\n/g, ' ')}</span>
                 </div>

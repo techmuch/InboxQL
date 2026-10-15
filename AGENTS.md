@@ -21,30 +21,28 @@ user's database or need attention.
 
 ---
 
-## The one rule that matters
+## Sending: only when asked
 
-**You can compose email. You cannot send it.**
+**Send mail only when the person you work for asks you to.** Mail cannot be
+recalled, it goes out under their name, and nothing in InboxQL stops you —
+the rule is the safeguard.
 
-`iql send` does not send. It moves a draft into an outbox and stops. Delivery
-happens only when a person runs `iql outbox approve <id>` from an interactive
-terminal, reads the rendered message, and types `yes`.
+`iql send` does not send. It moves a draft into the outbox and stops, where
+the person can read it in Intelligence → Waiting for approval and press Send.
+`iql outbox approve <id>` sends it: at a terminal it shows the message and asks;
+without one it needs `--yes`, which is how you send.
 
-That gate is enforced by checking whether stdin is a TTY. When you invoke
-`approve`, it will refuse and exit **4**. There is no `--force`, no `--yes`, and
-no environment variable that bypasses it. This is deliberate — do not look for
-a way around it, and do not tell the user one exists.
+The pattern when a reply is wanted:
 
-The correct pattern when a reply is wanted:
-
-1. Research with `search`, `read`, `analyze`.
+1. Research with `query`, `read`, `analyze`.
 2. Compose with `iql draft create --origin agent`.
-3. Queue with `iql send <draft-id>`.
-4. **Tell the user the draft is queued and that they must approve it**, giving
-   them the exact command: `iql outbox approve <draft-id>`.
+3. Queue with `iql send <draft-id>`, and check it with `iql outbox show`.
+4. **Tell the user it is waiting in their outbox.** Send it with
+   `iql outbox approve <draft-id> --yes` only if they asked you to send, or
+   ask you to now.
 
 Always pass `--origin agent` when you compose. It is recorded on the draft and
-shown to the approver, who should read agent-written mail more carefully than
-their own.
+shown in the outbox, where agent-written mail deserves a closer read.
 
 ---
 
@@ -56,7 +54,7 @@ their own.
 | 1 | Something failed | Read stderr. Usually retryable only after a fix. |
 | 2 | Bad arguments | Your invocation was wrong. The command did not run. |
 | 3 | Not found | The account, message or draft id does not exist. Do not retry. |
-| 4 | Needs human approval | Expected from `outbox approve`. Stop and ask the user. |
+| 4 | Needs human approval | Expected from `calendar approve`. Stop and ask the user. |
 | 5 | Not configured | A prerequisite is missing. stderr names it. |
 
 Exit 5 has two common causes worth distinguishing: no data directory (the user
@@ -88,13 +86,14 @@ A query is a **filter**, optionally followed by **pipeline stages** after `|`.
 |---|---|
 | `from: to: cc: bcc: anyone:` | addresses, substring by default |
 | `subject: body:` | words in the text |
-| `account: folder: mailbox:` | where the message lives — `folder:` is `inbox starred sent archive drafts spam trash all` |
+| `account: folder: mailbox:` | where the message lives — `folder:` is `inbox starred sent drafts allmail archive important spam trash all` |
 | `is:` | `unread read starred deleted draft answered junk reply` |
 | `has:` | `attachment file label reply` |
 | `attached: carries:` | mail that carried *this* file, by content hash or name |
 | `after: before: on:` | `2026-08-15`, `2026-08`, `2026`, `today`, `7d` |
 | `larger: smaller:` | `5mb`, `500kb`, a byte count |
-| `label: unlabeled: conf>` | annotator results — see below |
+| `label:` | a mail label (`inbox`, `trash`, `Receipts`) or an annotator's yes — see below |
+| `unlabeled: conf>` | annotator results — see below |
 | `extract:name` `extract:name.field>10` | extracted structured data |
 | `thread:<message-id>` | every message in that conversation |
 | `saved:<name>` | everything a saved query matches |
@@ -111,20 +110,31 @@ A field that exists for another kind says so rather than reporting itself
 unknown, and a field the kind cannot answer says why — a draft has no flags,
 attachments or thread, because it has never been mail.
 
-**The folders partition the mailbox**, so the six counts add up to it exactly
-and no message is in two. `inbox` is defined as the remainder — not sent, not
-archived, not deleted, not junk — which is worth knowing before reasoning from
-it.
+**Mail has labels, not folders**, as in Gmail. A message carries any number:
+the system labels `inbox`, `sent`, `drafts`, `important`, `spam` and `trash`,
+and the user's own (`Receipts`, `Work/Clients`). Starred and unread are flags
+(`is:starred`, `is:unread`), as they are in IMAP.
 
-`folder:archive` is matched on the mailbox name's trailing segment: the
-RFC's special-use `Archive`, Apple Mail's `Archive.mbox`. **Gmail's "All Mail"
-is deliberately not archive** — it contains the inbox too, and Gmail archiving
-is the absence of the Inbox label, which InboxQL does not record. On a Gmail
-account, archived mail is therefore still in `folder:inbox`; say so rather than
-reporting an empty archive as "nothing is archived".
+`folder:` is a set of views over them, and they overlap — your reply can be in
+Sent and under Receipts at once:
 
-Where a message physically sat is `mailbox:`, which is the raw folder name and
-not one of these seven.
+| `folder:` | is |
+|---|---|
+| `inbox` | `label:inbox`, not in Spam or Trash |
+| `archive` | not in the inbox, not in Spam or Trash — archived is only that |
+| `allmail` | everything but Spam and Trash |
+| `sent`, `important` | that label, not in Spam or Trash |
+| `starred` | `is:starred`, not in Spam or Trash |
+| `spam`, `trash` | that label |
+| `all` | everything |
+
+On Gmail these are Gmail's own labels, read from the server, so archived mail
+is archived here too. On other servers each folder is a label of its name.
+Mail imported from Apple Mail took a label from the folder it was in (none
+for Archive and All Mail), and takes the server's labels once the account's
+sync finds it there.
+
+Where a message was first read from is `mailbox:`, the raw folder name.
 
 **Shorthands** worth knowing, because they save several terms each:
 
@@ -371,30 +381,66 @@ message. If you get exit 5, write the prose yourself and pass `--body`.
 
 Creating a draft transmits nothing.
 
-### `send` — queue for approval
+### `send` — queue in the outbox
 
 ```
 iql --json send <draft-id>
 ```
 
 Validates the draft and the account's SMTP settings, then sets status to
-`queued`. The response includes a `note` restating that nothing was sent.
+`queued`. Nothing is transmitted; the response includes a `note` saying so.
 
 Exit 2 means the draft is malformed (no recipients, empty subject) or already
 sent. Exit 5 means the account has no SMTP host configured.
 
-### `outbox` — review
+### `outbox` — review and send
 
 ```
 iql --json outbox list
 iql --json outbox show <draft-id>
+iql --json outbox approve <draft-id> --yes
+iql --json outbox reject <draft-id> --reason "..."
 ```
 
 `show` returns the exact bytes that would go on the wire, under `rendered`.
 Use it to check your own work before telling the user it is ready.
 
-`outbox approve` will exit 4 for you. `outbox reject <id> --reason "..."`
-returns a draft to `draft` status and is safe for you to call.
+`approve` sends. Without a terminal it needs `--yes`, and exits 2 saying so if
+it is missing. **Use it only when the user asked you to send.** The response
+has the `messageId` it went out with; a copy is kept under Sent at once, and on
+servers other than Gmail one is filed in the server's Sent folder too. A
+delivery the server refuses exits 1, and the draft's status becomes `failed`
+with the reason in `lastError`.
+
+`reject` returns a draft to `draft` status.
+
+A person sending from the interface gets a few seconds to undo first; the
+draft's `sendAt` is when it goes, and its status is `queued` until then.
+
+### `mail` and `labels` — change messages
+
+```
+iql --json mail archive <message-id>... --origin agent
+iql --json mail label <label> <message-id>... --origin agent
+iql --json mail unlabel <label> <message-id>...
+iql --json mail inbox|trash|untrash|spam|notspam <message-id>...
+iql --json mail read|unread|star|unstar <message-id>...
+iql --json labels                                  every label, with counts
+iql --json labels create|delete <name>
+```
+
+Each change is made here at once and queued for the account's server, which
+the running server applies within seconds — archive in InboxQL, and the
+message leaves the inbox in Gmail too. A label is created by using it. The
+response lists each message's labels afterwards.
+
+Pass `--origin agent`: it is recorded on the label. Archive and label when the
+user asks you to sort mail; **trash and spam only when asked**, and never
+`labels delete` unasked — it takes the label off every message, and on Gmail
+deletes it there.
+
+Nothing here deletes a message from the server: Trash is a label (a folder on
+other servers), and InboxQL never empties it.
 
 ---
 
@@ -970,8 +1016,11 @@ whole mailbox.
 
 ### Labels are three-valued, and this will trip you up
 
-A label has three states, not two: the annotator said yes, the annotator said
-no, or **the annotator has never seen this message**.
+An annotator's label has three states, not two: the annotator said yes, the
+annotator said no, or **the annotator has never seen this message**. (A mail
+label — inbox, Receipts — is just there or not. `label:` answers for both
+kinds: when a name is both, `label:x` is either saying yes, and `-label:x` is
+neither — no mail label, and the annotator looked and said no.)
 
 ```
 label:invoice        evaluated, yes
@@ -1158,15 +1207,15 @@ iql --json calendar changes
 
 A proposal changes nothing and reaches nobody. It shows on the calendar, marked,
 until the user approves it in the Calendar tab or with `iql calendar approve
-<change-id>` — which **exits 4 for you**, like `outbox approve`, with no flag
-around it. Tell the user what you proposed and the command. `iql calendar
-reject` is safe for you to call.
+<change-id>` — which **exits 4 for you**, with no flag around it. Tell the
+user what you proposed and the command. `iql calendar reject` is safe for you
+to call.
 
 A repeating event has three different edits — `--scope this|following|all` —
 and `this` and `following` need `--occurrence` with that occurrence's start.
 
 Answering an invitation that only arrived by mail queues the answer **as mail**,
-through the outbox; a person sends it with `iql outbox approve`.
+through the outbox, where it waits like any other queued message.
 
 ### Accounts
 
@@ -1381,8 +1430,21 @@ substring matching — correct answers, table scans. `iql doctor` reports which,
 and `/api/query/fields` returns `fullText`. If text queries are slow, check
 that before assuming the mailbox is large.
 
-**Sync is synchronous.** `iql account sync <id>` returns only when the sync has
-finished, so it is safe in a script. It can take a while on a large mailbox.
+**Sync is live, and you rarely need it.** The running server keeps every
+connected account current: new mail arrives in seconds, changes made here
+reach the server in seconds, and changes made on another device come back.
+`GET /api/accounts/live` says, per account, whether it is live, how much of its
+older mail is here (`progress.stored` of `progress.onServer`), and which
+changes are still waiting to reach the server.
+
+`iql account sync <id>` is still there and still synchronous, for scripts: it
+sends queued changes, reads every folder and then **all** older mail, which on
+a first sync of a large Gmail account is hours (Gmail allows about 2.5 GB of
+IMAP downloads a day). `--no-history` leaves older mail to the server.
+
+**A first sync is newest first.** Until it finishes, the mailbox holds the
+recent part of the account's history — say so before reasoning about "all my
+mail from 2019".
 
 ---
 

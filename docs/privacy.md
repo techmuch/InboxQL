@@ -100,10 +100,14 @@ says so when there are files it is leaving behind.
 ## Agents
 
 InboxQL can be driven by an AI agent from the command line, with the same
-abilities you have — with one exception that is not negotiable: **an agent can
-write and queue mail, but cannot send it.** Delivery needs a person at a
-terminal to read the message and type `yes`. Drafts an agent wrote are marked
-as such when you review them. [For agents](agents.md) is the full contract.
+abilities you have — an agent on your computer can do anything you can there,
+so InboxQL does not pretend to fence it in. What it does is tell the agent the
+rules: draft and queue mail, and **send only when you ask it to**. Mail an
+agent writes waits in **Waiting for approval**, marked as written by an agent,
+until you send it or ask the agent to. [For agents](agents.md) is the full
+contract.
+
+Calendar changes an agent proposes still wait for you to approve them.
 
 When an agent moves one of your windows to show you something, the window says
 what it was told and why, and **View → Windows** keeps the record.

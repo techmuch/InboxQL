@@ -62,6 +62,9 @@ type Options struct {
 	// this one has more reason to be than most, because annotator names are
 	// user-defined and therefore easy to get wrong.
 	KnownAnnotator func(name string) bool
+	// KnownMailLabel reports whether a mail label exists — inbox, sent, a
+	// Gmail label, one of the user's own. `label:` answers for both kinds.
+	KnownMailLabel func(name string) bool
 
 	// FullText enables the FTS5 index for prose matching. When false the same
 	// terms compile to substring matching, which is slower and token-blind but
@@ -1173,10 +1176,8 @@ func ftsPhrase(v string) string {
 const (
 	flagSeen    = `m.flags LIKE '%\\Seen%'`
 	flagFlagged = `m.flags LIKE '%\\Flagged%'`
-	flagDeleted = `m.flags LIKE '%\\Deleted%'`
 	flagDraft   = `m.flags LIKE '%\\Draft%'`
 	flagAnswer  = `m.flags LIKE '%\\Answered%'`
-	flagJunk    = `(m.flags LIKE '%\\Junk%' OR m.flags LIKE '%$Junk%')`
 )
 
 func (c *compiler) isTerm(t *Term, negated bool) (string, error) {
@@ -1189,13 +1190,15 @@ func (c *compiler) isTerm(t *Term, negated bool) (string, error) {
 	case "starred", "flagged":
 		sql = flagFlagged
 	case "deleted", "trashed":
-		sql = flagDeleted
+		// Trash is a label now. The \Deleted flag is what a server sets just
+		// before it expunges, which is not what anybody means by deleted.
+		sql = mailLabelExists("trash")
 	case "draft":
 		sql = flagDraft
 	case "answered", "replied":
 		sql = flagAnswer
 	case "junk", "spam":
-		sql = flagJunk
+		sql = mailLabelExists("spam")
 	case "reply":
 		// A message that is itself a reply, by header rather than by flag.
 		sql = "m.in_reply_to IS NOT NULL"
@@ -1216,7 +1219,11 @@ func (c *compiler) hasTerm(t *Term, negated bool) (string, error) {
 		// Only attachments actually on disk and openable.
 		sql = "EXISTS (SELECT 1 FROM attachments att WHERE att.message_id = m.id AND att.storage_path IS NOT NULL AND att.storage_path != '')"
 	case "label", "labels":
-		sql = "EXISTS (SELECT 1 FROM annotations a WHERE a.message_id = m.id AND a.status = 'ok')"
+		// Either kind: one of the user's own labels, or an annotator's yes.
+		// The system labels — inbox, sent, trash — do not count; every
+		// message has one, so "has a label" would mean nothing.
+		sql = "(EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = m.id AND ml.label NOT IN " + systemLabelList + ")" +
+			" OR EXISTS (SELECT 1 FROM annotations a WHERE a.message_id = m.id AND a.status = 'ok'))"
 	case "reply", "parent":
 		sql = "m.in_reply_to IS NOT NULL"
 	case "to", "cc", "bcc":
@@ -1316,37 +1323,80 @@ func (c *compiler) annotationExists(name string, extra ...string) string {
 		strings.Join(conds, " AND ") + ")"
 }
 
-// labelTerm is the one field whose negation is not its complement.
+// labelTerm answers for both kinds of label.
 //
-// A label is three-valued: the annotator said yes, the annotator said no, or
-// the annotator has never seen this message. `-label:x` compiles to
-// "evaluated, and no", NOT to "not (evaluated and yes)".
+// A **mail label** — inbox, sent, a Gmail label, one of the user's own — is
+// two-valued: the message has it or it does not.
 //
-// The difference is the whole point. On a mailbox where an annotator has
-// covered 10k of 200k messages, the plain complement returns 190k messages
-// nobody has looked at and presents them as a negative result. Requiring the
-// annotator to have actually run means a negative answer is always an answer.
+// An **annotator label** is three-valued: the annotator said yes, said no, or
+// has never seen this message. For that kind `-label:x` compiles to
+// "evaluated, and no", NOT to "not (evaluated and yes)". On a mailbox where
+// an annotator has covered 10k of 200k messages, the plain complement returns
+// 190k messages nobody has looked at and presents them as a negative result.
 // `unlabeled:x` asks the other question, and `-label:x OR unlabeled:x` spells
 // out "not known to be x" for anyone who wants the loose reading.
+//
+// When a name is both, `label:x` is either one saying yes, and `-label:x` is
+// neither: no mail label, and the annotator looked and said no. A confidence
+// floor (`label:x@0.9`) qualifies the annotator; a mail label has none.
 func (c *compiler) labelTerm(t *Term, negated bool) (string, error) {
-	if err := c.checkAnnotator("label", t.Value); err != nil {
-		return "", err
+	glob := t.Op == OpGlob
+	isMail := glob || (c.opt.KnownMailLabel != nil && c.opt.KnownMailLabel(t.Value))
+	isAnn := !glob && (c.opt.KnownAnnotator == nil || c.opt.KnownAnnotator(t.Value))
+	if !isMail && !isAnn {
+		return "", fmt.Errorf("label: no label or annotator named %q (list labels with `iql labels`, annotators with `iql annotate list`)", t.Value)
 	}
-	status := "a.status = 'ok'"
-	if negated {
-		status = "a.status = 'empty'"
-	}
-	extra := []string{status}
-	if t.Qualifier != "" && !negated {
-		conf, err := strconv.ParseFloat(t.Qualifier, 64)
-		if err != nil {
-			return "", fmt.Errorf("label: confidence %q is not a number", t.Qualifier)
+
+	var mail string
+	if isMail {
+		// Bound once: an argument appended and then not used shifts every
+		// later placeholder onto the wrong value.
+		var pred string
+		if glob {
+			pred = c.stringPredicate("ml.label", t)
+		} else {
+			pred = "ml.label = " + c.arg(t.Value)
 		}
-		extra = append(extra, "a.confidence >= "+c.arg(conf))
+		mail = "EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = m.id AND " + pred + ")"
 	}
-	// Deliberately not wrapped in NOT: the negation is already expressed by
-	// asking for the opposite status.
-	return "(" + c.annotationExists(t.Value, extra...) + ")", nil
+	var ann string
+	if isAnn {
+		status := "a.status = 'ok'"
+		if negated {
+			status = "a.status = 'empty'"
+		}
+		extra := []string{status}
+		if t.Qualifier != "" && !negated {
+			conf, err := strconv.ParseFloat(t.Qualifier, 64)
+			if err != nil {
+				return "", fmt.Errorf("label: confidence %q is not a number", t.Qualifier)
+			}
+			extra = append(extra, "a.confidence >= "+c.arg(conf))
+		}
+		ann = c.annotationExists(t.Value, extra...)
+	}
+
+	switch {
+	case isMail && isAnn && negated:
+		return "(NOT " + mail + " AND " + ann + ")", nil
+	case isMail && isAnn:
+		return "(" + mail + " OR " + ann + ")", nil
+	case isMail:
+		return wrap(mail, negated), nil
+	default:
+		// Deliberately not wrapped in NOT: the negation is already expressed
+		// by asking for the opposite status.
+		return "(" + ann + ")", nil
+	}
+}
+
+// systemLabelList is the system labels as an SQL list.
+const systemLabelList = "('inbox', 'sent', 'drafts', 'important', 'spam', 'trash')"
+
+// mailLabelExists is true of a message carrying a mail label.
+func mailLabelExists(label string) string {
+	return "EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = m.id AND ml.label = '" +
+		strings.ReplaceAll(label, "'", "''") + "')"
 }
 
 // unlabeledTerm matches messages an annotator has never evaluated.

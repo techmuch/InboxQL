@@ -26,7 +26,10 @@ func (e *env) seedMailbox(t *testing.T) {
 		t.Fatalf("account add: %s%s", r.Stdout, r.Stderr)
 	}
 
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "INBOX")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 	messages := []struct{ id, from, to, subject, extra, body string }{
 		{"m1", "Alice <alice@acme.com>", "me@example.com, bob@acme.com",
 			"Quarterly invoice", "", "The invoice is attached."},

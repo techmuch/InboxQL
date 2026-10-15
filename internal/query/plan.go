@@ -260,7 +260,7 @@ func (p *pipeline) buildMessages() (*Plan, error) {
 
 // draftSelectList is the column list store.scanDraft expects.
 const draftSelectList = `d.id, d.account_id, d.in_reply_to, d.thread_key, d.to_addrs, d.cc_addrs, d.bcc_addrs,
-	d.subject, d.body, d.status, d.origin, d.created_at, d.updated_at, d.queued_at, d.sent_at, d.last_error`
+	d.subject, d.body, d.status, d.origin, d.created_at, d.updated_at, d.queued_at, d.sent_at, d.last_error, d.send_at`
 
 // buildDrafts plans a query over the drafts table.
 //
@@ -792,10 +792,14 @@ func groupKey(field string, opt Options) (group, error) {
 		return group{expr: threadKeyExpr}, nil
 
 	case "label":
+		// Both kinds, as `label:` filters both: a message under Receipts that
+		// an annotator also called purchased counts once in each.
 		return group{
-			expr: "an.name",
-			join: "JOIN annotations a ON a.message_id = m.id AND a.status = 'ok' " +
-				"JOIN annotators an ON an.id = a.annotator_id AND a.annotator_version = an.version",
+			expr: "lb.name",
+			join: "JOIN (SELECT message_id, label AS name FROM message_labels " +
+				"UNION SELECT a.message_id, an.name FROM annotations a " +
+				"JOIN annotators an ON an.id = a.annotator_id AND a.annotator_version = an.version " +
+				"WHERE a.status = 'ok') lb ON lb.message_id = m.id",
 		}, nil
 
 	default:

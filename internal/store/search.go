@@ -155,7 +155,10 @@ func SearchMessages(q SearchQuery) ([]*message.Message, error) {
 		}
 		msgs = append(msgs, m)
 	}
-	return msgs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return msgs, attachLabels(msgs)
 }
 
 // GetThread returns every message sharing a subject line with the given

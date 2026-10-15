@@ -58,15 +58,23 @@ matters, ask more than one way: `subject:(invoice OR bill OR receipt)`.
 
 | Term | Matches |
 |---|---|
-| `folder:` | `inbox` `starred` `sent` `archive` `drafts` `spam` `trash` `all` |
+| `label:` | a label it carries: `label:inbox`, `label:trash`, `label:Receipts`, `label:Work/*` |
+| `folder:` | `inbox` `starred` `sent` `drafts` `allmail` `archive` `important` `spam` `trash` `all` |
 | `account:` | the InboxQL account it belongs to |
-| `mailbox:` | the server folder it physically sat in, by name |
+| `mailbox:` | the server folder it was first read from, by name |
+
+Mail has **labels**, not folders, as in Gmail: the system ones — `inbox`,
+`sent`, `drafts`, `important`, `spam`, `trash` — and your own. A message
+carries any number. `folder:` names views over them: `folder:inbox` is
+`label:inbox` outside Spam and Trash, `folder:archive` is mail *not* in the
+inbox (outside Spam and Trash), and `folder:allmail` is everything but Spam and
+Trash. They overlap, as labels do.
 
 ### State
 
 | Term | Matches |
 |---|---|
-| `is:` | `unread` `read` `starred` `answered` `deleted` `draft` `junk` `reply` |
+| `is:` | `unread` `read` `starred` `answered` `deleted` (in Trash) `draft` `junk` (in Spam) `reply` |
 | `has:` | `attachment` `file` `label` `reply` |
 
 ### Time and size
@@ -101,12 +109,18 @@ more.
 | `extract:receipts.amount>100` | …with an amount over 100 |
 | `extract:importance.level=important` | a levelled label picked that level |
 
-A label has three states, not two, and this is the thing in the language most
-worth getting right. `-label:x` means the annotator *evaluated the message and
-said no*. It does **not** include mail the annotator has never seen — if it
-did, a label that had read a tenth of your mailbox would present the other
-nine tenths as a negative answer. When you do want both, ask for both:
-`-label:x OR unlabeled:x`. See [Labels](labels.md).
+`label:` answers for both kinds of label: the ones you, Gmail or your other
+mail client put on, and the ones an annotator decides. A label of yours is
+there or it is not. An annotator's has three states, not two, and this is the
+thing in the language most worth getting right. `-label:x` means the annotator
+*evaluated the message and said no*. It does **not** include mail the
+annotator has never seen — if it did, a label that had read a tenth of your
+mailbox would present the other nine tenths as a negative answer. When you do
+want both, ask for both: `-label:x OR unlabeled:x`. See [Labels](labels.md).
+
+When one name is both — you made a label called *purchased* and an annotator
+has the same name — `label:purchased` is either one saying yes, and
+`-label:purchased` is neither.
 
 ### Saved queries
 

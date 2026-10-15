@@ -47,7 +47,7 @@ mailbox by accident: with none to use, it stops and says how to make one.
 | 1 | something failed — read stderr |
 | 2 | the command was written wrong, and did not run |
 | 3 | the account, message or draft does not exist |
-| 4 | a person has to do this, at a terminal |
+| 4 | a person has to do this, at a terminal (approving an agent's calendar change) |
 | 5 | something it needs is missing — stderr names it |
 
 ## The commands
@@ -83,14 +83,24 @@ mailbox by accident: with none to use, it stops and says how to make one.
 | | |
 |---|---|
 | `draft` | `create` `list` `show` `delete` — `--reply-to <id>` fills in the rest |
-| `send` | queue a draft. **It does not send.** |
-| `outbox` | `list` `show` — and `approve`, which a person runs at a terminal and confirms by typing `yes` |
+| `send` | queue a draft in the outbox. **It does not send.** |
+| `outbox` | `list` `show` `reject` — and `approve`, which sends: at a terminal it shows the message and asks, and `--yes` sends without asking |
+
+### Changing mail
+
+| | |
+|---|---|
+| `mail` | `archive` `inbox` `trash` `untrash` `spam` `notspam` `label <name>` `unlabel <name>` `read` `unread` `star` `unstar`, each on one or more message ids |
+| `labels` | every label with its counts; `create <name>`, `delete <name>` |
+
+A change is made here at once and sent to the account's server by the running
+server within seconds.
 
 ### Mail in
 
 | | |
 |---|---|
-| `account` | `add` `list` `remove` `verify` `sync` |
+| `account` | `add` `list` `discover` `verify` `sync` `disconnect` `remove` — `sync` waits for all of the mail; the running server keeps accounts live without it |
 | `import` | `sources` `mailboxes` `scan` `run` `eml` — read-only, from Apple Mail or `.eml` files |
 | `export` | messages out, as `.eml` or JSON |
 
@@ -145,8 +155,13 @@ account ids.
 
 The command line is designed to be used by an AI agent as well as a person.
 [For agents](agents.md) is the contract it follows — what every command
-returns, what the exit codes mean, and why `send` does not send. `iql help
-agents` prints the same contract from the program itself.
+returns, what the exit codes mean, and that it sends mail only when you ask it
+to. `iql help agents` prints the same contract from the program itself.
+
+An agent can do anything you can on this computer, the command line included,
+so the safeguard is what it is told: the contract and the skill tell it to
+draft and queue, and to send only when asked. A message it queues waits in
+**Waiting for approval**, marked as written by an agent.
 
 To give the AI tools you use that knowledge up front, install the iql skill:
 

@@ -82,6 +82,7 @@ func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 			page(http.StatusBadGateway, "Gmail not connected", html.EscapeString(err.Error()))
 			return
 		}
+		restartWorker(got.Mail.ID)
 		body := "InboxQL can now read and send mail as " + html.EscapeString(got.Mail.Email) + "."
 		if got.Calendar != nil {
 			engine().Kick()

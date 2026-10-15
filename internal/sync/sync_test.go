@@ -15,6 +15,7 @@ import (
 	imapserver "github.com/emersion/go-imap/server"
 
 	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/imaptest"
 	"github.com/user/inboxql/internal/store"
 )
 
@@ -28,6 +29,7 @@ func imapServer(t *testing.T) *account.Account {
 	if _, err := store.InitDB(t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(store.CloseDB)
 	https := httptest.NewTLSServer(http.NotFoundHandler())
 	t.Cleanup(https.Close)
 	pool := x509.NewCertPool()
@@ -117,5 +119,39 @@ func TestSyncAfterUIDsReset(t *testing.T) {
 	sm.StartSync(acc)
 	if n := inboxCount(t, acc); n != 2 {
 		t.Fatalf("stored %d messages, want 2", n)
+	}
+}
+
+// TestSyncLeavesMailUnread: fetching BODY[] in a read-write SELECT makes the
+// server mark the message read, so every message a sync downloaded showed as
+// read in Gmail afterwards.
+func TestSyncLeavesMailUnread(t *testing.T) {
+	t.Setenv("INBOXQL_HOME", t.TempDir())
+	if _, err := store.InitDB(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(store.CloseDB)
+	srv, err := imaptest.Start(imaptest.Options{Gmail: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	account.TestRoots = srv.RootCAs
+	defer func() { account.TestRoots = nil }()
+
+	m := srv.Deliver(imaptest.Message("unread@example.com", "hello", "a@example.com"))
+	acc := &account.Account{ID: t.Name(), Name: t.Name(), Host: "127.0.0.1", Port: srv.Port,
+		SSL: true, User: srv.User, Password: srv.Pass}
+	if err := store.SaveAccount(acc); err != nil {
+		t.Fatal(err)
+	}
+	NewSyncManager(1).StartSync(acc)
+	if n := inboxCount(t, acc); n != 1 {
+		t.Fatalf("stored %d, want 1", n)
+	}
+	for _, f := range srv.FlagsOf(m) {
+		if f == `\Seen` {
+			t.Fatalf("the sync marked the message read on the server")
+		}
 	}
 }

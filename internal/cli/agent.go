@@ -123,7 +123,7 @@ func runSearch(ctx *Context, args []string) error {
 	fs.StringVar(&q.Since, "since", "", "on or after YYYY-MM-DD")
 	fs.StringVar(&q.Until, "until", "", "on or before YYYY-MM-DD")
 	fs.BoolVar(&q.Unread, "unread", false, "only unread messages")
-	fs.StringVar(&q.Folder, "folder", "", "inbox, starred, sent, spam or trash")
+	fs.StringVar(&q.Folder, "folder", "", "inbox, starred, sent, allmail, archive, spam or trash")
 	fs.IntVar(&q.Limit, "limit", 25, "maximum results")
 	fs.IntVar(&q.Offset, "offset", 0, "skip the first n results")
 	full := fs.Bool("full", false, "include bodies in JSON output")
@@ -131,7 +131,7 @@ func runSearch(ctx *Context, args []string) error {
 		return Fail(ExitUsage, "invalid flags")
 	}
 	if !store.ValidFolder(q.Folder) {
-		return Fail(ExitUsage, "unknown folder %q (want inbox, starred, sent, drafts, spam or trash)", q.Folder)
+		return Fail(ExitUsage, "unknown folder %q (want inbox, starred, sent, drafts, allmail, archive, important, spam or trash)", q.Folder)
 	}
 	if store.IsDraftFolder(q.Folder) {
 		return Fail(ExitUsage, "drafts are not messages; use `iql draft list`")

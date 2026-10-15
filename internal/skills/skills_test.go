@@ -21,7 +21,7 @@ func TestSkillIsWellFormed(t *testing.T) {
 	if !strings.Contains(c, "Installed by iql 1.2.3.") || strings.Contains(c, "{{VERSION}}") {
 		t.Error("version not stamped")
 	}
-	for _, must := range []string{"iql help agents", "--origin agent", "cannot send", "-label:x"} {
+	for _, must := range []string{"iql help agents", "--origin agent", "Send only when the user asks", "-label:x"} {
 		if !strings.Contains(c, must) {
 			t.Errorf("skill does not mention %q", must)
 		}

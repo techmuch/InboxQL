@@ -81,155 +81,19 @@ func (sm *SyncManager) StartSync(acc *account.Account) {
 	limiter <- struct{}{}        // Acquire slot
 	defer func() { <-limiter }() // Release slot
 
-	log.Printf("Starting real sync for account %s on host %s", acc.ID, acc.Host)
+	log.Printf("Starting sync for account %s on host %s", acc.ID, acc.Host)
 	store.UpdateAccountStatus(acc.ID, "syncing", "")
 
-	c, err := ConnectIMAP(acc)
+	r, err := sm.RunToCompletion(acc, true, nil)
 	if err != nil {
-		errMsg := fmt.Sprintf("failed to connect: %v", err)
-		log.Printf("Failed to connect for account %s: %v", acc.ID, err)
-		store.UpdateAccountStatus(acc.ID, "error", errMsg)
+		log.Printf("Sync of account %s failed: %v", acc.ID, err)
+		store.UpdateAccountStatus(acc.ID, "error", err.Error())
 		return
 	}
-	defer c.Logout()
-
-	mailboxes := make(chan *imap.MailboxInfo, 10)
-	done := make(chan error, 1)
-	go func() {
-		done <- c.List("", "*", mailboxes)
-	}()
-
-	var mboxes []string
-	for mb := range mailboxes {
-		name := mb.Name
-		if strings.EqualFold(name, "INBOX") || strings.Contains(strings.ToUpper(name), "SENT") {
-			mboxes = append(mboxes, name)
-		}
-	}
-
-	if err := <-done; err != nil {
-		errMsg := fmt.Sprintf("error listing mailboxes: %v", err)
-		log.Printf("Error listing mailboxes: %v", err)
-		store.UpdateAccountStatus(acc.ID, "error", errMsg)
-		return
-	}
-
-	for _, name := range mboxes {
-		log.Printf("Syncing mailbox: %s", name)
-		if _, err := sm.syncMailbox(c, acc, name); err != nil {
-			errMsg := fmt.Sprintf("error syncing %s: %v", name, err)
-			log.Printf("Error syncing %s: %v", name, err)
-			store.UpdateAccountStatus(acc.ID, "error", errMsg)
-			return
-		}
-	}
-
+	log.Printf("Sync of account %s: %d new, %d matched to mail already here, %d changed, %d pushed",
+		acc.ID, r.New, r.Linked, r.Changed, r.Pushed)
 	store.UpdateAccountStatus(acc.ID, "success", "")
 	store.MarkAccountSynced(acc.ID)
-}
-
-func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailboxName string) (int, error) {
-	mbox, err := c.Select(mailboxName, false)
-	if err != nil {
-		return 0, err
-	}
-
-	mailboxID := fmt.Sprintf("%s-%s", acc.ID, mailboxName)
-	syncState, _ := store.GetMailboxSyncState(mailboxID)
-	if syncState == nil {
-		syncState = &store.MailboxSyncState{ID: mailboxID, AccountID: acc.ID, Name: mailboxName}
-	}
-
-	// The saved position is a UID, so it is compared with UIDNEXT and fetched
-	// with UID FETCH. It used to be compared with the message count and
-	// fetched as a sequence number, which only agree on a folder nothing has
-	// ever left: on a real Gmail inbox the first sync worked and every later
-	// one reported success having fetched nothing.
-	//
-	// A saved position at or past UIDNEXT means the server renumbered the
-	// folder (a new UIDVALIDITY), so start again from the beginning; messages
-	// already stored are skipped by Message-ID below.
-	if mbox.UidNext > 0 && syncState.LastUID >= mbox.UidNext {
-		log.Printf("Mailbox %s: saved UID %d is past the server's next UID %d; the folder was renumbered, starting again",
-			mailboxName, syncState.LastUID, mbox.UidNext)
-		syncState.LastUID = 0
-	}
-	fromUID := syncState.LastUID + 1
-	log.Printf("Mailbox %s has %d messages. Fetching from UID %d", mailboxName, mbox.Messages, fromUID)
-	if mbox.Messages == 0 || (mbox.UidNext > 0 && fromUID >= mbox.UidNext) {
-		return 0, nil
-	}
-
-	// "n:*" always includes the highest UID, even when it is below n, so the
-	// loop below also skips anything at or before the saved position.
-	seqset := new(imap.SeqSet)
-	seqset.AddRange(fromUID, 0)
-
-	items := []imap.FetchItem{
-		imap.FetchEnvelope, imap.FetchFlags, imap.FetchInternalDate,
-		imap.FetchRFC822Size, imap.FetchItem("BODY[]"), imap.FetchItem("UID"),
-	}
-
-	messages := make(chan *imap.Message, 10)
-	done := make(chan error, 1)
-	go func() {
-		done <- c.UidFetch(seqset, items, messages)
-	}()
-
-	count, attachments := 0, 0
-	for imapMsg := range messages {
-		if imapMsg.Uid < fromUID {
-			continue
-		}
-		if imapMsg.Uid > syncState.LastUID {
-			syncState.LastUID = imapMsg.Uid
-		}
-
-		parsed, raw, err := parseIMAPMessage(acc.ID, imapMsg)
-		if err != nil {
-			log.Printf("Error parsing msg %d: %v", imapMsg.Uid, err)
-			continue
-		}
-
-		// Which folder this came from is only known here, not in the parser.
-		parsed.Mailbox = mailboxName
-
-		// Per account, as the importer and the content-hash index are: a
-		// message between two of your own accounts belongs to both. A message
-		// with no Message-ID is left to that index, since a blank id would
-		// otherwise match every other message without one.
-		if parsed.MessageID != "" {
-			if exists, _ := store.MessageExistsByMessageIDForAccount(acc.ID, parsed.MessageID); exists {
-				continue
-			}
-		}
-
-		if err := store.SaveMessage(parsed); err != nil {
-			log.Printf("ERROR saving message %d: %v", imapMsg.Uid, err)
-			continue
-		}
-		count++
-
-		// Attachments come after the message row exists — they are foreign-keyed
-		// to it — and a failure here costs the attachments, not the message.
-		if sm.Blobs != nil {
-			counts, err := store.StoreAttachments(parsed.ID, raw, sm.Blobs, sm.MaxAttachmentBytes)
-			if err != nil {
-				log.Printf("ERROR storing attachments for msg %d: %v", imapMsg.Uid, err)
-			}
-			attachments += counts.Stored
-		}
-	}
-
-	if err := <-done; err != nil {
-		return count, err
-	}
-
-	store.SaveMailboxSyncState(syncState)
-	if attachments > 0 {
-		log.Printf("Mailbox %s: stored %d messages, %d attachments", mailboxName, count, attachments)
-	}
-	return count, nil
 }
 
 // parseIMAPMessage converts a fetched IMAP message into InboxQL's representation.

@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 42
+	SchemaVersion = 43
 )
 
 var (
@@ -1895,6 +1895,75 @@ func migrateDB(db *sql.DB) error {
 		currentVersion = 42
 	}
 
+	if currentVersion < 43 {
+		log.Println("Applying schema migration v43 (labels, server locations, pending changes)...")
+		// Labels replace folders: a message carries a set of them, as Gmail's
+		// do, and Inbox, Sent, Spam and Trash are labels too. Where each
+		// message is on its server, so a change made here can be made there.
+		// The changes still to make. Gmail's own ids for a message and its
+		// thread. And per folder, what a newest-first history fetch needs to
+		// resume.
+		for _, stmt := range []string{
+			`CREATE TABLE IF NOT EXISTS mail_labels (
+				name       TEXT PRIMARY KEY COLLATE NOCASE,
+				system     INTEGER NOT NULL DEFAULT 0,
+				created_at INTEGER NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS message_labels (
+				message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+				label      TEXT NOT NULL COLLATE NOCASE,
+				source     TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
+				PRIMARY KEY (message_id, label)
+			) WITHOUT ROWID`,
+			`CREATE INDEX IF NOT EXISTS idx_message_labels_label ON message_labels(label, message_id)`,
+			`CREATE TABLE IF NOT EXISTS message_locations (
+				message_id   TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+				account_id   TEXT NOT NULL,
+				mailbox      TEXT NOT NULL,
+				uid_validity INTEGER NOT NULL,
+				uid          INTEGER NOT NULL,
+				label        TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (message_id, mailbox)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_message_locations_uid ON message_locations(account_id, mailbox, uid)`,
+			`CREATE TABLE IF NOT EXISTS pending_changes (
+				id         INTEGER PRIMARY KEY AUTOINCREMENT,
+				account_id TEXT NOT NULL,
+				message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+				op         TEXT NOT NULL,
+				value      TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
+				attempts   INTEGER NOT NULL DEFAULT 0,
+				last_error TEXT
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_pending_changes_account ON pending_changes(account_id, id)`,
+			`CREATE INDEX IF NOT EXISTS idx_pending_changes_message ON pending_changes(message_id)`,
+			`ALTER TABLE messages ADD COLUMN gm_msgid INTEGER`,
+			`ALTER TABLE messages ADD COLUMN gm_thrid INTEGER`,
+			`CREATE INDEX IF NOT EXISTS idx_messages_gm_msgid ON messages(account_id, gm_msgid) WHERE gm_msgid IS NOT NULL`,
+			`CREATE INDEX IF NOT EXISTS idx_messages_account_message_id ON messages(account_id, message_id)`,
+			`ALTER TABLE mailboxes ADD COLUMN uid_validity INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE mailboxes ADD COLUMN low_uid INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE mailboxes ADD COLUMN backfill_done INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE mailboxes ADD COLUMN server_count INTEGER NOT NULL DEFAULT 0`,
+			// When a draft somebody pressed Send on goes out: the end of its
+			// Undo window.
+			`ALTER TABLE drafts ADD COLUMN send_at INTEGER`,
+		} {
+			if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+				return fmt.Errorf("failed to apply schema v43: %w", err)
+			}
+		}
+		if err := backfillLabels(db); err != nil {
+			return fmt.Errorf("failed to apply schema v43 (labelling existing mail): %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 43;"); err != nil {
+			return err
+		}
+		currentVersion = 43
+	}
+
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)
 	return nil
 }
@@ -2216,18 +2285,28 @@ func UpdateAccountStatus(id string, status string, lastError string) error {
 }
 
 // Message functions
+
+// SaveMessage stores a message, unless the account already holds it.
 func SaveMessage(m *message.Message) error {
+	_, err := SaveMessageInserted(m)
+	return err
+}
+
+// SaveMessageInserted stores a message and reports whether it was new. A
+// duplicate — same content, same account — is collapsed onto the row already
+// there, and false says so.
+func SaveMessageInserted(m *message.Message) (bool, error) {
 	to, _ := json.Marshal(m.To)
 	cc, _ := json.Marshal(m.Cc)
 	bcc, _ := json.Marshal(m.Bcc)
 	flags, _ := json.Marshal(m.Flags)
 
 	res, err := db.Exec(`
-		INSERT OR IGNORE INTO messages (id, account_id, uid, message_id, content_hash, normalized_body, from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body, flags, size, internal_date, mailbox)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-	`, m.ID, m.AccountID, m.UID, m.MessageID, m.ContentHash, m.NormalizedBody, m.From, string(to), string(cc), string(bcc), m.Subject, m.Date.UnixMilli(), m.Body, m.HTMLBody, string(flags), m.Size, m.InternalDate.UnixMilli(), nullIfEmpty(m.Mailbox))
+		INSERT OR IGNORE INTO messages (id, account_id, uid, message_id, content_hash, normalized_body, from_addr, to_addrs, cc_addrs, bcc_addrs, subject, date, body, html_body, flags, size, internal_date, mailbox, gm_msgid, gm_thrid)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	`, m.ID, m.AccountID, m.UID, m.MessageID, m.ContentHash, m.NormalizedBody, m.From, string(to), string(cc), string(bcc), m.Subject, m.Date.UnixMilli(), m.Body, m.HTMLBody, string(flags), m.Size, m.InternalDate.UnixMilli(), nullIfEmpty(m.Mailbox), nullIfZero64(m.GmMsgID), nullIfZero64(m.GmThrID))
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// The raw message goes to its own table, where a scan over `messages` will
@@ -2238,7 +2317,7 @@ func SaveMessage(m *message.Message) error {
 		if _, err := db.Exec(
 			"INSERT OR REPLACE INTO message_raw (message_id, raw) VALUES (?, ?)",
 			m.ID, m.Header); err != nil {
-			return err
+			return false, err
 		}
 	}
 
@@ -2247,25 +2326,36 @@ func SaveMessage(m *message.Message) error {
 	// writing edges here would point at a message that does not exist and
 	// trip the foreign key.
 	if n, err := res.RowsAffected(); err != nil || n == 0 {
-		return err
+		return false, err
 	}
 
 	// The participant and reference edges are derived data, but they are
 	// derived once here rather than recomputed per query: negation over
 	// recipients is a NOT EXISTS against these rows, and threading walks them.
 	if err := writeParticipants(db, m); err != nil {
-		return fmt.Errorf("indexing participants for %s: %w", m.ID, err)
+		return true, fmt.Errorf("indexing participants for %s: %w", m.ID, err)
 	}
 	if err := writeRefs(db, m); err != nil {
-		return fmt.Errorf("indexing references for %s: %w", m.ID, err)
+		return true, fmt.Errorf("indexing references for %s: %w", m.ID, err)
 	}
 	// Every message creates a contact for every address it touches. Here
 	// rather than in a nightly pass so a contact exists the moment its first
 	// message does — and so the two can never be out of step.
 	if err := ensureContacts(db, m); err != nil {
-		return fmt.Errorf("recording contacts for %s: %w", m.ID, err)
+		return true, fmt.Errorf("recording contacts for %s: %w", m.ID, err)
 	}
-	return nil
+	// After the participants, because Sent is partly who wrote it.
+	if err := labelsOnSave(db, m.ID, m.Labels, m.Mailbox, m.LabelSource); err != nil {
+		return true, fmt.Errorf("labelling %s: %w", m.ID, err)
+	}
+	return true, nil
+}
+
+func nullIfZero64(n uint64) any {
+	if n == 0 {
+		return nil
+	}
+	return int64(n)
 }
 
 // ListMessages returns an account's messages, newest first.
@@ -2312,6 +2402,9 @@ func GetMessageByID(id string) (*message.Message, error) {
 	json.Unmarshal([]byte(flags), &m.Flags)
 	m.Date = time.UnixMilli(date)
 	m.InternalDate = time.UnixMilli(internalDate)
+	if err := attachLabels([]*message.Message{m}); err != nil {
+		return nil, err
+	}
 	return m, nil
 }
 

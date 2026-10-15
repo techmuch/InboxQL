@@ -1,3 +1,4 @@
+import { mailChanged } from './mail';
 import { deliverReminder } from './reminders';
 import { create } from 'zustand';
 import { openTool, openMessageByID, openQuery, openErrorLog, DESK_TAB } from './tabs';
@@ -44,7 +45,7 @@ export interface WindowInfo {
 }
 
 interface Command {
-  verb: 'query' | 'open' | 'notice' | 'reminder';
+  verb: 'query' | 'open' | 'notice' | 'reminder' | 'mail';
   arg: string;
   note?: string;
   at: string;
@@ -121,6 +122,11 @@ function apply(c: Command) {
       break;
     case 'reminder':
       deliverReminder(c.arg);
+      break;
+    case 'mail':
+      // New mail, or a change from another device: the server's sync worker
+      // says so, and everything showing mail refreshes.
+      mailChanged('server');
       break;
     case 'open':
       openNamed(c.arg);

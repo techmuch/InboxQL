@@ -93,14 +93,18 @@ func folderIDs(t *testing.T, folder string) []string {
 func TestFolderMembership(t *testing.T) {
 	openFolderFixture(t)
 
+	sentAll := []string{"sent-by-mailbox", "sent-by-sender", "sent-then-filed"}
 	want := map[string][]string{
-		// allmail and named stay in the remainder on purpose: Gmail's All Mail
-		// contains the inbox, and a folder merely named "Archived invoices" is
-		// not the archive.
-		FolderInbox:   {"allmail", "i1", "i2", "named", "star"},
+		// Only what carries the inbox label. Gmail's All Mail, an Archive
+		// folder and a folder of one's own are all somewhere other than the
+		// inbox, which is what archived means.
+		FolderInbox:   {"i1", "i2", "star"},
 		FolderStarred: {"star"},
-		FolderSent:    {"sent-by-mailbox", "sent-by-sender", "sent-then-filed"},
-		FolderArchive: {"filed"},
+		FolderSent:    sentAll,
+		// Archived is "not in the inbox, not binned", and that includes mail
+		// you sent, as it does in Gmail.
+		FolderArchive: {"allmail", "filed", "named", "sent-by-mailbox", "sent-by-sender", "sent-then-filed"},
+		FolderAllMail: {"allmail", "filed", "i1", "i2", "named", "sent-by-mailbox", "sent-by-sender", "sent-then-filed", "star"},
 		FolderSpam:    {"junk"},
 		FolderTrash:   {"gone", "gone-starred"},
 	}
@@ -120,26 +124,28 @@ func TestFolderMembership(t *testing.T) {
 	}
 }
 
-// The inbox is defined as the remainder precisely so that no message is filed
-// in two places at once. If that ever stops holding, the sidebar counts add up
-// to more than the mailbox.
-func TestFoldersDoNotOverlap(t *testing.T) {
+// Folders overlap now — that is what labels are — but binned mail leaves every
+// other view, and nothing is unreachable: every message is in All Mail, Spam or
+// Trash.
+func TestBinnedMailLeavesOtherViews(t *testing.T) {
 	openFolderFixture(t)
 
-	seen := map[string]string{}
-	for _, folder := range []string{FolderInbox, FolderSent, FolderArchive, FolderSpam, FolderTrash} {
-		for _, id := range folderIDs(t, folder) {
-			if other, dup := seen[id]; dup {
-				t.Errorf("message %s is in both %s and %s", id, other, folder)
-			}
-			seen[id] = folder
+	binned := map[string]bool{}
+	for _, f := range []string{FolderSpam, FolderTrash} {
+		for _, id := range folderIDs(t, f) {
+			binned[id] = true
 		}
 	}
-
-	// Every message must land somewhere; a message in no folder is invisible.
-	all := folderIDs(t, FolderAll)
-	if len(seen) != len(all) {
-		t.Errorf("%d of %d messages are filed; the rest are unreachable", len(seen), len(all))
+	for _, f := range []string{FolderInbox, FolderStarred, FolderSent, FolderArchive, FolderAllMail} {
+		for _, id := range folderIDs(t, f) {
+			if binned[id] {
+				t.Errorf("binned message %s shows in %s", id, f)
+			}
+		}
+	}
+	reachable := len(binned) + len(folderIDs(t, FolderAllMail))
+	if all := len(folderIDs(t, FolderAll)); reachable != all {
+		t.Errorf("%d of %d messages are in All Mail, Spam or Trash; the rest are unreachable", reachable, all)
 	}
 }
 
@@ -156,7 +162,7 @@ func TestStarredCrossesFoldersButNotTrash(t *testing.T) {
 
 // An unrecognised folder name must not quietly become "everything".
 func TestUnknownFolderIsRejected(t *testing.T) {
-	for _, name := range []string{"", FolderAll, FolderInbox, FolderDrafts, FolderArchive} {
+	for _, name := range []string{"", FolderAll, FolderInbox, FolderDrafts, FolderArchive, FolderAllMail, FolderImportant} {
 		if !ValidFolder(name) {
 			t.Errorf("ValidFolder(%q) = false, want true", name)
 		}
@@ -183,19 +189,20 @@ func TestFolderCountsMatchMembership(t *testing.T) {
 		byName[c.Folder] = c
 	}
 
-	for _, folder := range []string{
-		FolderInbox, FolderStarred, FolderSent, FolderArchive, FolderSpam, FolderTrash,
-	} {
+	for _, folder := range Folders {
+		if folder == FolderDrafts {
+			continue
+		}
 		if got, want := byName[folder].Total, len(folderIDs(t, folder)); got != want {
 			t.Errorf("%s count = %d, but the folder lists %d messages", folder, got, want)
 		}
 	}
 
-	// i1 carries no flags, star carries only \Flagged, and allmail carries
-	// none — so three are unread; i2 and named are the inbox messages marked
-	// \Seen. Starred mail being unread is ordinary, not a special case.
-	if byName[FolderInbox].Unread != 3 {
-		t.Errorf("inbox unread = %d, want 3", byName[FolderInbox].Unread)
+	// i1 carries no flags and star carries only \Flagged, so two are
+	// unread; i2 is marked \Seen. Starred mail being unread is ordinary, not a
+	// special case.
+	if byName[FolderInbox].Unread != 2 {
+		t.Errorf("inbox unread = %d, want 2", byName[FolderInbox].Unread)
 	}
 }
 
@@ -330,42 +337,35 @@ func TestFolderCountsAgreeWithCountingOneAtATime(t *testing.T) {
 	}
 }
 
-// The defect this folder exists for.
+// Folders became labels.
 //
-// The inbox was the remainder — not sent, not deleted, not junk — which is tidy
-// until a mailbox is mostly archive. On a real one of 43,553 messages, zero
-// were in anything named INBOX and the rail still reported "Inbox 39,068",
-// every one of them read out of Archive.mbox. The number was right and the word
-// was wrong, and there was no way to ask for Archive as Archive.
-func TestArchivedMailIsNotTheInbox(t *testing.T) {
+// The inbox was once the remainder — not sent, not deleted, not junk — and on a
+// real mailbox of 43,553 messages the rail reported "Inbox 39,068", every one
+// of them read out of Archive.mbox. Now a message is in the inbox only when it
+// carries the label, and each folder a message was read from says which.
+func TestFoldersBecomeLabels(t *testing.T) {
 	openFolderFixture(t)
 
-	inbox := folderMembers(t, FolderInbox)
-	if inbox["filed"] {
-		t.Error("archived mail is still being counted as inbox")
+	labels, err := MailLabels([]string{"filed", "allmail", "named", "i1", "junk", "gone", "sent-by-mailbox"})
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	archive := folderMembers(t, FolderArchive)
-	if !archive["filed"] {
-		t.Error("the archived message is not in the archive folder")
+	want := map[string][]string{
+		"filed":           nil,                   // Archive: no label is what archived means
+		"allmail":         nil,                   // Gmail's All Mail likewise
+		"named":           {"Archived invoices"}, // a folder of one's own is a label of one's own
+		"i1":              {LabelInbox},
+		"junk":            {LabelSpam},
+		"gone":            {LabelInbox, LabelTrash}, // still from the inbox, and binned
+		"sent-by-mailbox": {LabelSent},
 	}
-
-	// Gmail's All Mail holds the inbox, so it stays in the remainder. Claiming
-	// it as archive would hide mail that really is in the inbox.
-	if archive["allmail"] {
-		t.Error("Gmail's All Mail was claimed as archive")
+	for id, w := range want {
+		if !sameSet(labels[id], w) {
+			t.Errorf("%s labels = %v, want %v", id, labels[id], w)
+		}
 	}
-	if !inbox["allmail"] {
-		t.Error("All Mail left the inbox, which empties a Gmail account")
-	}
-
-	// Matched on the trailing segment, so a folder merely containing the word
-	// is not swept in.
-	if archive["named"] {
-		t.Error(`"Archived invoices" was treated as the archive`)
-	}
-	if !inbox["named"] {
-		t.Error(`"Archived invoices" fell out of the inbox too`)
+	if !LabelExists("archived INVOICES") {
+		t.Error("label names should match without regard to case")
 	}
 }
 

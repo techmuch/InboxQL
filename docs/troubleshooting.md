@@ -78,10 +78,23 @@ the grant to the exact file.
 
 ## An account will not sync
 
-`iql account verify <id>` classifies the failure: the password was rejected,
-the server name was not found, the network could not reach it, or the
-certificate did not verify. For Gmail and iCloud a rejected password usually
-means you need an *app password* rather than your sign-in password.
+The account's card in Settings → Mail Accounts says why it is not connected
+and when it tries again. `iql account verify <id>` classifies the failure: the
+password was rejected, the server name was not found, the network could not
+reach it, or the certificate did not verify. For Gmail and iCloud a rejected
+password usually means you need an *app password* rather than your sign-in
+password.
+
+**Older mail is missing.** The first sync reads an account newest first, and
+on a large Gmail account takes days — Gmail limits how much a program may
+download each day. The card says how far it has got (*12,400 of 140,000*).
+
+**A Gmail account says it has no All Mail folder.** Gmail's settings, under
+*Labels*, can hide a label from IMAP; turn *Show in IMAP* back on for All Mail,
+Spam and Trash.
+
+**A change made here has not reached the server.** The card says how many are
+waiting, and how many the server refused and why, with **Try again**.
 
 ## Search does not find something I know is there
 

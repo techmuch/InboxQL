@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import {
   AlertOctagon, AlertTriangle, Bookmark, Bot, Check, ChevronDown, ChevronUp,
-  Archive, Clock, File, Folder, HelpCircle, Inbox, Layout, Paperclip, Pencil, Plus,
-  Search, Send, Settings2, Star, Tag, Ticket, Trash2, Users, X,
+  Archive, Clock, File, Folder, HelpCircle, Inbox, Layout, Mails, Paperclip, Pencil, Plus,
+  Search, Send, Settings2, Sparkles, Star, Tag, Ticket, Trash2, Users, X,
 } from 'lucide-react';
+import type { LabelCount } from '../../lib/mail';
 import type { SavedQuery } from './api';
 import { openCompose } from '../../lib/appUi';
 import type { Annotator } from '../ai/api';
@@ -23,9 +24,10 @@ import type { Annotator } from '../ai/api';
  *     back is a bad afternoon, and the badges are half the point of these rows.
  *   - **Saved** are user content: editable, removable, reorderable. This is
  *     where the whole feature lives.
- *   - **Annotations** are derived, already filtered to the annotators that
- *     found something. Hand-ordering them would fight that: run a new annotator
- *     tomorrow and the manual order is stale.
+ *   - **Labels** are your labels and Gmail's, and below them the annotators'
+ *     — one section, because `label:` answers for both. Derived, already
+ *     filtered to what found something, so not arrangeable: a manual order
+ *     would be stale the next time an annotator runs.
  *
  * # Why the Other block is gone
  *
@@ -43,7 +45,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 
 const FOLDER_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   inbox: Inbox, starred: Star, sent: Send, archive: Archive, drafts: File,
-  spam: AlertOctagon, trash: Trash2,
+  allmail: Mails, spam: AlertOctagon, trash: Trash2,
 };
 
 export interface FolderRow {
@@ -57,6 +59,9 @@ interface RailProps {
   hiddenFolders: string[];
   saved: SavedQuery[];
   annotated: Annotator[];
+  /** The mail labels: yours and Gmail's. */
+  labels?: LabelCount[];
+  labelQuery?: (name: string) => string;
   queryText: string;
   onFolder: (id: string) => void;
   onQuery: (q: string) => void;
@@ -71,7 +76,7 @@ interface RailProps {
 }
 
 export const Rail = ({
-  folders, hiddenFolders, saved, annotated, queryText,
+  folders, hiddenFolders, saved, annotated, labels = [], labelQuery = n => `label:${n}`, queryText,
   onFolder, onQuery, annotationQuery,
   onMove, onRemove, onEdit, onToggleFolder, onResetFolders, onAddDefaults,
 }: RailProps) => {
@@ -223,9 +228,28 @@ export const Rail = ({
 
             Not arrangeable: this section earns its place by being derived, and
             a manual order would be stale the next time an annotator runs. */}
-        {annotated.length > 0 && (
+        {(annotated.length > 0 || labels.length > 0) && (
           <>
-            <Heading label="Annotations" />
+            <Heading label="Labels" />
+            {labels.map(l => {
+              const q = labelQuery(l.name);
+              return (
+                <button
+                  key={`mail:${l.name}`}
+                  onClick={() => onQuery(q)}
+                  title={q}
+                  className={rowClass(queryText.trim() === q)}
+                >
+                  <Tag className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                  <span className={`flex-1 text-left truncate ${l.unread > 0 ? 'font-semibold' : ''}`}>
+                    {l.name === 'important' ? 'Important' : l.name}
+                  </span>
+                  {l.unread > 0 && (
+                    <span className="text-[10px] font-bold tabular-nums">{l.unread.toLocaleString()}</span>
+                  )}
+                </button>
+              );
+            })}
             {annotated.map(a => {
               const q = annotationQuery(a);
               const off = a.enabled === false;
@@ -236,7 +260,9 @@ export const Rail = ({
                   title={off ? `${q} — ${a.name} is switched off; these are what it already found` : q}
                   className={rowClass(queryText.trim() === q, off ? 'opacity-50' : '')}
                 >
-                  <Tag className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                  {/* Sparkles marks a label a model or rule put on, beside the
+                      ones a person or the server did. */}
+                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                   <span className="flex-1 text-left truncate">{a.name}</span>
                   {/* Switched off still appears, because its results are still
                       there and still queryable. Hiding it would contradict what

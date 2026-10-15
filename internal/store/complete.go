@@ -46,6 +46,8 @@ func completionValues(source, prefix string) ([]query.Candidate, error) {
 		return annotatorCandidates(prefix)
 	case query.ValuesSaved:
 		return savedCandidates(prefix)
+	case query.ValuesLabels:
+		return labelCandidates(prefix)
 	case query.ValuesFolders:
 		out := []query.Candidate{}
 		for _, f := range Folders {
@@ -60,6 +62,28 @@ func completionValues(source, prefix string) ([]query.Candidate, error) {
 		return extractPathCandidates(prefix)
 	}
 	return nil, nil
+}
+
+// labelCandidates offers mail labels, with how many messages carry each, then
+// the annotators — `label:` answers for both.
+func labelCandidates(prefix string) ([]query.Candidate, error) {
+	counts, err := LabelCounts("")
+	if err != nil {
+		return nil, err
+	}
+	p := strings.ToLower(prefix)
+	out := []query.Candidate{}
+	for _, c := range counts {
+		if strings.HasPrefix(strings.ToLower(c.Name), p) {
+			out = append(out, query.Candidate{Value: c.Name, Kind: "label",
+				Detail: fmt.Sprintf("%d messages", c.Total)})
+		}
+	}
+	ann, err := annotatorCandidates(prefix)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, ann...), nil
 }
 
 // fileTypeCandidates offers the category names first, then the MIME types this

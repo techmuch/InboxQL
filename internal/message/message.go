@@ -37,4 +37,15 @@ type Message struct {
 	// entire system — the header states it, on 98% of real mail — and it was
 	// parsed and thrown away on both the import and the IMAP path.
 	Names map[string]string `json:"names,omitempty"`
+
+	// Labels are the message's mail labels: inbox, sent, trash and the
+	// user's own. On save, nil means "work them out from Mailbox and the
+	// sender"; a non-nil slice, even an empty one, is what the server said.
+	Labels []string `json:"labels,omitempty"`
+	// LabelSource says who gave the labels on save: server, import, ...
+	LabelSource string `json:"-"`
+	// GmMsgID and GmThrID are Gmail's permanent ids for the message and its
+	// conversation, when it came from Gmail.
+	GmMsgID uint64 `json:"-"`
+	GmThrID uint64 `json:"-"`
 }

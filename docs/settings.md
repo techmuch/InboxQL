@@ -91,8 +91,8 @@ inboxql`. [Installing](installing.md#updating) has the details.
 
 The AI coding tools on this computer — Claude Code, Codex, Gemini CLI — and
 whether the iql skill is installed for each. The skill is a short guide that
-tells an agent the rules before it starts: it can draft mail but not send it,
-how queries work, and that `iql help agents` has the rest. **Install**,
+tells an agent the rules before it starts: draft and queue mail, and send only
+when you ask; how queries work; and that `iql help agents` has the rest. **Install**,
 **Update** and **Remove** act on InboxQL's own skill folder only; a folder named
 `iql` that something else put there is left alone. See [the command
 line](command-line.md#driving-it-from-an-agent).
@@ -152,7 +152,9 @@ each.
 
 Add an account from its address — the servers are worked out — or enter the
 settings by hand; sign in with Google for Gmail; test, edit, disconnect
-(keeping the mail) and remove, with each account's state in a sentence.
+(keeping the mail) and remove. Each card says in a sentence whether the
+account is live, how much of its older mail is here, and how many changes
+are waiting to reach the server.
 [Accounts](accounts-and-import.md#adding-an-account) covers it.
 
 ## Calendars

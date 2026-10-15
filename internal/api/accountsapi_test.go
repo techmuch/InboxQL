@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	stdsync "sync"
 	"testing"
 
 	"github.com/emersion/go-imap/backend/memory"
@@ -58,6 +59,12 @@ func mailServers(t *testing.T) (imapPort, smtpPort int, cert tls.Certificate) {
 	return ln.Addr().(*net.TCPAddr).Port, sl.Addr().(*net.TCPAddr).Port, cert
 }
 
+// What the fake SMTP server was given, for tests that send.
+var (
+	smtpMu       stdsync.Mutex
+	smtpReceived []string
+)
+
 func fakeSMTP(c net.Conn, conf *tls.Config) {
 	defer c.Close()
 	rw := bufio.NewReadWriter(bufio.NewReader(c), bufio.NewWriter(c))
@@ -95,6 +102,25 @@ func fakeSMTP(c net.Conn, conf *tls.Config) {
 		case cmd == "QUIT":
 			say("221 bye")
 			return
+		case strings.HasPrefix(cmd, "MAIL FROM:"), strings.HasPrefix(cmd, "RCPT TO:"), cmd == "RSET", cmd == "NOOP":
+			say("250 ok")
+		case cmd == "DATA":
+			say("354 go ahead")
+			var msg strings.Builder
+			for {
+				l, err := rw.ReadString('\n')
+				if err != nil {
+					return
+				}
+				if l == ".\r\n" {
+					break
+				}
+				msg.WriteString(l)
+			}
+			smtpMu.Lock()
+			smtpReceived = append(smtpReceived, msg.String())
+			smtpMu.Unlock()
+			say("250 queued")
 		default:
 			say("502 no")
 		}

@@ -1,8 +1,9 @@
 # Accounts and importing mail
 
 Mail reaches InboxQL in two ways. An **account** connects to a mail server
-over IMAP and keeps syncing. An **import** reads mail that is already on this
-computer — Apple Mail's own files, or a folder of `.eml` messages — once.
+over IMAP and keeps a full copy of it, current both ways. An **import** reads
+mail that is already on this computer — Apple Mail's own files, or a folder of
+`.eml` messages — once.
 
 Both end up in the same mailbox and are queried the same way. The difference
 is only where the mail came from, which `account:` and `mailbox:` still tell
@@ -28,9 +29,8 @@ Then the password, and **Sign in and add**: InboxQL signs in to both the
 incoming (IMAP) and outgoing (SMTP) server before saving anything, and says
 plainly what went wrong if either refuses — the password was rejected, the
 server name does not exist, it did not answer, or its certificate is not
-trusted. Saving starts the first sync. On a large mailbox that takes a while,
-and you can work with what has arrived while the rest comes in. After that, a
-sync only asks for what is new.
+trusted. Saving connects the account, and from then on it is **live** — see
+[Keeping a copy](#keeping-a-copy-both-ways).
 
 **Enter settings manually** opens the full form, for a server nothing could
 find or one you want to set yourself:
@@ -91,7 +91,7 @@ From a terminal:
 INBOXQL_ACCOUNT_PASSWORD='app-password' iql account add --email me@example.com
 iql account discover me@example.com   # what it would use, and where it looked
 iql account verify work               # sign in to both servers, and say what is wrong
-iql account sync work                 # returns when the sync has finished
+iql account sync work                 # returns when it has all of the mail
 ```
 
 `--host` and the other server flags are only needed when nothing can be found,
@@ -112,9 +112,51 @@ another, and InboxQL will not present it to a host it was not given for.
 
 ### Each account's card
 
-The card says how the account is in a sentence — *Synced 4 min ago*, or what
-went wrong with a link to fix it — with **Sync now**, **Test**, **Edit**,
-**Disconnect** and **Remove**. **Test** signs in to both servers, as adding did.
+The card says how the account is in a sentence — *Live — new mail arrives as
+it comes*, *Live, and fetching older mail: 12,400 of 140,000*, or what went
+wrong and when it tries again, with a link to fix it — and how many changes
+made here are still waiting to reach the server. **Sync now** looks at
+everything at once, rather than waiting; **Test** signs in to both servers, as
+adding did; then **Edit**, **Disconnect** and **Remove**.
+
+## Keeping a copy, both ways
+
+While InboxQL is running — and as the login service, it always is — every
+connected account is **live**:
+
+- **New mail arrives in seconds.** InboxQL keeps a connection open and the
+  server tells it the moment something lands (IMAP IDLE). Nobody has to press
+  Sync.
+- **All of the mail, newest first.** The first time, InboxQL reads the whole
+  account, every message and attachment — the newest first, so today's mail
+  is there within minutes and the years behind it fill in while you work. A
+  large account takes a while: Gmail lets a program download about 2.5 GB a
+  day, so a big mailbox can take a few days to finish, by itself. It picks up
+  where it left off after a restart.
+- **Changes go both ways.** Archive, label, star, read or trash something here
+  and the server does the same within seconds; do it on your phone and it
+  happens here. If the two disagree, the server wins — except for a change
+  made here that has not reached it yet.
+- **Nothing is deleted from the server.** Trash is a label; emptying it is the
+  server's business. A message the server deletes for good stays here, in
+  Trash.
+
+**Gmail** is read the way Gmail stores it: one copy of each message, with
+Gmail's labels — Inbox, Sent, Important and your own — kept as InboxQL's
+labels, so archiving here archives in Gmail and a label made in Gmail turns up
+here. Only Gmail's All Mail, Spam and Trash are read, so nothing is downloaded
+twice. **Other servers** have folders: every one is read, and each becomes a
+label of its name. Archiving moves a message to the server's Archive folder;
+a label you make here stays here.
+
+**Mail you already imported** is recognised, not downloaded again. If you
+imported an account's mail from Apple Mail before connecting it, the first
+sync matches each message to its copy on the server and gives it the server's
+labels.
+
+The computer going to sleep, the network dropping, a server that stops
+answering: InboxQL reconnects by itself, waiting a little longer each time,
+and the card says why it is not connected meanwhile.
 
 ### Disconnecting, and removing
 
@@ -245,4 +287,9 @@ the sources apart:
 account:archive              everything imported into the archive account
 mailbox:"Archive/2024"       the folder a message physically came from
 folder:inbox                 the inbox, whatever account
+label:Clients                a folder of your own became a label of its name
 ```
+
+Each imported message takes a label from the folder it was in: INBOX the Inbox
+label, Sent and Junk and Trash theirs, a folder of your own a label of the same
+name, and Archive or Gmail's All Mail none — which is what archived means.

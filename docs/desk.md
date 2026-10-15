@@ -13,15 +13,15 @@ Open it from **Go → Desk**, or press **g** then **d**.
 The column on the left has three kinds of row, kept apart because they behave
 differently.
 
-**Folders** are the mailbox itself: Inbox, Starred, Sent, Archive, Drafts,
-Spam, Trash and All Mail, with live unread counts. You can hide one you never
-use; you cannot delete it, because it *is* the mail. **Reset** brings hidden
-folders back.
+**Inbox, Starred, Sent, Drafts, All Mail, Spam and Trash** are the mailbox
+itself, with live unread counts. You can hide one you never use; you cannot
+delete it, because it *is* the mail. **Reset** brings hidden ones back.
 
-The folders divide the mailbox between them with nothing counted twice, and
-**Inbox is what is left**: everything not sent, archived, deleted or junk. On
-Gmail that matters — Gmail's archive is the absence of a label InboxQL does
-not record, so archived Gmail mail still appears in the Inbox here.
+They are labels, not folders, as in Gmail: a message carries any number of
+labels, so your reply to a thread is in Sent and under Receipts at once.
+**Inbox** is mail with the Inbox label; **archiving** takes the label off, and
+the message stays in **All Mail**. Spam and Trash keep their mail out of every
+other view. On Gmail these are Gmail's own labels, kept the same both ways.
 
 **Saved queries** are yours. Six arrive with a new mailbox — Tickets,
 Proposed, Files, People, Systems and Unclassified — and they are ordinary
@@ -33,9 +33,11 @@ To save the query in the bar, use **Save** beside it and give it a
 name. A saved query is also a term — `saved:clients after:7d` is "the clients
 query, this week" — so saved queries are building blocks, not just bookmarks.
 
-**Annotations** lists the labels and extractors that have found something.
-It is derived, so it cannot be arranged: it would be out of date the next time
-one of them ran.
+**Labels** lists your labels — the ones you made, and on Gmail the ones you
+made there — with their unread counts, and below them the labels and
+extractors an annotator has found something for, marked with a sparkle. Both
+kinds answer to `label:`. The section is derived, so it cannot be arranged:
+it would be out of date the next time one of them ran.
 
 ## The query bar
 
@@ -67,11 +69,31 @@ arrive on it. **Enter** opens it properly; clicking does the same.
 
 Select several with **Shift**-click or **⌘/Ctrl**-click. A bar appears above
 the list with what you can do to all of them at once — mark them read, unread
-or starred — and **Narrow to these**, which turns the selection into a query.
+or starred, **Archive**, **Move to Inbox**, **Trash**, **Spam**, **Label** —
+and **Narrow to these**, which turns the selection into a query.
 
-A message's header shows its labels as chips under the sender. Right-click a
-chip (or press the menu key on it) to say whether the label is right; see
-[teaching an annotator](labels.md#teaching-it-rulings).
+## Archiving and labelling
+
+The viewer's toolbar has **Archive** (or **Move to Inbox** for mail that is not
+in it), **Report spam**, **Move to Trash**, **Mark read/unread** and **Label**.
+The star on each row stars it. **Label** lists your labels with a tick on the
+ones the message has; type to find one, or type a new name to create it.
+
+Your labels show as chips on each row and under the subject; click one to see
+everything with that label, or its **×** to take it off.
+
+Every change is made here at once and sent to the account's server, which
+applies it within seconds — archive here and the message leaves the inbox in
+Gmail too. A change made on your phone comes back the same way. If the server
+cannot be reached, the change waits, and the account's card in Settings → Mail
+Accounts says how many are waiting.
+
+Trash is a label like the others, and InboxQL never deletes anything from the
+server; emptying the trash is the server's business.
+
+The chips an **annotator** puts on a message show beside the subject in the
+viewer. Right-click one (or press the menu key on it) to say whether the label
+is right; see [teaching an annotator](labels.md#teaching-it-rulings).
 
 ## Conversations
 
@@ -103,24 +125,23 @@ every message that carried it; or **both at once**.
 
 ## Writing mail
 
-**Compose**, **File → New message** or **c** opens a new message. **Save
-draft** keeps it under Drafts; **Queue to send** puts it in the outbox. Mail
-leaves InboxQL from the outbox, so a queued message is sent when you approve
-it in a terminal:
+**Compose**, **File → New message** or **c** opens a new message. **Send**
+(or **⌘/Ctrl+Enter**) sends it: a bar at the bottom left counts down a few
+seconds with **Undo**, which brings it back to Drafts, and then says it went.
+**Save draft** keeps it under Drafts; open it there and press **Send** when it
+is ready.
 
-```sh
-iql outbox approve <draft-id>
-```
-
-The dialog shows the exact command, and **Intelligence → Waiting for
-approval** lists everything queued.
+What you send is under Sent at once. On Gmail, Gmail files it; on other
+servers InboxQL puts a copy in the server's Sent folder. If the server refuses
+it, the bar says why and the message waits in Drafts.
 
 ## Waiting for approval
 
 **Intelligence → Waiting for approval** (**g a**) gathers everything waiting
 on you in one place: cards an extractor proposed (**Accept** or **Reject**),
 calendar changes an agent proposed (**Approve** or **Reject**), and mail
-queued in the outbox, each with the command that sends it.
+queued in the outbox — typically written by an agent — with **Send** and
+**Back to drafts**. From a terminal, `iql outbox approve <draft-id>` sends one.
 
 ## Keyboard
 
@@ -145,6 +166,12 @@ into a field are never taken, so none of these get in the way of writing.
 | ? | this list, in the app (**Help → Keyboard shortcuts**) |
 | ↑ ↓ | move through a list |
 | Enter | open the row |
+| e | archive the selection, or the row you are on |
+| # | move it to Trash |
+| ! | report it as spam |
+| l | label it |
+| s | star or unstar it |
+| Shift+I, Shift+U | mark it read, or unread |
 | F1 | the documentation |
 | Ctrl+, | Settings |
 | Ctrl+I | the chat panel |

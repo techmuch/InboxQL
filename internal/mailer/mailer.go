@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/user/inboxql/internal/account"
 	"github.com/user/inboxql/internal/store"
 )
@@ -31,6 +32,11 @@ type Message struct {
 	Body      string
 	InReplyTo string // Message-ID of the message being replied to, if any
 	Date      time.Time
+	// MessageID is this message's own Message-ID, angle brackets included.
+	// Made here rather than left to the server, so the copy InboxQL keeps of
+	// what it sent and the copy that lands in the server's Sent folder are
+	// recognisably the same message.
+	MessageID string
 	// Calendar is an iCalendar part sent beside the text — an answer to an
 	// invitation — with its METHOD, which the Content-Type must repeat.
 	Calendar       string
@@ -59,7 +65,17 @@ func FromDraft(d *store.Draft, acc *account.Account) (*Message, error) {
 		Body:      d.Body,
 		InReplyTo: d.InReplyTo,
 		Date:      time.Now(),
+		MessageID: newMessageID(from),
 	}, nil
+}
+
+// newMessageID makes a Message-ID in the sender's domain.
+func newMessageID(from string) string {
+	domain := "inboxql.localhost"
+	if at := strings.LastIndex(from, "@"); at >= 0 && at < len(from)-1 {
+		domain = strings.Trim(from[at+1:], "> ")
+	}
+	return "<" + uuid.New().String() + "@" + domain + ">"
 }
 
 // FromDraftWithCalendar is FromDraft plus the draft's calendar part, if it
@@ -105,6 +121,9 @@ func (m *Message) Render() []byte {
 	// ASCII untouched, so ordinary subjects stay readable on the wire.
 	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", m.Subject))
 	fmt.Fprintf(&b, "Date: %s\r\n", date.Format(time.RFC1123Z))
+	if m.MessageID != "" {
+		fmt.Fprintf(&b, "Message-ID: %s\r\n", m.MessageID)
+	}
 	if m.InReplyTo != "" {
 		// Both headers: In-Reply-To is what clients display against,
 		// References is what they thread on.

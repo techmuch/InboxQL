@@ -29,7 +29,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.90"
+var Version = "0.0.91"
 
 func init() {
 	register(&Command{
@@ -335,6 +335,15 @@ func runStart(ctx *Context, args []string) error {
 	// The API needs the data directory for the attachment blob store and LLM logs.
 	api.SetDataDir(ctx.DataDir)
 
+	// Every connected account, live: new mail in seconds, changes made here
+	// sent to the server, without anyone pressing Sync. Stopped before the
+	// database closes, so no worker writes into a closed handle.
+	api.StartMailWorkers()
+	defer api.StopMailWorkers()
+	// Mail somebody pressed Send on goes out when its Undo window passes.
+	api.StartSender()
+	defer api.StopSender()
+
 	// Which program macOS holds responsible for reading protected folders
 	// depends on who started this one; the service is the certain case.
 	tcc.SetService(*serviceMode)
@@ -495,6 +504,8 @@ func runStart(ctx *Context, args []string) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_ = srv.Shutdown(shutdown)
 	cancel()
+	api.StopSender()
+	api.StopMailWorkers()
 	store.CloseDB()
 	lock.Release()
 	if mode == "dev" {

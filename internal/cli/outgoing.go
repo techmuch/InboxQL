@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/user/inboxql/internal/cli/ui"
 	"github.com/user/inboxql/internal/llm"
 	"github.com/user/inboxql/internal/mailer"
+	"github.com/user/inboxql/internal/outbox"
 	"github.com/user/inboxql/internal/store"
 )
 
@@ -41,31 +43,31 @@ Creating a draft sends nothing. It is stored with status "draft" until
 
 	register(&Command{
 		Name:    "send",
-		Summary: "queue a draft for delivery (does not send)",
+		Summary: "queue a draft in the outbox (does not send)",
 		Usage: `iql send <draft-id> [--json]
 
-Moves the draft into the outbox with status "queued". Nothing is transmitted.
+Moves the draft into the outbox with status "queued". Nothing is transmitted
+until it is approved: with ` + "`iql outbox approve <id>`" + `, or with Send under
+Intelligence → Waiting for approval.
 
-Delivery requires ` + "`iql outbox approve <id>`" + ` run by a person at a terminal.
-That is a deliberate boundary: an agent can research, compose and queue a
-reply, but cannot put mail on the wire unattended. There is no flag to bypass
-it.`,
+The outbox is where a message is read before it goes. An agent should queue
+what it writes, and send only when the person it works for asks it to.`,
 		Run: runSend,
 	})
 
 	register(&Command{
 		Name:    "outbox",
-		Summary: "review and approve queued messages",
+		Summary: "review, send and reject queued messages",
 		Usage: `iql outbox <list|show|approve|reject> [id]
 
   list      queued messages awaiting approval
   show      print a queued message in full, exactly as it will be sent
-  approve   deliver it — requires a terminal and a typed confirmation
+  approve   send it: at a terminal it is shown and you confirm; without one
+            (a script, an agent), --yes says so
   reject    return it to draft status, with an optional --reason
 
-approve refuses to run when stdin is not a terminal, which is what stops an
-agent from approving its own drafts. Review with ` + "`show`" + ` before approving:
-the sender is a real mailbox and delivery cannot be undone.`,
+Review with ` + "`show`" + ` before approving: the sender is a real mailbox and
+delivery cannot be undone.`,
 		Run: runOutbox,
 	})
 }
@@ -437,7 +439,7 @@ func runSend(ctx *Context, args []string) error {
 			"id":       d.ID,
 			"status":   d.Status,
 			"queuedAt": d.QueuedAt,
-			"note":     "Nothing has been sent. A person must run `iql outbox approve " + d.ID + "` from a terminal.",
+			"note":     "Nothing has been sent. It goes when approved: `iql outbox approve " + d.ID + "`, or Send in Waiting for approval.",
 		})
 	}
 	ctx.Printf("Queued draft %s. Nothing has been sent yet.\n\n", d.ID)
@@ -521,20 +523,25 @@ func runOutbox(ctx *Context, args []string) error {
 }
 
 func outboxApprove(ctx *Context, args []string) error {
-	if len(args) != 1 {
-		return Fail(ExitUsage, "usage: iql outbox approve <draft-id>")
+	fs := flag.NewFlagSet("outbox approve", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	yes := fs.Bool("yes", false, "send without asking; needed when there is no terminal to ask at")
+	if err := parseArgs(fs, args); err != nil {
+		return Fail(ExitUsage, "invalid flags")
 	}
+	if fs.NArg() != 1 {
+		return Fail(ExitUsage, "usage: iql outbox approve <draft-id> [--yes]")
+	}
+	args = fs.Args()
 
-	// The gate. Approval is the one action in InboxQL that puts mail on the wire,
-	// and it is reachable only from an interactive terminal. There is
-	// deliberately no --yes or --force: a flag would be available to the same
-	// agent the gate exists to stop.
-	if !IsTerminal() {
-		return Fail(ExitNeedsApprove,
-			"approval requires a terminal.\n\n"+
-				"This message stays queued. A person must run:\n"+
-				"    iql outbox approve %s\n\n"+
-				"There is no flag to bypass this.", args[0])
+	// At a terminal a person reads the message and says yes, unless they
+	// have said so already with --yes. Without a terminal there is nobody to
+	// ask, so --yes is required: a confirmation that cannot be answered is
+	// not a reason to send.
+	if !*yes && !IsTerminal() {
+		return Fail(ExitUsage,
+			"there is no terminal to confirm at; add --yes to send it:\n"+
+				"    iql outbox approve %s --yes", args[0])
 	}
 
 	d, err := requireDraft(args[0])
@@ -553,46 +560,43 @@ func outboxApprove(ctx *Context, args []string) error {
 	if err != nil {
 		return Fail(ExitUsage, "%v", err)
 	}
-
-	ctx.Printf("%s\n", strings.Repeat("=", 60))
-	ctx.Printf("%s", msg.Render())
-	ctx.Printf("%s\n\n", strings.Repeat("=", 60))
-	ctx.Printf("From account : %s\n", acc.ID)
-	ctx.Printf("Via SMTP     : %s:%d\n", acc.SMTPHost, acc.SMTPPort)
-	ctx.Printf("Recipients   : %s\n", strings.Join(msg.Recipients(), ", "))
-	if d.Origin != store.OriginHuman {
-		ctx.Printf("\nComposed by  : %s — read it carefully.\n", d.Origin)
-	}
-	ctx.Printf("\n")
-
-	if !ctx.Confirm("Send this message? It cannot be recalled") {
-		ctx.Printf("Not sent. The draft stays in the outbox.\n")
-		return Fail(ExitError, "cancelled")
+	if err := msg.Validate(); err != nil {
+		return Fail(ExitUsage, "%v", err)
 	}
 
-	if err := mailer.Send(acc, msg); err != nil {
-		now := time.Now()
-		d.Status = store.DraftStatusFailed
-		d.LastError = err.Error()
-		d.UpdatedAt = now
-		store.SaveDraft(d)
-		return Fail(ExitError, "delivery failed: %v", err)
+	if !*yes {
+		ctx.Printf("%s\n", strings.Repeat("=", 60))
+		ctx.Printf("%s", msg.Render())
+		ctx.Printf("%s\n\n", strings.Repeat("=", 60))
+		ctx.Printf("From account : %s\n", acc.ID)
+		ctx.Printf("Via SMTP     : %s:%d\n", acc.SMTPHost, acc.SMTPPort)
+		ctx.Printf("Recipients   : %s\n", strings.Join(msg.Recipients(), ", "))
+		if d.Origin != store.OriginHuman {
+			ctx.Printf("\nComposed by  : %s — read it carefully.\n", d.Origin)
+		}
+		ctx.Printf("\n")
+
+		if !ctx.Confirm("Send this message? It cannot be recalled") {
+			ctx.Printf("Not sent. The draft stays in the outbox.\n")
+			return Fail(ExitError, "cancelled")
+		}
 	}
 
-	now := time.Now()
-	d.Status = store.DraftStatusSent
-	d.SentAt = &now
-	d.LastError = ""
-	if err := store.SaveDraft(d); err != nil {
-		// The mail is already gone; losing the record is bad but not a reason
-		// to imply it was not sent.
-		ctx.Printf("WARNING: message was sent but the record could not be updated: %v\n", err)
+	// The one way out: claims the draft first, so the server's sender and
+	// this cannot both send it, then keeps a copy under Sent.
+	sent, err := outbox.Deliver(d)
+	if err != nil {
+		if errors.Is(err, outbox.ErrNotQueued) {
+			return Fail(ExitUsage, "%v", err)
+		}
+		return Fail(ExitError, "%v", err)
 	}
 
 	if ctx.JSON {
-		return ctx.EmitJSON(map[string]any{"id": d.ID, "status": d.Status, "sentAt": d.SentAt})
+		return ctx.EmitJSON(map[string]any{"id": d.ID, "status": d.Status, "sentAt": d.SentAt,
+			"messageId": sent.MessageID, "recipients": sent.Recipients()})
 	}
-	ctx.Printf("Sent to %s\n", strings.Join(msg.Recipients(), ", "))
+	ctx.Printf("Sent to %s\n", strings.Join(sent.Recipients(), ", "))
 	return nil
 }
 

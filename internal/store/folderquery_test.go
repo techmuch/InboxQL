@@ -46,9 +46,12 @@ func TestFoldersAreExpressibleAsQueries(t *testing.T) {
 	openFolderFixture(t)
 
 	cases := []struct{ folder, equivalent string }{
+		{"trash", "label:trash"},
 		{"trash", "is:deleted"},
-		{"spam", "is:junk -is:deleted"},
-		{"starred", "is:starred -is:deleted"},
+		{"spam", "label:spam -label:trash"},
+		{"starred", "is:starred -label:trash -label:spam"},
+		{"inbox", "label:inbox -label:trash -label:spam"},
+		{"archive", "-label:inbox -label:trash -label:spam"},
 	}
 
 	for _, c := range cases {
@@ -86,14 +89,13 @@ func TestSentFolderFindsDisplayNameSenders(t *testing.T) {
 	}
 
 	// And it still agrees with the query-language expression for the same idea.
-	viaQuery := queryIDs(t, "(mailbox:*sent* OR from:me()) -is:deleted")
+	viaQuery := queryIDs(t, "label:sent -label:trash -label:spam")
 	if !sameSet(viaFolder, viaQuery) {
 		t.Errorf("folder:sent = %v but the query form = %v", viaFolder, viaQuery)
 	}
 }
 
-// The inbox is defined as the remainder, so a sender fix has to leave it a
-// partition rather than letting a message appear in two folders at once.
+// Mail you sent, recorded with no folder, is not mail that arrived.
 func TestFoldersStillPartitionAfterTheSenderFix(t *testing.T) {
 	openFolderFixture(t)
 

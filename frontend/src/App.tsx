@@ -25,6 +25,7 @@ import { LogSettings } from './views/LogSettings';
 import { useQueryStore, queryTerms, compose, asTerm, type QueryTerm } from './lib/filters';
 import { useDevReload } from './lib/devReload';
 import { requestSettingsSection, takeSettingsSection, SETTINGS_SECTION_EVENT } from './lib/settingsNav';
+import { settingAnchor, openSetting, SETTINGS, SECTION_LABEL, matchesSetting, matchesWords } from './lib/settingsIndex';
 import { SystemPanel } from './views/SystemPanel';
 import { fetchGravatar } from './lib/avatars';
 import { Docs } from './views/Docs';
@@ -374,7 +375,7 @@ const ViewerModeSetting = () => {
   ];
 
   return (
-    <section>
+    <section {...settingAnchor('viewer-tabs')}>
       <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Viewer Tabs</h3>
       <div className="grid grid-cols-2 gap-4">
         {options.map(o => (
@@ -427,7 +428,7 @@ const ThreadingSetting = () => {
   ];
 
   return (
-    <section>
+    <section {...settingAnchor('inbox-layout')}>
       <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Inbox Layout</h3>
       <div className="grid grid-cols-2 gap-4">
         {options.map(o => (
@@ -481,7 +482,7 @@ const ThreadExpansionSetting = () => {
   ];
 
   return (
-    <section>
+    <section {...settingAnchor('conversations-open')}>
       <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">
         Conversations
       </h3>
@@ -548,7 +549,7 @@ const AttachmentTargetSetting = () => {
   ];
 
   return (
-    <section>
+    <section {...settingAnchor('attachment-previews')}>
       <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">
         Attachment Previews
       </h3>
@@ -590,7 +591,13 @@ const SettingsView = () => {
   useEffect(() => {
     const go = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
-      if (id) { takeSettingsSection(); setActiveCategory(id); }
+      if (!id) return;
+      takeSettingsSection();
+      setActiveCategory(id);
+      // A jump from Find anything to a section the sidebar's filter is
+      // hiding clears the filter, so the sidebar shows where you are.
+      setSearchQuery(q => !q.trim() || matchesWords(SECTION_LABEL[id] ?? id, q)
+        || SETTINGS.some(st => st.section === id && matchesSetting(st, q)) ? q : '');
     };
     window.addEventListener(SETTINGS_SECTION_EVENT, go);
     return () => window.removeEventListener(SETTINGS_SECTION_EVENT, go);
@@ -814,8 +821,12 @@ const SettingsView = () => {
     { id: 'storage', label: 'Browser Storage', icon: HardDrive },
   ];
 
-  const filteredCategories = categories.filter(c => 
-    c.label.toLowerCase().includes(searchQuery.toLowerCase())
+  // The same index Find anything uses, so the two searches agree: a section
+  // stays listed when its name matches or anything in it does, and the
+  // settings that match are listed under it to jump to.
+  const matchingSettings = searchQuery.trim() ? SETTINGS.filter(st => matchesSetting(st, searchQuery)) : [];
+  const filteredCategories = categories.filter(c =>
+    matchesWords(c.label, searchQuery) || matchingSettings.some(st => st.section === c.id)
   );
 
   const formatSize = (bytes: number) => {
@@ -854,6 +865,21 @@ const SettingsView = () => {
               {cat.label}
             </button>
           ))}
+          {matchingSettings.length > 0 && (
+            <div className="mt-3 border-t border-border pt-2">
+              <p className="px-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Settings</p>
+              {matchingSettings.map(st => (
+                <button
+                  key={st.id}
+                  onClick={() => openSetting(st.id)}
+                  className="w-full px-4 py-1.5 text-left text-xs hover:bg-accent"
+                >
+                  <span className="text-foreground">{st.label}</span>
+                  <span className="block text-[10px] text-muted-foreground">{SECTION_LABEL[st.section]}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="p-4 border-t border-border mt-auto opacity-50">
           <div className="text-xs font-mono flex items-center justify-between text-muted-foreground">
@@ -866,7 +892,7 @@ const SettingsView = () => {
       <div className="flex-1 overflow-auto p-8">
         <div className="max-w-3xl mx-auto">
           {activeCategory === 'accounts' && (
-            <div className="animate-in fade-in duration-300">
+            <div className="animate-in fade-in duration-300" {...settingAnchor('mail-accounts')}>
               <div className="flex justify-between items-center mb-8">
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">Mail Accounts</h2>
@@ -1127,7 +1153,7 @@ const SettingsView = () => {
                       )}
                     </div>
                     <div className="flex-1 space-y-4">
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5" {...settingAnchor('display-name')}>
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Display Name</label>
                         <input 
                           type="text" 
@@ -1136,7 +1162,7 @@ const SettingsView = () => {
                           onChange={e => setUserProfile({...userProfile, displayName: e.target.value})}
                         />
                       </div>
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5" {...settingAnchor('profile-email')}>
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Email Address</label>
                         <input 
                           type="email" 
@@ -1148,7 +1174,7 @@ const SettingsView = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5" {...settingAnchor('profile-image')}>
                     <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Profile Image URL</label>
                     <input 
                       type="text" 
@@ -1194,7 +1220,7 @@ const SettingsView = () => {
                 here rather than on the server, so each machine you use can differ.
               </p>
               <div className="space-y-8">
-                <section>
+                <section {...settingAnchor('theme')}>
                   <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Color Theme</h3>
                   <div className="grid grid-cols-3 gap-4">
                     {[
@@ -1259,7 +1285,7 @@ const SettingsView = () => {
               </h2>
               <p className="text-muted-foreground text-sm mb-8">Manage the data stored in your local InboxQL database.</p>
               
-              <div className="border border-destructive/20 bg-destructive/5 p-6 space-y-4">
+              <div className="border border-destructive/20 bg-destructive/5 p-6 space-y-4" {...settingAnchor('erase-data')}>
                 <div className="flex items-start gap-4">
                   <AlertTriangle className="w-6 h-6 text-destructive shrink-0 mt-0.5" />
                   <div>
@@ -1469,18 +1495,9 @@ function App() {
     cmd('iql.new-message', 'New message', openCompose);
     cmd('iql.new-event', 'New event', newCalendarEvent);
     cmd('iql.new-task', 'New task', openNewTask);
-    const openSettingsAt = (section: string, anchor?: string) => {
+    const openSettingsAt = (section: string) => {
       requestSettingsSection(section);
       openToolCb('settings', 'Settings');
-      if (!anchor) return;
-      // The section mounts after the tab does; look for it for a moment.
-      let tries = 0;
-      const find = () => {
-        const el = document.getElementById(anchor);
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        else if (++tries < 20) setTimeout(find, 100);
-      };
-      setTimeout(find, 100);
     };
     cmd('iql.import-mail', 'Import mail…', () => openSettingsAt('import'));
     cmd('iql.import-calendar', 'Import calendar (.ics)…', importCalendarFile);
@@ -1510,14 +1527,14 @@ function App() {
     // Intelligence.
     cmd('iql.open-approvals', 'Waiting for approval', () => openToolCb('approvals', 'Waiting for approval'));
     cmd('iql.open-annotators', 'Labels & extractors', () => openToolCb('annotators', 'Labels & extractors'), 'Control+Shift+L');
-    cmd('iql.ai-assistants', 'AI assistants', () => openSettingsAt('system', 'system-ai-assistants'));
+    cmd('iql.ai-assistants', 'AI assistants', () => openSetting('ai-assistants'));
     cmd('iql.open-agents', 'AI Agents (Preview)', () => openToolCb('agents', 'AI Agents'), 'Control+Shift+A');
 
     // Help.
     cmd('iql.open-docs', 'Documentation', () => openDoc(), 'F1');
     cmd('iql.keyboard', 'Keyboard shortcuts', openKeys);
     cmd('iql.for-agents', 'For agents', () => openDoc('agents'));
-    cmd('iql.check-updates', 'Check for updates', () => openSettingsAt('system', 'system-updates'));
+    cmd('iql.check-updates', 'Check for updates', () => openSetting('updates'));
     // The version on its own answers little; the System section says which
     // version, where the mailbox is and how the server is running.
     cmd('nexus.about', 'About InboxQL', () => openSettingsAt('system'));

@@ -124,8 +124,9 @@ queued in the outbox, each with the command that sends it.
 
 ## Keyboard
 
-**Ctrl+K** (**⌘K** on a Mac) is **Find anything**: every command, every place
-and every saved query, matched as you type. It is the one to remember.
+**Ctrl+K** (**⌘K** on a Mac) is **Find anything**: every command, every place,
+every setting and every saved query, matched as you type. Choosing a setting
+opens Settings scrolled to it. It is the one to remember.
 
 The rest are short sequences — press **g**, let go, then the letter. Keys typed
 into a field are never taken, so none of these get in the way of writing.

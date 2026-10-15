@@ -10,6 +10,19 @@ the difference between a setting that follows you and one that does not:
 | the mailbox | moves with the mailbox folder; applies to every window | Mail Accounts, AI Configuration, Logging, Profile |
 | the machine, `~/.iql/settings.json` | this computer, whichever mailbox | System |
 
+## Finding a setting
+
+You don't need to know which section a setting is in. Press **Ctrl+K** (**⌘K**)
+anywhere and type what you are after — *dark mode*, *port*, *battery*,
+*gravatar* — and choose it: Settings opens at that section, scrolls to the
+setting and outlines it for a moment. The **Search settings** box at the top
+of the Settings tab does the same from inside it, listing the matching
+settings under the sections.
+
+Every word you type has to begin a word of the setting's name, its section or
+the other names it goes by, in any order, so *theme dark* and *dark theme*
+both find the theme.
+
 ## System
 
 The section to open when you want to know what is going on. **Help → About

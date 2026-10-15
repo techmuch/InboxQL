@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { settingAnchor } from '../lib/settingsIndex';
 import { openErrorLog } from '../lib/tabs';
 import { expectRestart } from '../lib/devReload';
 import { rememberSettingsSection } from '../lib/settingsNav';
@@ -330,7 +331,7 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
       </p>
 
       {/* Source */}
-      <section className="mb-8">
+      <section className="mb-8" {...settingAnchor('import-source')}>
         <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Source</h3>
         <div className="flex flex-wrap gap-3 mb-4">
           {sources.map(s => (
@@ -530,7 +531,7 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
       {job && <JobProgress job={job} onCancel={cancel} />}
 
       {history.length > 0 && (
-        <section className="mt-8">
+        <section className="mt-8" {...settingAnchor('recent-imports')}>
           <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Recent imports</h3>
           <div className="border border-border divide-y divide-border/50">
             {history.map(h => (

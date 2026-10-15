@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { settingAnchor } from '../lib/settingsIndex';
 import { CalendarDays, ExternalLink, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { syncAccount, type CalendarAccount } from './Calendar/api';
 import { openDoc } from '../lib/docsNav';
@@ -69,7 +70,7 @@ export const CalendarSettings = () => {
         <p className={`text-xs ${error ? 'text-destructive' : 'text-emerald-700 dark:text-emerald-400'}`}>{error ?? note}</p>
       )}
 
-      <section className="border border-border bg-card/40 p-4">
+      <section className="border border-border bg-card/40 p-4" {...settingAnchor('calendars-connected')}>
         <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <CalendarDays className="h-3.5 w-3.5" /> Connected
         </h3>
@@ -102,7 +103,7 @@ export const CalendarSettings = () => {
       <ConnectGoogle onConnected={load} />
       <ConnectExchange onConnected={load} />
 
-      <section className="border border-border bg-card/40 p-4 text-xs">
+      <section className="border border-border bg-card/40 p-4 text-xs" {...settingAnchor('calendar-invitations')}>
         <h3 className="mb-1 font-semibold uppercase tracking-wider text-muted-foreground">Invitations in mail</h3>
         <p className="mb-2 text-muted-foreground">
           Every message carrying an invitation is read into the Invitations calendar as it arrives — updates, cancellations
@@ -141,7 +142,7 @@ const ConnectGoogle = ({ onConnected }: { onConnected: () => void }) => {
 
   const field = 'w-full bg-background border border-border px-2 py-1.5 text-xs font-mono';
   return (
-    <section className="border border-border bg-card/40 p-4 text-xs">
+    <section className="border border-border bg-card/40 p-4 text-xs" {...settingAnchor('google-calendar')}>
       <div className="flex items-center justify-between">
         <h3 className="font-semibold uppercase tracking-wider text-muted-foreground">Google Calendar</h3>
         {!open && <button onClick={() => setOpen(true)} className="bg-primary px-3 py-1 font-semibold text-primary-foreground hover:opacity-90">Connect Google</button>}
@@ -194,7 +195,7 @@ const ConnectExchange = ({ onConnected }: { onConnected: () => void }) => {
 
   const field = 'w-full bg-background border border-border px-2 py-1.5 text-xs';
   return (
-    <section className="border border-border bg-card/40 p-4 text-xs">
+    <section className="border border-border bg-card/40 p-4 text-xs" {...settingAnchor('exchange-server')}>
       <div className="flex items-center justify-between">
         <h3 className="font-semibold uppercase tracking-wider text-muted-foreground">Exchange Server</h3>
         {!open && <button onClick={() => setOpen(true)} className="border border-border px-3 py-1 font-semibold hover:bg-accent">Connect Exchange</button>}

@@ -118,3 +118,13 @@ header .relative.inline-block > [role="menu"] {
   left: auto;
   right: 0;
 }
+
+/* Find anything → a setting: the one it landed on, briefly outlined. */
+@keyframes iql-setting-flash {
+  0%, 60% { box-shadow: 0 0 0 2px hsl(var(--primary)); }
+  100% { box-shadow: 0 0 0 2px transparent; }
+}
+.iql-setting-flash {
+  animation: iql-setting-flash 2s ease-out;
+  scroll-margin: 1rem;
+}

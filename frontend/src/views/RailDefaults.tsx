@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { settingAnchor } from '../lib/settingsIndex';
 import { Check, Loader2, Plus } from 'lucide-react';
 import { listRailDefaults, installRailDefaults, type RailDefault } from './Desk/api';
 
@@ -66,7 +67,7 @@ export const RailDefaults = () => {
   }
 
   return (
-    <section>
+    <section {...settingAnchor('rail-entries')}>
       <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-2">Rail entries</h3>
       <p className="max-w-2xl text-xs text-muted-foreground mb-4">
         Queries to add to the rail. Each says how much of this mailbox it matches, because an

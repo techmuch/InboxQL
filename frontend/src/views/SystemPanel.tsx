@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { settingAnchor } from '../lib/settingsIndex';
 import {
   AlertTriangle, BatteryCharging, Bot, Check, Copy, Cpu, Download, FolderOpen, Globe, Loader2,
   Power, RefreshCw, RotateCw, Server, Settings2,
@@ -90,6 +91,13 @@ const MODE_WORDS: Record<string, { title: string; about: string }> = {
   },
 };
 
+/** settings.json keys, as Find anything names them (lib/settingsIndex). */
+const MACHINE_SETTING: Record<string, string> = {
+  addr: 'listen-address',
+  models: 'models-folder',
+  hostname: 'site-name',
+};
+
 const FIELD_LABEL: Record<string, string> = {
   dataDir: 'Mailbox',
   addr: 'Listen address',
@@ -150,8 +158,8 @@ const Row = ({ label, children, mono }: { label: string; children: React.ReactNo
   </div>
 );
 
-const Card = ({ icon: Icon, title, children, aside }: { icon: any; title: string; children: React.ReactNode; aside?: React.ReactNode }) => (
-  <section className="border border-border bg-card/40 p-4">
+const Card = ({ icon: Icon, title, children, aside, setting }: { icon: any; title: string; children: React.ReactNode; aside?: React.ReactNode; setting?: string }) => (
+  <section className="border border-border bg-card/40 p-4" {...(setting ? settingAnchor(setting) : {})}>
     <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
       <Icon className="h-3.5 w-3.5" /> {title}
       {aside && <span className="ml-auto normal-case tracking-normal font-normal">{aside}</span>}
@@ -216,7 +224,7 @@ export const SystemPanel = () => {
       )}
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card icon={Server} title="This server" aside={<span className="font-mono">v{state.version.version}</span>}>
+        <Card icon={Server} title="This server" setting="this-server" aside={<span className="font-mono">v{state.version.version}</span>}>
           <Row label="Running as">
             <span className="font-medium">{mode.title}</span>
             <p className="text-[11px] text-muted-foreground mt-0.5">{mode.about}</p>
@@ -242,7 +250,7 @@ export const SystemPanel = () => {
           </div>
         </Card>
 
-        <Card icon={FolderOpen} title="Mailbox">
+        <Card icon={FolderOpen} title="Mailbox" setting="mailbox-location">
           <Row label="Folder" mono>
             <span className="inline-flex items-start gap-1">{state.mailbox.dataDir} <CopyButton text={state.mailbox.dataDir} /></span>
           </Row>
@@ -261,7 +269,7 @@ export const SystemPanel = () => {
           )}
         </Card>
 
-        <Card icon={Globe} title="Address">
+        <Card icon={Globe} title="Address" setting="server-address">
           <Row label="Open at"><a className="text-primary hover:underline" href={state.address.url}>{state.address.url}</a></Row>
           <Row label="Listening on" mono>{state.address.addr}</Row>
           <Row label="Sign-in">{state.address.auth.reason}</Row>
@@ -275,7 +283,7 @@ export const SystemPanel = () => {
           )}
         </Card>
 
-        <Card icon={Power} title="Login service">
+        <Card icon={Power} title="Login service" setting="login-service">
           {!state.service.supported ? (
             <p className="text-xs text-muted-foreground">{state.service.detail}</p>
           ) : (
@@ -299,7 +307,7 @@ export const SystemPanel = () => {
           )}
         </Card>
 
-        <Card icon={BatteryCharging} title="Power">
+        <Card icon={BatteryCharging} title="Power" setting="power">
           <Row label="Running on">{state.power.source === 'unknown' ? 'unknown (treated as mains)' : state.power.source}</Row>
           <Row label="Background work">
             {state.power.deferring
@@ -308,7 +316,7 @@ export const SystemPanel = () => {
           </Row>
         </Card>
 
-        <Card icon={Cpu} title="AI and models">
+        <Card icon={Cpu} title="AI and models" setting="ai-and-models">
           <Row label="Provider">
             {state.ai.provider
               ? <>{state.ai.provider}{state.ai.model && <span className="text-muted-foreground"> · {state.ai.model}</span>}</>
@@ -447,7 +455,7 @@ const UpdateSection = ({ state }: { state: SystemState }) => {
   };
 
   return (
-    <section id="system-updates" className="border border-border bg-card/40 p-4 scroll-mt-4">
+    <section {...settingAnchor('updates')} className="border border-border bg-card/40 p-4">
       <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
         <Download className="h-3.5 w-3.5" /> Updates
       </h3>
@@ -580,7 +588,7 @@ const MachineSettingsEditor = ({ onChanged, canRestart, onRestart, mode }: {
   };
 
   return (
-    <section className="border border-border bg-card/40 p-4">
+    <section {...settingAnchor('machine-settings')} className="border border-border bg-card/40 p-4">
       <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
         <Settings2 className="h-3.5 w-3.5" /> Machine settings {busy && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
       </h3>
@@ -653,7 +661,7 @@ const MachineSettingsEditor = ({ onChanged, canRestart, onRestart, mode }: {
             )}
           </div>
 
-          <label className="flex items-start gap-2.5 cursor-pointer">
+          <label className="flex items-start gap-2.5 cursor-pointer" {...settingAnchor('heavy-work-on-battery')}>
             <input
               type="checkbox" className="mt-0.5"
               checked={!!draft.heavyWorkOnBattery}
@@ -691,7 +699,7 @@ const TextSetting = ({ label, name, tag, help, value, saved, placeholder, onChan
 }) => {
   const dirty = value !== saved;
   return (
-    <div>
+    <div {...settingAnchor(MACHINE_SETTING[name] ?? name)}>
       <label htmlFor={`machine-${name}`} className="font-medium">{label}</label>{tag}
       <div className="mt-1 flex gap-2">
         <input
@@ -820,7 +828,7 @@ const SkillsSection = () => {
   if (!data) return null;
   const btn = 'border border-border px-3 py-1 hover:bg-accent disabled:opacity-50';
   return (
-    <section id="system-ai-assistants" className="border border-border bg-card/40 p-4 scroll-mt-4">
+    <section {...settingAnchor('ai-assistants')} className="border border-border bg-card/40 p-4">
       <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
         <Bot className="h-3.5 w-3.5" /> AI assistants
       </h3>

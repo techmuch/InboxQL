@@ -4,6 +4,7 @@ import { Copy, Loader2, X } from 'lucide-react';
 import { useAppUi } from '../lib/appUi';
 import { BINDINGS } from '../lib/keySequences';
 import { openQuery } from '../lib/tabs';
+import { matchesSetting, matchesWords, openSetting, SECTION_LABEL, SETTINGS, type SettingEntry } from '../lib/settingsIndex';
 
 /**
  * The dialogs any part of the application opens: New message, New task,
@@ -194,7 +195,7 @@ const NewTaskDialog = ({ onClose }: { onClose: () => void }) => {
 export const KeyboardHelp = ({ onClose }: { onClose: () => void }) => {
   const groups = ['Go', 'Create', 'Help'] as const;
   const extra = [
-    { keys: '⌘K / Ctrl+K', label: 'Find anything — commands, places, saved queries' },
+    { keys: '⌘K / Ctrl+K', label: 'Find anything — commands, places, settings, saved queries' },
     { keys: '↑ ↓, Enter', label: 'Move through a list and open a row' },
     { keys: 'F1', label: 'Documentation' },
     { keys: 'Ctrl+,', label: 'Settings' },
@@ -228,11 +229,20 @@ export const KeyboardHelp = ({ onClose }: { onClose: () => void }) => {
   );
 };
 
-interface PaletteItem { id: string; label: string; keybinding?: string; run: () => void }
+interface PaletteItem { id: string; label: string; keybinding?: string; run: () => void; setting?: SettingEntry }
 
 /**
- * Find anything: every command and every saved query, matched as you type.
+ * Find anything: every command, every setting and every saved query, matched
+ * as you type. Every word typed has to begin a word somewhere, in any order,
+ * so "dark theme" and "theme dark" both find the theme.
  */
+const matches = (c: PaletteItem, query: string) => {
+  // Settings only once something is typed: forty of them would bury the
+  // commands in the list you see on opening.
+  if (c.setting) return query.trim() !== '' && matchesSetting(c.setting, query);
+  return matchesWords(`${c.label} ${c.id.replace(/[.:-]/g, ' ')}`, query);
+};
+
 const FindAnything = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
   const [saved, setSaved] = useState<{ title: string; query: string }[]>([]);
   useEffect(() => {
@@ -246,14 +256,21 @@ const FindAnything = ({ open, onClose }: { open: boolean; onClose: () => void })
       .map(c => ({ id: c.id, label: c.label, keybinding: BINDINGS.find(b => b.command === c.id)?.keys ?? c.keybinding,
         run: () => commandRegistry.executeCommand(c.id) }));
     const queries: PaletteItem[] = saved.map(s => ({ id: `saved:${s.title}`, label: `Saved query: ${s.title}`, run: () => openQuery(s.query) }));
-    return [...cmds, ...queries];
+    const settings: PaletteItem[] = SETTINGS.map(st => ({
+      id: `setting:${st.id}`,
+      label: `Settings › ${SECTION_LABEL[st.section] ?? st.section} › ${st.label}`,
+      setting: st,
+      run: () => openSetting(st.id),
+    }));
+    return [...cmds, ...settings, ...queries];
   }, [open, saved]);
   return (
     <CommandPalette<PaletteItem>
       open={open}
       commands={items}
       onClose={onClose}
-      placeholder="Find anything — commands, places, saved queries"
+      placeholder="Find anything — commands, places, settings, saved queries"
+      filter={matches}
       onSelect={c => { onClose(); c.run(); }}
     />
   );

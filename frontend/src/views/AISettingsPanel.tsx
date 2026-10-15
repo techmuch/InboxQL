@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { settingAnchor } from '../lib/settingsIndex';
+import { takeSettingsTab, SETTINGS_TAB_EVENT } from '../lib/settingsNav';
 import { ArrowUpRight, Cpu, Package, SlidersHorizontal, Tag } from 'lucide-react';
 import { Models } from './ai/Models';
 import { Analysis } from './ai/Analysis';
@@ -15,8 +17,18 @@ import { Starters } from './ai/Starters';
  * choosing which of a pack to create is a setup decision made once, while
  * writing and running an annotator is work, and lives in Tools → Annotators.
  */
+type AiTab = 'models' | 'analysis' | 'starters';
+const asTab = (t: string | null): AiTab | null =>
+  t === 'models' || t === 'analysis' || t === 'starters' ? t : null;
+
 export const AISettingsPanel = () => {
-  const [tab, setTab] = useState<'models' | 'analysis' | 'starters'>('models');
+  const [tab, setTab] = useState<AiTab>(() => asTab(takeSettingsTab()) ?? 'models');
+  // Find anything can ask for a tab while this is already open.
+  useEffect(() => {
+    const go = (e: Event) => { const t = asTab((e as CustomEvent<string>).detail); if (t) { takeSettingsTab(); setTab(t); } };
+    window.addEventListener(SETTINGS_TAB_EVENT, go);
+    return () => window.removeEventListener(SETTINGS_TAB_EVENT, go);
+  }, []);
 
   return (
     <div className="animate-in fade-in space-y-6 duration-300">
@@ -45,7 +57,9 @@ export const AISettingsPanel = () => {
         </button>
       </nav>
 
-      {tab === 'models' ? <Models /> : tab === 'starters' ? <Starters /> : <Analysis />}
+      <div {...settingAnchor(`ai-${tab}`)}>
+        {tab === 'models' ? <Models /> : tab === 'starters' ? <Starters /> : <Analysis />}
+      </div>
     </div>
   );
 };

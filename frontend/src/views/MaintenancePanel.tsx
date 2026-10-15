@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { settingAnchor } from '../lib/settingsIndex';
 import {
   AlertTriangle, Check, Loader2, Play, RefreshCw, ShieldAlert, X, XCircle,
 } from 'lucide-react';
@@ -154,7 +155,7 @@ export const MaintenancePanel = () => {
   const offered = (c: Check) => Boolean(c.job) && c.status === 'ok';
 
   return (
-    <div className="animate-in fade-in duration-300">
+    <div className="animate-in fade-in duration-300" {...settingAnchor('health-checks')}>
       <div className="flex items-start justify-between mb-2">
         <h2 className="text-2xl font-bold text-foreground">Maintenance</h2>
         <button

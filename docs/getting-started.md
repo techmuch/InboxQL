@@ -62,7 +62,7 @@ The menus along the top:
 | **Help** | this documentation, keyboard shortcuts, the guide for agents, updates, About |
 
 Your name at the top right has your profile, Settings and Sign out. And
-**Ctrl+K** (**⌘K**) finds any of it by name.
+**Ctrl+K** (**⌘K**) finds any of it by name, every setting included.
 
 ## Your first hour
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { settingAnchor } from '../lib/settingsIndex';
 import { Loader2, ScrollText } from 'lucide-react';
 
 /**
@@ -97,7 +98,7 @@ export const LogSettings = () => {
       </p>
 
       <div className="space-y-5 max-w-2xl">
-        <label className="flex items-start gap-3">
+        <label className="flex items-start gap-3" {...settingAnchor('log-slow-queries')}>
           <input
             type="number" min={0} step={100} value={s.slowMs}
             onChange={e => save({ ...s, slowMs: Math.max(0, Number(e.target.value) || 0) })}
@@ -111,7 +112,7 @@ export const LogSettings = () => {
           </span>
         </label>
 
-        <div>
+        <div {...settingAnchor('log-categories')}>
           <p className="text-xs font-medium mb-2">Also record</p>
           <div className="space-y-1.5">
             {categories.map(c => (
@@ -136,7 +137,7 @@ export const LogSettings = () => {
           </p>
         </div>
 
-        <label className="flex items-start gap-3">
+        <label className="flex items-start gap-3" {...settingAnchor('log-lines')}>
           <input
             type="number" min={1000} step={1000} value={s.retain}
             onChange={e => save({ ...s, retain: Math.max(1, Number(e.target.value) || 1) })}
@@ -149,7 +150,7 @@ export const LogSettings = () => {
           </span>
         </label>
 
-        <label className="flex items-start gap-2.5 cursor-pointer">
+        <label className="flex items-start gap-2.5 cursor-pointer" {...settingAnchor('log-query-text')}>
           <input
             type="checkbox"
             className="mt-0.5"

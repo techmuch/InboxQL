@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { settingAnchor } from '../lib/settingsIndex';
 import {
   AlertTriangle, Check, Copy, HardDrive, RefreshCw,
   RotateCcw, Search, Trash2, ChevronDown, ChevronRight,
@@ -223,7 +224,7 @@ export const BrowserStoragePanel = () => {
   const sessionCount = items.filter(i => i.type === 'sessionStorage').length;
 
   return (
-    <div className="animate-in fade-in duration-300 space-y-6">
+    <div className="animate-in fade-in duration-300 space-y-6" {...settingAnchor('browser-storage')}>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">

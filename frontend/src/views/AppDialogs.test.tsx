@@ -58,4 +58,20 @@ describe('AppDialogs', () => {
     expect(screen.getByText('Go to Somewhere')).toBeTruthy();
     await waitFor(() => expect(screen.getByText('Saved query: Acme invoices')).toBeTruthy());
   });
+
+  it('finds a setting by any of its words and opens Settings at it', async () => {
+    vi.spyOn(window, 'fetch').mockImplementation(async () => json([]));
+    const sections: string[] = [];
+    const onSection = (e: Event) => sections.push((e as CustomEvent<string>).detail);
+    window.addEventListener('iql:settings-section', onSection);
+    useAppUi.getState().set('palette', true);
+    render(<AppDialogs />);
+    // Not listed until something is typed.
+    expect(screen.queryByText(/Settings › General › Color theme/)).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText(/Find anything/), { target: { value: 'dark mode' } });
+    const row = await screen.findByText('Settings › General › Color theme');
+    fireEvent.click(row);
+    expect(sections).toContain('general');
+    window.removeEventListener('iql:settings-section', onSection);
+  });
 });

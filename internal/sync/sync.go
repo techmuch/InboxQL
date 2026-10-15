@@ -140,14 +140,30 @@ func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailb
 		syncState = &store.MailboxSyncState{ID: mailboxID, AccountID: acc.ID, Name: mailboxName}
 	}
 
+	// The saved position is a UID, so it is compared with UIDNEXT and fetched
+	// with UID FETCH. It used to be compared with the message count and
+	// fetched as a sequence number, which only agree on a folder nothing has
+	// ever left: on a real Gmail inbox the first sync worked and every later
+	// one reported success having fetched nothing.
+	//
+	// A saved position at or past UIDNEXT means the server renumbered the
+	// folder (a new UIDVALIDITY), so start again from the beginning; messages
+	// already stored are skipped by Message-ID below.
+	if mbox.UidNext > 0 && syncState.LastUID >= mbox.UidNext {
+		log.Printf("Mailbox %s: saved UID %d is past the server's next UID %d; the folder was renumbered, starting again",
+			mailboxName, syncState.LastUID, mbox.UidNext)
+		syncState.LastUID = 0
+	}
 	fromUID := syncState.LastUID + 1
 	log.Printf("Mailbox %s has %d messages. Fetching from UID %d", mailboxName, mbox.Messages, fromUID)
-	if fromUID > mbox.Messages && mbox.Messages > 0 {
+	if mbox.Messages == 0 || (mbox.UidNext > 0 && fromUID >= mbox.UidNext) {
 		return 0, nil
 	}
 
+	// "n:*" always includes the highest UID, even when it is below n, so the
+	// loop below also skips anything at or before the saved position.
 	seqset := new(imap.SeqSet)
-	seqset.AddRange(fromUID, 0xffffffff)
+	seqset.AddRange(fromUID, 0)
 
 	items := []imap.FetchItem{
 		imap.FetchEnvelope, imap.FetchFlags, imap.FetchInternalDate,
@@ -157,11 +173,14 @@ func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailb
 	messages := make(chan *imap.Message, 10)
 	done := make(chan error, 1)
 	go func() {
-		done <- c.Fetch(seqset, items, messages)
+		done <- c.UidFetch(seqset, items, messages)
 	}()
 
 	count, attachments := 0, 0
 	for imapMsg := range messages {
+		if imapMsg.Uid < fromUID {
+			continue
+		}
 		if imapMsg.Uid > syncState.LastUID {
 			syncState.LastUID = imapMsg.Uid
 		}
@@ -175,8 +194,14 @@ func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailb
 		// Which folder this came from is only known here, not in the parser.
 		parsed.Mailbox = mailboxName
 
-		if exists, _ := store.MessageExistsByMessageID(parsed.MessageID); exists {
-			continue
+		// Per account, as the importer and the content-hash index are: a
+		// message between two of your own accounts belongs to both. A message
+		// with no Message-ID is left to that index, since a blank id would
+		// otherwise match every other message without one.
+		if parsed.MessageID != "" {
+			if exists, _ := store.MessageExistsByMessageIDForAccount(acc.ID, parsed.MessageID); exists {
+				continue
+			}
 		}
 
 		if err := store.SaveMessage(parsed); err != nil {

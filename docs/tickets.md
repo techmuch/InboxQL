@@ -38,7 +38,8 @@ that are really one can be merged — always by you, never guessed.
 
 ## The board
 
-**Tools → Ticket Board** (Ctrl+Shift+K). Columns are statuses: *todo*,
+**Go → Board** (**g b**). **File → New task** (**t**) adds a card of your own.
+Columns are statuses: *proposed*, *todo*,
 *doing*, *done*. Drag a card to move it. The filter above the board decides
 which tickets appear; the columns do not change with it, which is what keeps
 dragging unambiguous — dropping a card into *doing* sets its status to doing,

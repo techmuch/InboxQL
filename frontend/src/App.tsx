@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile } from 'nexus-shell';
+import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile, BUNDLED_THEMES } from 'nexus-shell';
 import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, AlertTriangle, HardDrive, Wrench } from 'lucide-react';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { AgentManager } from './AgentManager';
@@ -31,7 +31,11 @@ import { Docs } from './views/Docs';
 import { Calendar } from './views/Calendar';
 import { CalendarSettings } from './views/CalendarSettings';
 import { ReminderToasts } from './views/ReminderToasts';
-import { CALENDAR_TAB } from './lib/calendarNav';
+import { CALENDAR_TAB, newCalendarEvent } from './lib/calendarNav';
+import { AppDialogs } from './views/AppDialogs';
+import { Approvals } from './views/Approvals';
+import { openCompose, openKeys, openNewTask, openPalette } from './lib/appUi';
+import { installKeySequences } from './lib/keySequences';
 import { openDoc, DOCS_TAB } from './lib/docsNav';
 import { version as appVersion } from '../package.json';
 import 'nexus-shell/style.css';
@@ -1314,6 +1318,28 @@ componentRegistry.register('windows', Windows);
 
 componentRegistry.register('board', Board);
 componentRegistry.register('annotators', Annotators);
+componentRegistry.register('approvals', Approvals);
+
+/** File → Import calendar: pick an .ics file and add it to your own calendar. */
+function importCalendarFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.ics,text/calendar';
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const r = await fetch('/api/calendar/import?calendar=local', {
+      method: 'POST', headers: { 'Content-Type': 'text/calendar' }, body: await file.text(),
+    }).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    const note = r?.ok
+      ? `Imported ${d.imported} event${d.imported === 1 ? '' : 's'} from ${file.name} into your calendar.`
+      : `Could not import ${file.name}: ${d.error ?? 'the server refused it'}.`;
+    useWindowsStore.getState().note(note);
+    if (r?.ok) openTool(CALENDAR_TAB, 'Calendar');
+  };
+  input.click();
+}
 
 function App() {
   // Every menu advertises a shortcut — Control+Shift+D and the rest — but the
@@ -1321,6 +1347,8 @@ function App() {
   // menus were displaying keystrokes that did nothing.
   useKeyboardShortcuts();
   useDevReload();
+  // g d, c, ? and the rest, and Ctrl/⌘+K for Find anything.
+  useEffect(() => installKeySequences(id => commandRegistry.executeCommand(id), openPalette), []);
 
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -1408,126 +1436,142 @@ function App() {
   }, [openToolCb]);
 
   useEffect(() => {
-    commandRegistry.registerCommand({
-      id: 'iql.open-dashboard',
-      label: 'Analytics Dashboard',
-      keybinding: 'Control+Shift+D',
-      execute: () => openToolCb('dashboard', 'Analytics Dashboard'),
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.open-desk',
-      label: 'Desk',
-      keybinding: 'Control+Shift+M',
-      execute: () => openToolCb('desk', 'Desk'),
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.open-search',
-      label: 'Search',
-      keybinding: 'Control+Shift+F',
-      execute: () => {
-        openToolCb('desk', 'Desk');
-        setTimeout(() => {
-          const el = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Query"]');
-          el?.focus();
-          el?.select();
-        }, 50);
-      },
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.open-board',
-      label: 'Ticket Board',
-      // Not Control+Shift+B: Chrome binds that to the bookmarks bar and the
-      // key never reaches the page.
-      keybinding: 'Control+Shift+K',
-      execute: () => openToolCb('board', 'Board'),
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.open-contacts',
-      label: 'Contacts',
-      keybinding: 'Control+Shift+C',
-      // Desk on a contact query rather than a tab of its own: contacts are an
-      // entity in the query language, and giving them a separate surface would
-      // mean a second place that filters, sorts and pages them.
-      execute: () => { useQueryStore.getState().set('in:contacts'); openToolCb('desk', 'Desk'); },
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.open-annotators',
-      label: 'Annotators',
-      keybinding: 'Control+Shift+L',
-      execute: () => openToolCb('annotators', 'Annotators'),
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.open-agents',
-      label: 'AI Agents',
-      keybinding: 'Control+Shift+A',
-      execute: () => openToolCb('agents', 'AI Agents'),
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.open-windows',
-      label: 'View: Windows',
-      execute: () => openToolCb(WINDOWS_TAB, 'Windows'),
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.open-errors',
-      label: 'View: Log',
-      keybinding: 'Control+Shift+E',
-      execute: () => openErrorLog(),
-    });
+    // Labels are what Find anything shows, so they name the thing rather than
+    // the menu it sits in. The Ctrl+Shift bindings predate the menus' current
+    // shape; they keep working for the people who learned them, but the menus
+    // no longer advertise them — several are browser shortcuts on Windows and
+    // Linux. The g-sequences in lib/keySequences are what the menus teach.
+    const cmd = (id: string, label: string, execute: () => void, keybinding?: string) =>
+      commandRegistry.registerCommand({ id, label, execute, keybinding });
 
-    commandRegistry.registerCommand({
-      id: 'iql.open-settings',
-      label: 'Settings',
-      keybinding: 'Control+,',
-      execute: () => openToolCb('settings', 'Settings'),
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.logout',
-      label: 'Sign Out',
-      execute: handleLogout,
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.open-calendar',
-      label: 'Calendar',
-      keybinding: 'Control+Shift+Y',
-      execute: () => openToolCb(CALENDAR_TAB, 'Calendar'),
-    });
-    commandRegistry.registerCommand({
-      id: 'iql.open-docs',
-      label: 'Documentation',
-      keybinding: 'F1',
-      execute: () => openDoc(),
-    });
-    commandRegistry.registerCommand({
-      id: 'nexus.about',
-      label: 'About InboxQL',
-      // The version on its own answers little; the System section says which
-      // version, where the mailbox is and how the server is running.
-      execute: () => { requestSettingsSection('system'); openToolCb('settings', 'Settings'); },
-    });
+    // Places.
+    cmd('iql.open-desk', 'Go to Desk', () => openToolCb('desk', 'Desk'), 'Control+Shift+M');
+    cmd('iql.open-calendar', 'Go to Calendar', () => openToolCb(CALENDAR_TAB, 'Calendar'), 'Control+Shift+Y');
+    // Not Control+Shift+B: Chrome binds that to the bookmarks bar.
+    cmd('iql.open-board', 'Go to Board', () => openToolCb('board', 'Board'), 'Control+Shift+K');
+    // Desk on a contact query rather than a tab of its own: contacts are an
+    // entity in the query language, and a separate surface would be a second
+    // place that filters, sorts and pages them.
+    cmd('iql.open-contacts', 'Go to Contacts', () => { useQueryStore.getState().set('in:contacts'); openToolCb('desk', 'Desk'); }, 'Control+Shift+C');
+    cmd('iql.open-files', 'Go to Files', () => { useQueryStore.getState().set('in:attachments'); openToolCb('desk', 'Desk'); });
+    cmd('iql.open-dashboard', 'Go to Dashboard', () => openToolCb('dashboard', 'Analytics Dashboard'), 'Control+Shift+D');
+    cmd('iql.open-search', 'Search mail', () => {
+      openToolCb('desk', 'Desk');
+      setTimeout(() => {
+        const el = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Query"]');
+        el?.focus();
+        el?.select();
+      }, 50);
+    }, 'Control+Shift+F');
+    cmd('iql.find-anything', 'Find anything…', openPalette);
 
+    // Creating.
+    cmd('iql.new-message', 'New message', openCompose);
+    cmd('iql.new-event', 'New event', newCalendarEvent);
+    cmd('iql.new-task', 'New task', openNewTask);
+    const openSettingsAt = (section: string, anchor?: string) => {
+      requestSettingsSection(section);
+      openToolCb('settings', 'Settings');
+      if (!anchor) return;
+      // The section mounts after the tab does; look for it for a moment.
+      let tries = 0;
+      const find = () => {
+        const el = document.getElementById(anchor);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        else if (++tries < 20) setTimeout(find, 100);
+      };
+      setTimeout(find, 100);
+    };
+    cmd('iql.import-mail', 'Import mail…', () => openSettingsAt('import'));
+    cmd('iql.import-calendar', 'Import calendar (.ics)…', importCalendarFile);
+    cmd('iql.export-calendar', 'Export calendar (.ics)', () => {
+      const a = document.createElement('a');
+      a.href = '/api/calendar/export?calendar=local';
+      a.download = 'inboxql-calendar.ics';
+      a.click();
+    });
+    cmd('iql.open-settings', 'Settings', () => openToolCb('settings', 'Settings'), 'Control+,');
+    cmd('iql.open-profile', 'Profile', () => openSettingsAt('profile'));
+    cmd('iql.logout', 'Sign out', handleLogout);
+
+    // View.
+    // Themes are the shell's own commands (theme.<id>), one per bundled theme.
+    cmd('iql.threading-threaded', 'Conversations: grouped', () => useThreadingStore.getState().setThreading('threaded'));
+    cmd('iql.threading-flat', 'Conversations: one row per message', () => useThreadingStore.getState().setThreading('flat'));
+    cmd('iql.viewer-reuse', 'Viewer tabs: reuse one', () => useViewerStore.getState().setMode('reuse'));
+    cmd('iql.viewer-split', 'Viewer tabs: one per kind', () => useViewerStore.getState().setMode('split'));
+    cmd('iql.reset-layout', 'Reset layout', () => {
+      try { localStorage.removeItem('nexus-shell-layout'); } catch { /* storage unavailable */ }
+      window.location.reload();
+    });
+    cmd('iql.open-windows', 'Windows', () => openToolCb(WINDOWS_TAB, 'Windows'));
+    cmd('iql.open-errors', 'Log', () => openErrorLog(), 'Control+Shift+E');
+
+    // Intelligence.
+    cmd('iql.open-approvals', 'Waiting for approval', () => openToolCb('approvals', 'Waiting for approval'));
+    cmd('iql.open-annotators', 'Labels & extractors', () => openToolCb('annotators', 'Labels & extractors'), 'Control+Shift+L');
+    cmd('iql.ai-assistants', 'AI assistants', () => openSettingsAt('system', 'system-ai-assistants'));
+    cmd('iql.open-agents', 'AI Agents (Preview)', () => openToolCb('agents', 'AI Agents'), 'Control+Shift+A');
+
+    // Help.
+    cmd('iql.open-docs', 'Documentation', () => openDoc(), 'F1');
+    cmd('iql.keyboard', 'Keyboard shortcuts', openKeys);
+    cmd('iql.for-agents', 'For agents', () => openDoc('agents'));
+    cmd('iql.check-updates', 'Check for updates', () => openSettingsAt('system', 'system-updates'));
+    // The version on its own answers little; the System section says which
+    // version, where the mailbox is and how the server is running.
+    cmd('nexus.about', 'About InboxQL', () => openSettingsAt('system'));
+
+    const item = (id: string, label: string, keybinding?: string) => ({ id, label, commandId: id, keybinding });
+    // No dividers: the shell's menu bar has no separator and draws "---" as
+    // an item. Grouping is by order instead.
     menuRegistry.setMenus({
-      'Tools': [
-        { id: 'tools.dashboard', label: 'Analytics Dashboard', commandId: 'iql.open-dashboard' },
-        { id: 'tools.desk', label: 'Desk', commandId: 'iql.open-desk' },
-        { id: 'tools.calendar', label: 'Calendar', commandId: 'iql.open-calendar', keybinding: 'Control+Shift+Y' },
-        { id: 'tools.board', label: 'Ticket Board', commandId: 'iql.open-board' },
-        { id: 'tools.contacts', label: 'Contacts', commandId: 'iql.open-contacts' },
-        { id: 'tools.annotators', label: 'Annotators', commandId: 'iql.open-annotators' },
-        { id: 'tools.agents', label: 'AI Agents', commandId: 'iql.open-agents' },
+      'File': [
+        item('iql.new-message', 'New message', 'C'),
+        item('iql.new-event', 'New event'),
+        item('iql.new-task', 'New task', 'T'),
+        item('iql.import-mail', 'Import mail…'),
+        item('iql.import-calendar', 'Import calendar (.ics)…'),
+        item('iql.export-calendar', 'Export calendar (.ics)'),
+        item('iql.open-settings', 'Settings…', 'Ctrl+,'),
+      ],
+      'Go': [
+        item('iql.open-desk', 'Desk', 'G D'),
+        item('iql.open-calendar', 'Calendar', 'G C'),
+        item('iql.open-board', 'Board', 'G B'),
+        item('iql.open-contacts', 'Contacts', 'G P'),
+        item('iql.open-files', 'Files', 'G F'),
+        item('iql.open-dashboard', 'Dashboard'),
+        item('iql.find-anything', 'Find anything…', 'Ctrl+K'),
       ],
       'View': [
-        { id: 'view.toggle-chat', label: 'Toggle Chat', commandId: 'view.toggleChat', keybinding: 'Control+I' },
+        { id: 'view.toggle-chat', label: 'Chat', commandId: 'view.toggleChat', keybinding: 'Ctrl+I' },
+        { id: 'view.threading', label: 'Conversations', submenu: [
+          item('iql.threading-threaded', 'Grouped'),
+          item('iql.threading-flat', 'One row per message'),
+        ] },
+        { id: 'view.viewer', label: 'Viewer tabs', submenu: [
+          item('iql.viewer-reuse', 'Reuse one'),
+          item('iql.viewer-split', 'One per kind'),
+        ] },
+        { id: 'view.theme', label: 'Theme', submenu: BUNDLED_THEMES.map(t => ({ id: `view.theme.${t.id}`, label: t.label, commandId: `theme.${t.id}` })) },
+        item('iql.reset-layout', 'Reset layout'),
+        item('iql.open-windows', 'Windows'),
+        item('iql.open-errors', 'Log'),
+      ],
+      'Intelligence': [
+        item('iql.open-approvals', 'Waiting for approval', 'G A'),
+        item('iql.open-annotators', 'Labels & extractors'),
+        item('iql.ai-assistants', 'AI assistants'),
+        item('iql.open-agents', 'AI Agents (Preview)'),
       ],
       'Help': [
-        { id: 'help.docs', label: 'Documentation', commandId: 'iql.open-docs', keybinding: 'F1' },
-        { id: 'help.docs-divider', label: '---' },
-        { id: 'help.settings', label: 'Settings', commandId: 'iql.open-settings' },
-        { id: 'help.windows', label: 'Windows', commandId: 'iql.open-windows' },
-        { id: 'help.errors', label: 'Log', commandId: 'iql.open-errors' },
-        { id: 'help.divider', label: '---' },
-        { id: 'help.about', label: 'About InboxQL', commandId: 'nexus.about' },
-        { id: 'help.logout', label: 'Sign Out', commandId: 'iql.logout' },
-      ]
+        item('iql.open-docs', 'Documentation', 'F1'),
+        item('iql.keyboard', 'Keyboard shortcuts', '?'),
+        item('iql.for-agents', 'For agents'),
+        item('iql.check-updates', 'Check for updates'),
+        item('nexus.about', 'About InboxQL'),
+      ],
     });
 
     // Branding and the activity bar used to be forced here by polling the DOM
@@ -1575,6 +1619,7 @@ function App() {
           whole window rather than to any one panel. */}
       <WindowNote />
       <ReminderToasts />
+      <AppDialogs />
       <ShellLayout
         // `app-lockup` keeps the QL in InboxQL; see App.css for why a Tailwind
         // class could not do it.
@@ -1594,7 +1639,11 @@ function App() {
               email: user.email,
               avatarUrl: user.profileImageUrl,
             }}
-            onClick={() => commandRegistry.executeCommand('iql.open-settings')}
+            actions={[
+              { id: 'profile', label: 'Profile', onSelect: () => commandRegistry.executeCommand('iql.open-profile') },
+              { id: 'settings', label: 'Settings', onSelect: () => commandRegistry.executeCommand('iql.open-settings') },
+              { id: 'logout', label: 'Sign out', onSelect: () => commandRegistry.executeCommand('iql.logout'), destructive: true, divider: true },
+            ]}
           />
         }
       />

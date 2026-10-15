@@ -88,6 +88,10 @@ func Router() (http.Handler, error) {
 	registerCalendarRoutes(calendarMux)
 	mux.Handle("/api/calendar/", auth.Middleware(calendarMux))
 
+	draftMux := http.NewServeMux()
+	registerDraftRoutes(draftMux)
+	mux.Handle("/api/drafts", auth.Middleware(draftMux))
+
 	avatarMux := http.NewServeMux()
 	registerAvatarRoutes(avatarMux)
 	mux.Handle("/api/avatars", auth.Middleware(avatarMux))

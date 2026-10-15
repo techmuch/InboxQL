@@ -447,7 +447,7 @@ const UpdateSection = ({ state }: { state: SystemState }) => {
   };
 
   return (
-    <section className="border border-border bg-card/40 p-4">
+    <section id="system-updates" className="border border-border bg-card/40 p-4 scroll-mt-4">
       <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
         <Download className="h-3.5 w-3.5" /> Updates
       </h3>
@@ -820,7 +820,7 @@ const SkillsSection = () => {
   if (!data) return null;
   const btn = 'border border-border px-3 py-1 hover:bg-accent disabled:opacity-50';
   return (
-    <section className="border border-border bg-card/40 p-4">
+    <section id="system-ai-assistants" className="border border-border bg-card/40 p-4 scroll-mt-4">
       <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
         <Bot className="h-3.5 w-3.5" /> AI assistants
       </h3>

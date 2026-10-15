@@ -109,3 +109,12 @@ button, input, textarea, select {
   position: relative;
   z-index: 2;
 }
+
+/* The shell left-aligns the user menu's dropdown whenever the name is shown,
+   which at the right edge of the bar puts most of it off screen. It ignores
+   a className, so this selects its markup: the profile's wrapper is the only
+   inline-block in the header holding a menu. */
+header .relative.inline-block > [role="menu"] {
+  left: auto;
+  right: 0;
+}

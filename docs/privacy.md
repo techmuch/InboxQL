@@ -106,7 +106,7 @@ terminal to read the message and type `yes`. Drafts an agent wrote are marked
 as such when you review them. [For agents](agents.md) is the full contract.
 
 When an agent moves one of your windows to show you something, the window says
-what it was told and why, and **Help → Windows** keeps the record.
+what it was told and why, and **View → Windows** keeps the record.
 
 ## The log
 

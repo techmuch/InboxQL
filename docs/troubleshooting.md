@@ -8,7 +8,7 @@ iql doctor    # checks the mailbox, the key, the accounts and the models
 ```
 
 In the application, **Settings → System** shows the same things for the
-running server, and **Help → Log** shows what it has been doing — filter it
+running server, and **View → Log** shows what it has been doing — filter it
 with `in:logs level>warn after:1d`.
 
 ## The page does not load

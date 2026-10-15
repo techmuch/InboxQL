@@ -150,6 +150,17 @@ export const Calendar = () => {
     setEditor({ calendarId: defaultCalendar.id, start, end, allDay });
   };
 
+  // File → New event, from anywhere. The request stays pending until the
+  // calendar has somewhere to put the event, then is cleared.
+  const newRequest = useCalendarNav(s => s.newRequest);
+  useEffect(() => {
+    if (!newRequest || !defaultCalendar) return;
+    useCalendarNav.setState({ newRequest: 0 });
+    const s = new Date(Math.ceil(Date.now() / 3600_000) * 3600_000);
+    onCreate(s, new Date(s.getTime() + 3600_000), false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newRequest, defaultCalendar]);
+
   const onSave = async (calendarId: string, input: EventInput, scope: string) => {
     if (editor?.event) {
       const ev = editor.event;

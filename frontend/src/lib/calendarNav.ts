@@ -16,6 +16,8 @@ interface CalendarNav {
   setView: (v: CalendarView) => void;
   setAnchor: (d: Date) => void;
   select: (id: string | null) => void;
+  /** Bumped to ask the calendar to open a new event's editor. */
+  newRequest: number;
 }
 
 const readView = (): CalendarView => {
@@ -30,6 +32,7 @@ export const useCalendarNav = create<CalendarNav>((set) => ({
   view: readView(),
   anchor: new Date().toISOString(),
   selected: null,
+  newRequest: 0,
   setView: (view) => {
     try { localStorage.setItem('iql:calendar-view', view); } catch { /* best effort */ }
     set({ view });
@@ -43,5 +46,11 @@ export function openCalendar(at?: { date?: string; eventId?: string }) {
   const nav = useCalendarNav.getState();
   if (at?.date) nav.setAnchor(new Date(at.date));
   if (at?.eventId) nav.select(at.eventId);
+  openTool(CALENDAR_TAB, 'Calendar');
+}
+
+/** File → New event: open the calendar with a new event's editor. */
+export function newCalendarEvent() {
+  useCalendarNav.setState(s => ({ newRequest: s.newRequest + 1 }));
   openTool(CALENDAR_TAB, 'Calendar');
 }

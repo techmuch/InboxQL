@@ -1,6 +1,6 @@
 # Settings and the System section
 
-**Settings** (Ctrl+, or Help → Settings) is a tab with a section for each kind
+**Settings** (Ctrl+, **File → Settings**, or your name at the top right) is a tab with a section for each kind
 of setting. They are stored in three different places, and knowing which is
 the difference between a setting that follows you and one that does not:
 
@@ -163,7 +163,7 @@ mailbox without your consent per annotator. See [Labels](labels.md).
 
 ## Logging
 
-What InboxQL writes in its own log, which you can read under **Help → Log** or
+What InboxQL writes in its own log, which you can read under **View → Log** or
 query with `in:logs`: how slow a query must be to be recorded as slow, which
 noisy categories to include, how many lines to keep, and whether the text of
 your queries is written down. How *much* is logged — the level — is set in the

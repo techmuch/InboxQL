@@ -6,7 +6,7 @@ A label is `label:importance`. They all sit in the same rail, and clicking any
 of them puts its query in the bar at the top — so the Desk teaches the query
 language simply by being used.
 
-Open it from **Tools → Desk**, or **Ctrl+Shift+M**.
+Open it from **Go → Desk**, or press **g** then **d**.
 
 ## The rail
 
@@ -75,7 +75,7 @@ chip (or press the menu key on it) to say whether the label is right; see
 
 ## Conversations
 
-Settings → General → **Inbox Layout** chooses between one row per message,
+Settings → General → **Inbox Layout** (or **View → Conversations**) chooses between one row per message,
 newest first, and **one row per conversation**: messages grouped into the
 conversation they belong to, together with any tickets and drafts it produced.
 
@@ -93,7 +93,7 @@ the safer mistake.
 ## Viewer tabs
 
 Messages, contacts and files open in viewer tabs. Settings → General →
-**Viewer Tabs** chooses between **one shared tab**, where opening anything
+**Viewer Tabs**, or **View → Viewer tabs**, chooses between **one shared tab**, where opening anything
 replaces what was there, and **a tab for each kind**, so opening a file leaves
 the message you were reading where it was.
 
@@ -101,21 +101,56 @@ the message you were reading where it was.
 message**, below its attachment chips; **in the File tab**, on its own, with
 every message that carried it; or **both at once**.
 
+## Writing mail
+
+**Compose**, **File → New message** or **c** opens a new message. **Save
+draft** keeps it under Drafts; **Queue to send** puts it in the outbox. Mail
+leaves InboxQL from the outbox, so a queued message is sent when you approve
+it in a terminal:
+
+```sh
+iql outbox approve <draft-id>
+```
+
+The dialog shows the exact command, and **Intelligence → Waiting for
+approval** lists everything queued.
+
+## Waiting for approval
+
+**Intelligence → Waiting for approval** (**g a**) gathers everything waiting
+on you in one place: cards an extractor proposed (**Accept** or **Reject**),
+calendar changes an agent proposed (**Approve** or **Reject**), and mail
+queued in the outbox, each with the command that sends it.
+
 ## Keyboard
+
+**Ctrl+K** (**⌘K** on a Mac) is **Find anything**: every command, every place
+and every saved query, matched as you type. It is the one to remember.
+
+The rest are short sequences — press **g**, let go, then the letter. Keys typed
+into a field are never taken, so none of these get in the way of writing.
 
 | Keys | |
 |---|---|
+| g d | the Desk |
+| g c | the Calendar |
+| g b | the Board |
+| g p | Contacts |
+| g f | Files |
+| g a | Waiting for approval |
+| g s | Settings |
+| c | new message |
+| t | new task |
+| ? | this list, in the app (**Help → Keyboard shortcuts**) |
 | ↑ ↓ | move through a list |
 | Enter | open the row |
-| Ctrl+Shift+M | the Desk |
-| Ctrl+Shift+F | search |
-| Ctrl+Shift+C | Contacts |
-| Ctrl+Shift+K | the Ticket Board |
-| Ctrl+Shift+L | Annotators |
-| Ctrl+Shift+D | the Analytics Dashboard |
-| Ctrl+Shift+E | the Log |
+| F1 | the documentation |
 | Ctrl+, | Settings |
 | Ctrl+I | the chat panel |
+
+The older **Ctrl+Shift** shortcuts — M for the Desk, F for search and the rest
+— still work, but several of them are browser shortcuts on Windows and Linux,
+so they are no longer what the menus show.
 
 In the query bar: **Enter** runs the query, **Tab** takes a suggestion, **↑ ↓**
 move through suggestions, **Escape** closes them.
@@ -124,6 +159,6 @@ move through suggestions, **Escape** closes them.
 
 The Desk, Contacts, the Board, Settings and the rest are tabs in one window,
 and you can split and rearrange them. The layout is remembered per browser.
-**Help → Windows** lists every window you have open on this mailbox and what
+**View → Windows** lists every window you have open on this mailbox and what
 each is showing — useful when an agent has pointed one of them at something,
 because what it did is recorded there.

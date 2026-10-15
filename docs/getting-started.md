@@ -49,6 +49,21 @@ Then open **http://localhost:8420** — or type `iql open`, which opens whatever
 address the running server is at. [Installing, updating and
 removing](installing.md) has the details, including what each file is for.
 
+## Finding your way around
+
+The menus along the top:
+
+| Menu | What is in it |
+|---|---|
+| **File** | New message, New event, New task; importing mail and calendars; Settings |
+| **Go** | the places: Desk, Calendar, Board, Contacts, Files, the Dashboard |
+| **View** | the chat panel, how conversations and viewer tabs behave, the theme, Windows and the Log |
+| **Intelligence** | Waiting for approval, Labels & extractors, the AI assistants on this computer |
+| **Help** | this documentation, keyboard shortcuts, the guide for agents, updates, About |
+
+Your name at the top right has your profile, Settings and Sign out. And
+**Ctrl+K** (**⌘K**) finds any of it by name.
+
 ## Your first hour
 
 ### 1. Add an account
@@ -89,7 +104,7 @@ That is how much mail you sent in each of the last four weeks. Replace
 
 ### 4. Let it sort your mail
 
-**Tools → Annotators** has a starter pack of labels and extractors —
+**Intelligence → Labels & extractors** has a starter pack of labels and extractors —
 `importance`, `loops` (conversations waiting for a reply), `purchased`,
 `receipts` and a few others. They run on this machine, with models InboxQL
 downloads once. Switch on the ones you want and run them over the last few

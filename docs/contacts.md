@@ -5,7 +5,7 @@ add one: every message makes a contact of every address it touches. So the
 contact list is not an address book you maintain; it is a view of your
 mailbox, arranged by who is in it.
 
-Open **Tools → Contacts** (Ctrl+Shift+C), or click a name on any message.
+Open **Go → Contacts** (**g p**), or click a name on any message.
 
 ## What a contact card shows
 

@@ -5,6 +5,7 @@ import {
   Search, Send, Settings2, Star, Tag, Ticket, Trash2, Users, X,
 } from 'lucide-react';
 import type { SavedQuery } from './api';
+import { openCompose } from '../../lib/appUi';
 import type { Annotator } from '../ai/api';
 
 /**
@@ -89,7 +90,7 @@ export const Rail = ({
   return (
     <div className="w-64 flex flex-col pt-4 border-r border-border/50 bg-card/20">
       <div className="px-4 mb-6">
-        <button className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 shadow-sm hover:shadow-md transition-all font-semibold text-[13px]">
+        <button onClick={openCompose} className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 shadow-sm hover:shadow-md transition-all font-semibold text-[13px]">
           <Plus className="w-4 h-4" /> Compose
         </button>
       </div>

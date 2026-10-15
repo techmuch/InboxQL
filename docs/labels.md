@@ -13,7 +13,7 @@ The answers become query terms: `label:purchased`, `label:importance`,
 the point — once a question has been answered, it is as cheap to ask as
 `from:`.
 
-Open **Tools → Annotators** (Ctrl+Shift+L) to see them.
+Open **Intelligence → Labels & extractors** to see them.
 
 ## Somewhere to start
 

@@ -6,7 +6,9 @@ reads those into an **Invitations** calendar on its own, with no account to
 connect. Connect Google Calendar or an Exchange Server, and their calendars
 appear beside it.
 
-Open it from **Tools → Calendar** (Ctrl+Shift+Y).
+Open it from **Go → Calendar** (**g c**). **File → New event** starts one from
+anywhere, and **File → Import calendar** and **Export calendar** move `.ics`
+files in and out of your own calendar.
 
 ## The views
 

@@ -1,0 +1,61 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { commandRegistry } from 'nexus-shell';
+import { AppDialogs } from './AppDialogs';
+import { useAppUi } from '../lib/appUi';
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
+describe('AppDialogs', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    for (const k of ['compose', 'task', 'palette', 'keys'] as const) useAppUi.getState().set(k, false);
+  });
+
+  it('queues a new message and shows the command that sends it', async () => {
+    const posted: any[] = [];
+    vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/accounts') return json([{ id: 'acc', name: 'Work', email: 'me@x.com' }]);
+      if (url === '/api/drafts') {
+        posted.push(JSON.parse(String(init?.body)));
+        return json({ draft: { id: 'd1' }, note: 'Queued in the outbox. Nothing is sent until you run: iql outbox approve d1' }, 201);
+      }
+      return json({});
+    });
+    useAppUi.getState().set('compose', true);
+    render(<AppDialogs />);
+    await waitFor(() => expect(screen.getByLabelText('To')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: 'ada@example.com' } });
+    fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Hello' } });
+    fireEvent.click(screen.getByText('Queue to send'));
+    await waitFor(() => expect(screen.getByText(/iql outbox approve d1/)).toBeTruthy());
+    expect(posted[0]).toMatchObject({ accountId: 'acc', to: ['ada@example.com'], subject: 'Hello', queue: true });
+  });
+
+  it('adds a task to the board as To do', async () => {
+    const posted: any[] = [];
+    vi.spyOn(window, 'fetch').mockImplementation(async (_input, init) => {
+      posted.push(JSON.parse(String(init?.body)));
+      return json({ id: 't1' }, 201);
+    });
+    const run = vi.spyOn(commandRegistry, 'executeCommand').mockImplementation(() => {});
+    useAppUi.getState().set('task', true);
+    render(<AppDialogs />);
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Send the contract' } });
+    fireEvent.click(screen.getByText('Add to board'));
+    await waitFor(() => expect(run).toHaveBeenCalledWith('iql.open-board'));
+    expect(posted[0]).toMatchObject({ title: 'Send the contract', status: 'todo', origin: 'human' });
+    expect(useAppUi.getState().task).toBe(false);
+  });
+
+  it('offers commands and saved queries in Find anything', async () => {
+    commandRegistry.registerCommand({ id: 'test.go-somewhere', label: 'Go to Somewhere', execute: () => {} });
+    vi.spyOn(window, 'fetch').mockImplementation(async () => json([{ title: 'Acme invoices', query: 'from:*@acme.com' }]));
+    useAppUi.getState().set('palette', true);
+    render(<AppDialogs />);
+    expect(screen.getByText('Go to Somewhere')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Saved query: Acme invoices')).toBeTruthy());
+  });
+});

@@ -31,12 +31,19 @@ type Flow struct {
 	ClientSecret string
 	Redirect     string
 	Created      time.Time
+	// Mail asks for Gmail over IMAP and SMTP; Calendar for the calendar. A
+	// calendar sign-in has only Calendar; a mail one may have both, so one
+	// consent connects both.
+	Mail, Calendar bool
+	// AccountID is the mail account the sign-in is for, when it replaces an
+	// existing one's password.
+	AccountID string
 }
 
 // NewFlow starts a sign-in.
 func NewFlow(clientID, clientSecret, redirect string) *Flow {
 	return &Flow{State: random(24), Verifier: random(48), ClientID: strings.TrimSpace(clientID),
-		ClientSecret: strings.TrimSpace(clientSecret), Redirect: redirect, Created: time.Now()}
+		ClientSecret: strings.TrimSpace(clientSecret), Redirect: redirect, Created: time.Now(), Calendar: true}
 }
 
 func random(n int) string {
@@ -50,7 +57,7 @@ func (f *Flow) URL() string {
 	sum := sha256.Sum256([]byte(f.Verifier))
 	q := url.Values{
 		"client_id": {f.ClientID}, "redirect_uri": {f.Redirect}, "response_type": {"code"},
-		"scope": {Scopes}, "state": {f.State}, "code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])},
+		"scope": {f.scopes()}, "state": {f.State}, "code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])},
 		"code_challenge_method": {"S256"},
 		// A refresh token, and asked for every time: Google only returns one
 		// on first consent otherwise, and an account reconnected without one
@@ -58,6 +65,17 @@ func (f *Flow) URL() string {
 		"access_type": {"offline"}, "prompt": {"consent"},
 	}
 	return AuthURL + "?" + q.Encode()
+}
+
+func (f *Flow) scopes() string {
+	if !f.Mail {
+		return Scopes
+	}
+	s := MailScope + " openid email"
+	if f.Calendar {
+		s = MailScope + " " + Scopes
+	}
+	return s
 }
 
 // Finish exchanges the code and saves the account, returning it.

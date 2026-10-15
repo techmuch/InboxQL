@@ -68,11 +68,13 @@ Your name at the top right has your profile, Settings and Sign out. And
 
 ### 1. Add an account
 
-Open **Settings → Mail Accounts** and choose **Add Account**. You need the
-IMAP server, your username and a password — for Gmail and iCloud that is an
-*app password*, not the one you sign in with. **Test Connection** says
-exactly what went wrong if something does: a rejected password, a server
-name that does not exist, a network that cannot reach it.
+Open **Settings → Mail Accounts** and choose **Add account**. Type your
+address: InboxQL works out the servers. Then the password — for iCloud, Yahoo
+and most providers with two-step sign-in an *app password*, not the one you
+sign in with; Gmail can use **Sign in with Google** instead. InboxQL signs in
+before saving and says exactly what went wrong if something does: a rejected
+password, a server name that does not exist, a server that did not answer.
+[Accounts](accounts-and-import.md#adding-an-account) has the details.
 
 Saving the account starts the first sync. A large mailbox takes a while; the
 status bar at the bottom of the window shows how far it has got, and you can

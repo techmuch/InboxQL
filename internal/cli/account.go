@@ -1,12 +1,16 @@
 package cli
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"flag"
-	"strings"
 
 	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/autoconfig"
 	"github.com/user/inboxql/internal/blobstore"
 	"github.com/user/inboxql/internal/cli/ui"
+	"github.com/user/inboxql/internal/mailer"
 	"github.com/user/inboxql/internal/store"
 	"github.com/user/inboxql/internal/sync"
 )
@@ -15,28 +19,37 @@ func init() {
 	register(&Command{
 		Name:    "account",
 		Summary: "manage email accounts",
-		Usage: `iql account <add|list|remove|verify|sync> [flags]
+		Usage: `iql account <add|list|discover|verify|sync|disconnect|remove> [flags]
 
-  add      connect a mailbox
-  list     show configured accounts
-  remove   delete an account and its messages
-  verify   test the IMAP connection and credentials
-  sync     fetch new mail now
+  add          connect a mailbox
+  list         show configured accounts
+  discover     work out an address's mail servers
+  verify       sign in to the incoming and outgoing servers
+  sync         fetch new mail now
+  disconnect   forget the login and stop syncing; the mail stays
+  remove       delete an account and its messages
 
 add flags:
   --id <id>            identifier (defaults to a slug of --name)
   --name <name>        display name
   --email <address>    the account's own address, excluded from Top Senders
-  --host <host>        IMAP host
+  --host <host>        IMAP host; leave it out to work it out from --email
   --port <n>           IMAP port (default 993)
   --user <user>        IMAP username (defaults to --email)
-  --no-ssl             connect without TLS (refused unless you mean it)
+  --no-ssl             STARTTLS on a plain port (usually 143) instead of TLS
+                       from the first byte; a password is never sent unencrypted
   --smtp-host <host>   SMTP host, required to send
-  --smtp-port <n>      SMTP port (default 587)
+  --smtp-port <n>      SMTP port (default 587; 465 for TLS from the first byte)
+  --smtp-user <user>   the outgoing server's own login, when it differs
+  --ispdb              when working out servers, also ask Mozilla's database
+                       (which tells Mozilla the domain)
 
 The password is never taken as a flag: it is read from INBOXQL_ACCOUNT_PASSWORD,
 from stdin when piped, or prompted for without echo. A password in argv is
-visible in shell history and to anyone running ps.`,
+visible in shell history and to anyone running ps. An outgoing password that
+differs is read from INBOXQL_SMTP_PASSWORD.
+
+discover:  iql account discover <address> [--ispdb]`,
 		Run: runAccount,
 	})
 }
@@ -54,8 +67,12 @@ func runAccount(ctx *Context, args []string) error {
 		return accountVerify(ctx, rest)
 	case "sync":
 		return accountSync(ctx, rest)
+	case "discover":
+		return accountDiscover(ctx, rest)
+	case "disconnect":
+		return accountDisconnect(ctx, rest)
 	default:
-		return Fail(ExitUsage, "unknown subcommand %q (want add, list, remove, verify or sync)", sub)
+		return Fail(ExitUsage, "unknown subcommand %q (want add, list, discover, verify, sync, disconnect or remove)", sub)
 	}
 }
 
@@ -71,12 +88,48 @@ func accountAdd(ctx *Context, args []string) error {
 	noSSL := fs.Bool("no-ssl", false, "connect without TLS")
 	smtpHost := fs.String("smtp-host", "", "SMTP host")
 	smtpPort := fs.Int("smtp-port", 587, "SMTP port")
+	smtpUser := fs.String("smtp-user", "", "SMTP username, when it differs")
+	ispdb := fs.Bool("ispdb", false, "also ask Mozilla's ISP database")
 	if err := parseArgs(fs, args); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 
 	if *host == "" {
-		return Fail(ExitUsage, "--host is required")
+		if *email == "" {
+			return Fail(ExitUsage, "--host is required, or --email to work the servers out from")
+		}
+		found, _, err := autoconfig.Discover(context.Background(), *email, autoconfig.Options{ISPDB: *ispdb})
+		if err != nil {
+			return Fail(ExitUsage, "could not work out the servers for %s (%v); pass --host and --smtp-host", *email, err)
+		}
+		if found.Unsupported != "" {
+			return Fail(ExitNotConfigured, "%s", found.Unsupported)
+		}
+		*host = found.IMAP.Host
+		if !set["port"] {
+			*port = found.IMAP.Port
+		}
+		if !set["no-ssl"] {
+			*noSSL = !found.IMAP.TLS
+		}
+		if !set["user"] {
+			*user = found.Username
+		}
+		if !set["smtp-host"] {
+			*smtpHost = found.SMTP.Host
+		}
+		if !set["smtp-port"] && found.SMTP.Port != 0 {
+			*smtpPort = found.SMTP.Port
+		}
+		if !ctx.JSON {
+			ctx.Printf("Servers for %s, from %s: %s:%d and %s:%d\n", *email, found.Source,
+				*host, *port, *smtpHost, *smtpPort)
+			if found.Note != "" {
+				ctx.Printf("%s\n", found.Note)
+			}
+		}
 	}
 	if *email == "" && *user == "" {
 		return Fail(ExitUsage, "one of --email or --user is required")
@@ -104,11 +157,19 @@ func accountAdd(ctx *Context, args []string) error {
 		return err
 	}
 
+	smtpPassword := ""
+	if *smtpUser != "" {
+		if smtpPassword, err = ctx.ReadSecret("INBOXQL_SMTP_PASSWORD", "SMTP password"); err != nil {
+			return err
+		}
+	}
+
 	acc := &account.Account{
 		ID: *id, Name: *name, Email: *email,
 		Host: *host, Port: *port, User: *user,
 		Password: password, SSL: !*noSSL,
 		SMTPHost: *smtpHost, SMTPPort: *smtpPort,
+		SMTPUser: *smtpUser, SMTPPassword: smtpPassword,
 		LastSyncStatus: "idle",
 	}
 
@@ -241,38 +302,63 @@ func accountVerify(ctx *Context, args []string) error {
 		}
 	}
 
+	type check struct {
+		OK      bool   `json:"ok"`
+		Skipped bool   `json:"skipped,omitempty"`
+		Kind    string `json:"kind,omitempty"`
+		Advice  string `json:"advice,omitempty"`
+		Detail  string `json:"detail,omitempty"`
+	}
 	type verdict struct {
-		ID     string `json:"id"`
+		ID string `json:"id"`
+		// OK, Kind and Detail are the incoming server's, where they always were.
 		OK     bool   `json:"ok"`
 		Kind   string `json:"kind,omitempty"`
 		Detail string `json:"detail,omitempty"`
+		SMTP   check  `json:"smtp"`
 	}
 	var results []verdict
 	failed := false
 
 	p := ctx.Printer()
-
 	for _, acc := range accounts {
+		v := verdict{ID: acc.ID}
 		c, err := sync.ConnectIMAP(acc)
 		if err == nil {
 			c.Logout()
-			results = append(results, verdict{ID: acc.ID, OK: true})
-			if !ctx.JSON {
-				p.Status(ui.OK, acc.ID, sprintf("%s:%d", acc.Host, acc.Port))
-			}
-			continue
+			v.OK = true
+		} else {
+			failed = true
+			kind, _ := account.Classify(err, acc.Host)
+			v.Kind, v.Detail = kind, err.Error()
 		}
+		if acc.SMTPHost == "" {
+			v.SMTP = check{Skipped: true, Advice: "no outgoing server; this account cannot send"}
+		} else if err := mailer.Verify(acc); err != nil {
+			failed = true
+			kind, advice := account.Classify(err, acc.SMTPHost)
+			v.SMTP = check{Kind: kind, Advice: advice, Detail: err.Error()}
+		} else {
+			v.SMTP = check{OK: true}
+		}
+		results = append(results, v)
 
-		failed = true
-		// requirements.md 2.1.4 asks for this distinction so the sync engine can
-		// stop hammering a server with credentials it has already rejected.
-		kind := classifyConnectError(err)
-		results = append(results, verdict{ID: acc.ID, OK: false, Kind: kind, Detail: err.Error()})
 		if !ctx.JSON {
-			p.Status(ui.Bad, acc.ID, sprintf("%s:%d — %s", acc.Host, acc.Port, kind))
-			// The classification is the headline; the underlying error is the
-			// detail you need when the classification is not enough.
-			p.Printf("        %s\n", p.Dim(err.Error()))
+			report := func(label, host string, port int, ok bool, detail string) {
+				if ok {
+					p.Status(ui.OK, acc.ID, sprintf("%s %s:%d", label, host, port))
+					return
+				}
+				// The advice is the headline; the server's own words are the
+				// detail you need when the advice is not enough.
+				_, advice := account.Classify(errString(detail), host)
+				p.Status(ui.Bad, acc.ID, sprintf("%s %s:%d — %s", label, host, port, advice))
+				p.Printf("        %s\n", p.Dim(detail))
+			}
+			report("IMAP", acc.Host, acc.Port, v.OK, v.Detail)
+			if !v.SMTP.Skipped {
+				report("SMTP", acc.SMTPHost, acc.SMTPPort, v.SMTP.OK, v.SMTP.Detail)
+			}
 		}
 	}
 
@@ -287,36 +373,82 @@ func accountVerify(ctx *Context, args []string) error {
 	return nil
 }
 
-// classifyConnectError separates credential rejections from everything else.
-//
-// IMAP servers signal a bad login with a NO or BAD response, which go-imap
-// surfaces as an error string rather than a typed error — hence the string
-// matching. A wrong classification is not harmful here; it only changes the
-// wording of the advice.
-func classifyConnectError(err error) string {
-	msg := strings.ToLower(err.Error())
-	switch {
-	case strings.Contains(msg, "authenticat"),
-		strings.Contains(msg, "invalid credentials"),
-		strings.Contains(msg, "login failed"),
-		strings.Contains(msg, "password"),
-		strings.Contains(msg, "auth"):
-		return "authentication rejected — check the username and password"
-	case strings.Contains(msg, "no such host"),
-		strings.Contains(msg, "dns"):
-		return "host not found — check the IMAP hostname"
-	case strings.Contains(msg, "timeout"),
-		strings.Contains(msg, "deadline"),
-		strings.Contains(msg, "connection refused"),
-		strings.Contains(msg, "unreachable"):
-		return "network unreachable — the server did not answer"
-	case strings.Contains(msg, "certificate"),
-		strings.Contains(msg, "x509"),
-		strings.Contains(msg, "tls"):
-		return "TLS verification failed — the server's certificate was not trusted"
-	default:
-		return "connection failed"
+func accountDiscover(ctx *Context, args []string) error {
+	fs := flag.NewFlagSet("account discover", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	ispdb := fs.Bool("ispdb", false, "also ask Mozilla's ISP database")
+	if err := parseArgs(fs, args); err != nil || fs.NArg() != 1 {
+		return Fail(ExitUsage, "usage: iql account discover <address> [--ispdb]")
 	}
+	found, tried, err := autoconfig.Discover(context.Background(), fs.Arg(0), autoconfig.Options{ISPDB: *ispdb})
+	if err != nil && !errors.Is(err, autoconfig.ErrNotFound) {
+		return Fail(ExitUsage, "%v", err)
+	}
+	if ctx.JSON {
+		if err := ctx.EmitJSON(map[string]any{"found": found != nil, "settings": found, "tried": tried}); err != nil {
+			return err
+		}
+		if found == nil {
+			return &Error{Code: ExitNotFound, Err: err}
+		}
+		return nil
+	}
+	p := ctx.Printer()
+	for _, a := range tried {
+		p.Printf("  %-10s %s — %s\n", a.Source, a.Asked, a.Result)
+	}
+	if found == nil {
+		hint := ""
+		if !*ispdb {
+			hint = " Try --ispdb to also ask Mozilla's database, which tells Mozilla the domain."
+		}
+		return Fail(ExitNotFound, "nothing found; enter the servers with iql account add --host.%s", hint)
+	}
+	p.Printf("\n%s (from %s)\n", orDash(found.Provider), found.Source)
+	if found.Unsupported != "" {
+		p.Printf("%s\n", found.Unsupported)
+		return nil
+	}
+	p.Printf("  IMAP  %s:%d %s\n  SMTP  %s:%d %s\n  user  %s\n", found.IMAP.Host, found.IMAP.Port, tlsWord(found.IMAP.TLS),
+		found.SMTP.Host, found.SMTP.Port, tlsWord(found.SMTP.TLS), found.Username)
+	if found.Note != "" {
+		p.Printf("\n%s\n", found.Note)
+	}
+	return nil
+}
+
+func tlsWord(implicit bool) string {
+	if implicit {
+		return "TLS"
+	}
+	return "STARTTLS"
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
+func accountDisconnect(ctx *Context, args []string) error {
+	if len(args) != 1 {
+		return Fail(ExitUsage, "usage: iql account disconnect <id>")
+	}
+	if err := ctx.OpenStore(); err != nil {
+		return err
+	}
+	defer store.CloseDB()
+	if err := store.DisconnectAccount(args[0]); errors.Is(err, sql.ErrNoRows) {
+		return Fail(ExitNotFound, "no account with id %q", args[0])
+	} else if err != nil {
+		return Fail(ExitError, "failed to disconnect: %v", err)
+	}
+	if ctx.JSON {
+		return ctx.EmitJSON(map[string]string{"disconnected": args[0]})
+	}
+	ctx.Printf("Disconnected %s: its login is forgotten and it will not sync. Its mail stays.\n", args[0])
+	return nil
 }
 
 func accountSync(ctx *Context, args []string) error {

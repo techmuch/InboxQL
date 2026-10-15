@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile, BUNDLED_THEMES } from 'nexus-shell';
-import { Layout, Search, Mail, BarChart2, Settings, Plus, Server, Shield, Trash2, Zap, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, AlertTriangle, HardDrive, Wrench } from 'lucide-react';
+import { Layout, Search, Mail, BarChart2, Server, Shield, Trash2, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, AlertTriangle, HardDrive, Wrench } from 'lucide-react';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
@@ -30,6 +30,7 @@ import { SystemPanel } from './views/SystemPanel';
 import { fetchGravatar } from './lib/avatars';
 import { Docs } from './views/Docs';
 import { Calendar } from './views/Calendar';
+import { MailAccounts } from './views/MailAccounts';
 import { CalendarSettings } from './views/CalendarSettings';
 import { ReminderToasts } from './views/ReminderToasts';
 import { CALENDAR_TAB, newCalendarEvent } from './lib/calendarNav';
@@ -603,39 +604,7 @@ const SettingsView = () => {
     return () => window.removeEventListener(SETTINGS_SECTION_EVENT, go);
   }, []);
   const { theme, setTheme } = useThemeStore();
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
-  const [testingConnectionId, setTestingConnectionId] = useState<string | null>(null);
-  const [connectionResults, setConnectionResults] = useState<Record<string, { success: boolean, message?: string }>>({});
-  const [accounts, setAccounts] = useState<any[]>([]);
-  const [stats, setStats] = useState<Record<string, any>>({});
-  
   const [userProfile, setUserProfile] = useState<any>(null);
-
-  const fetchAccounts = async () => {
-    try {
-      const res = await fetch('/api/accounts');
-      if (res.status === 401) return;
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setAccounts(data || []);
-      if (data) data.forEach((acc: any) => fetchStats(acc.id));
-    } catch (e) {
-      console.error('Failed to fetch accounts', e);
-    }
-  };
-
-  const fetchStats = async (id: string) => {
-    try {
-      const res = await fetch(`/api/accounts/stats?id=${id}`);
-      if (res.status === 401) return;
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setStats(prev => ({ ...prev, [id]: data }));
-    } catch (e) {
-      console.error('Failed to fetch stats', e);
-    }
-  };
 
   const fetchProfile = async () => {
     try {
@@ -662,101 +631,12 @@ const SettingsView = () => {
     }
   };
 
+  // The importer asks which account imported mail belongs to.
+  const [accounts, setAccounts] = useState<any[]>([]);
   useEffect(() => {
-    fetchAccounts();
     fetchProfile();
-    const interval = setInterval(() => {
-      accounts.forEach(acc => fetchStats(acc.id));
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [accounts.length]);
-
-  const [formState, setFormState] = useState({
-    name: '', email: '', user: '', pass: '', imap: '', smtp: '', port: '993', ssl: true
-  });
-
-  const handleTestConnection = async (id: string, imap: string, user: string, pass: string) => {
-    setTestingConnectionId(id);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    let isSuccess = !imap.includes('error');
-    let message = isSuccess ? 'Successfully connected to servers.' : 'Failed to connect: Connection timed out or invalid server address.';
-    if (isSuccess && (user.includes('invalid') || pass === '')) {
-      isSuccess = false;
-      message = 'Authentication failed: Invalid username or password.';
-    }
-    setConnectionResults(prev => ({ ...prev, [id]: { success: isSuccess, message } }));
-    setTestingConnectionId(null);
-  };
-
-  const handleSync = async (id: string) => {
-    try {
-      await fetch(`/api/accounts/sync?id=${id}`, { method: 'POST' });
-    } catch (e) {
-      console.error('Sync failed', e);
-    }
-    setTimeout(() => {
-      fetchStats(id);
-    }, 3000);
-  };
-
-  const handleAddAccount = async () => {
-    const payload = {
-      id: editingAccountId || undefined,
-      name: formState.name,
-      email: formState.email,
-      host: formState.imap,
-      port: parseInt(formState.port),
-      user: formState.user,
-      password: formState.pass,
-      ssl: formState.ssl,
-      smtpHost: formState.smtp,
-      smtpPort: 587
-    };
-
-    try {
-      await fetch('/api/accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      fetchAccounts();
-      setShowAddForm(false);
-      setEditingAccountId(null);
-      setFormState({ name: '', email: '', user: '', pass: '', imap: '', smtp: '', port: '993', ssl: true });
-    } catch (e) {
-      console.error('Save failed', e);
-    }
-  };
-
-  const handleEditAccount = (acc: any) => {
-    setFormState({
-      name: acc.name,
-      email: acc.email,
-      user: acc.user,
-      pass: acc.password || '',
-      imap: acc.host,
-      smtp: acc.smtpHost || '',
-      port: acc.port.toString(),
-      ssl: acc.ssl
-    });
-    setEditingAccountId(acc.id);
-    setShowAddForm(true);
-  };
-
-  const handleCancel = () => {
-    setShowAddForm(false);
-    setEditingAccountId(null);
-    setFormState({ name: '', email: '', user: '', pass: '', imap: '', smtp: '', port: '993', ssl: true });
-  };
-
-  const handleDeleteAccount = async (id: string) => {
-    try {
-      await fetch(`/api/accounts?id=${id}`, { method: 'DELETE' });
-      fetchAccounts();
-    } catch (e) {
-      console.error('Delete failed', e);
-    }
-  };
+    fetch('/api/accounts').then(r => (r.ok ? r.json() : [])).then(d => setAccounts(d ?? [])).catch(() => {});
+  }, [activeCategory]);
 
   const [profileNote, setProfileNote] = useState<{ ok: boolean; text: string } | null>(null);
   const saveProfile = async (profile: any): Promise<boolean> => {
@@ -829,13 +709,6 @@ const SettingsView = () => {
     matchesWords(c.label, searchQuery) || matchingSettings.some(st => st.section === c.id)
   );
 
-  const formatSize = (bytes: number) => {
-    if (!bytes) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
 
   return (
     <div className="flex h-full bg-background text-foreground overflow-hidden">
@@ -891,251 +764,7 @@ const SettingsView = () => {
 
       <div className="flex-1 overflow-auto p-8">
         <div className="max-w-3xl mx-auto">
-          {activeCategory === 'accounts' && (
-            <div className="animate-in fade-in duration-300" {...settingAnchor('mail-accounts')}>
-              <div className="flex justify-between items-center mb-8">
-                <div>
-                  <h2 className="text-2xl font-bold text-foreground">Mail Accounts</h2>
-                  <p className="text-muted-foreground text-sm mt-1">Configure your IMAP and SMTP connections.</p>
-                </div>
-                {!showAddForm && (
-                  <button 
-                    onClick={() => setShowAddForm(true)}
-                    className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-1.5  text-xs font-semibold hover:opacity-90 transition-opacity"
-                  >
-                    <Plus className="w-3 h-3" /> Add Account
-                  </button>
-                )}
-              </div>
-
-              {showAddForm && (
-                <div className="bg-card border border-primary/30  p-6 shadow-lg mb-8 animate-in fade-in slide-in-from-top-4 duration-200">
-                  <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-lg font-bold">{editingAccountId ? 'Edit Account' : 'Add New Account'}</h3>
-                    <button onClick={handleCancel} className="text-muted-foreground hover:text-foreground">
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Account Name</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. My Work Email"
-                        className="w-full bg-background border border-border  px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
-                        value={formState.name}
-                        onChange={(e) => setFormState({...formState, name: e.target.value})}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Email Address</label>
-                      <input 
-                        type="email" 
-                        placeholder="user@example.com"
-                        className="w-full bg-background border border-border  px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
-                        value={formState.email}
-                        onChange={(e) => setFormState({...formState, email: e.target.value})}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Username</label>
-                      <input 
-                        type="text" 
-                        placeholder="Login username"
-                        className="w-full bg-background border border-border  px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
-                        value={formState.user}
-                        onChange={(e) => setFormState({...formState, user: e.target.value})}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Password</label>
-                      <input 
-                        type="password" 
-                        placeholder={editingAccountId ? 'Unchanged — type to replace' : '••••••••'}
-                        className="w-full bg-background border border-border  px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
-                        value={formState.pass}
-                        onChange={(e) => setFormState({...formState, pass: e.target.value})}
-                      />
-                      {editingAccountId && (
-                        <p className="text-[10px] text-muted-foreground">
-                          Stored passwords are encrypted and never sent to the browser. Leave blank to keep the existing one.
-                        </p>
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">IMAP Server</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="text" 
-                          placeholder="imap.example.com"
-                          className="flex-1 bg-background border border-border  px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
-                          value={formState.imap}
-                          onChange={(e) => setFormState({...formState, imap: e.target.value})}
-                        />
-                        <input 
-                          type="text" 
-                          placeholder="993"
-                          className="w-20 bg-background border border-border  px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
-                          value={formState.port}
-                          onChange={(e) => setFormState({...formState, port: e.target.value})}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 pt-4">
-                      <input 
-                        type="checkbox" 
-                        id="ssl-toggle"
-                        className="w-4 h-4 border-border text-primary focus:ring-primary"
-                        checked={formState.ssl}
-                        onChange={(e) => setFormState({...formState, ssl: e.target.checked})}
-                      />
-                      <label htmlFor="ssl-toggle" className="text-xs font-bold text-muted-foreground uppercase tracking-wider cursor-pointer">Use SSL/TLS</label>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">SMTP Server</label>
-                      <input 
-                        type="text" 
-                        placeholder="smtp.example.com"
-                        className="w-full bg-background border border-border  px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
-                        value={formState.smtp}
-                        onChange={(e) => setFormState({...formState, smtp: e.target.value})}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <button 
-                      onClick={() => handleTestConnection('form', formState.imap, formState.user, formState.pass)}
-                      disabled={testingConnectionId === 'form'}
-                      className="flex items-center gap-1.5 text-[10px] font-bold text-primary hover:bg-primary/5 px-2 py-1 transition-colors disabled:opacity-50 uppercase tracking-tight"
-                    >
-                      {testingConnectionId === 'form' ? <Zap className="w-2.5 h-2.5 animate-pulse" /> : <Zap className="w-2.5 h-2.5" />}
-                      Test Connection
-                    </button>
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={handleCancel}
-                        className="px-3 py-1.5 text-[11px] font-semibold hover:bg-accent  transition-colors uppercase"
-                      >
-                        Cancel
-                      </button>
-                      <button 
-                        onClick={handleAddAccount}
-                        className="px-4 py-1.5 bg-primary text-primary-foreground  text-[11px] font-bold shadow-sm hover:opacity-90 transition-opacity uppercase"
-                      >
-                        {editingAccountId ? 'Update' : 'Save Account'}
-                      </button>
-                    </div>
-                  </div>
-                  {connectionResults['form'] && (
-                    <div className={`mt-4 p-3  flex items-start gap-3 text-xs ${connectionResults['form'].success ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
-                      {connectionResults['form'].success ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                      {connectionResults['form'].message}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="space-y-4">
-                {accounts.map(acc => (
-                  <div key={acc.id} className="bg-card border border-border  p-5 shadow-sm group">
-                    <div className="flex justify-between items-center mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-2.5 h-2.5  ${
-                          acc.lastSyncStatus === 'syncing' ? 'bg-primary animate-pulse shadow-[0_0_8px_rgba(var(--primary),0.4)]' : 
-                          acc.lastSyncStatus === 'error' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]' : 
-                          'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]'
-                        }`} />
-                        <span className="font-bold text-lg">{acc.name}</span>
-                        <span className="text-sm text-muted-foreground">{acc.email}</span>
-                      </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => handleSync(acc.id)}
-                          disabled={acc.lastSyncStatus === 'syncing'}
-                          className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10  transition-all"
-                          title="Sync Now"
-                        >
-                          <RefreshCw className={`w-4 h-4 ${acc.lastSyncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-                        </button>
-                        <button 
-                          onClick={() => handleTestConnection(acc.id, acc.host, acc.user, acc.password)}
-                          disabled={testingConnectionId === acc.id}
-                          className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10  transition-all"
-                          title="Test Connection"
-                        >
-                          <Server className={`w-4 h-4 ${testingConnectionId === acc.id ? 'animate-pulse' : ''}`} />
-                        </button>
-                        <button 
-                          onClick={() => handleEditAccount(acc)}
-                          className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent  transition-all"
-                        >
-                          <Settings className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteAccount(acc.id)}
-                          className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10  transition-all"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {acc.lastSyncStatus === 'error' && acc.lastSyncError && (
-                      <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20  flex items-start gap-3 text-xs text-red-500 animate-in slide-in-from-top-2 duration-200">
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                        <div>
-                          <div className="font-bold uppercase tracking-tight mb-0.5">Synchronization Error</div>
-                          {acc.lastSyncError}
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="grid grid-cols-3 gap-4 mb-6">
-                      <div className="text-center p-3 bg-muted/30  border border-border/50">
-                        <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Messages</div>
-                        <div className="text-lg font-bold tabular-nums">{stats[acc.id]?.totalMessages || 0}</div>
-                      </div>
-                      <div className="text-center p-3 bg-muted/30  border border-border/50">
-                        <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Storage</div>
-                        <div className="text-lg font-bold tabular-nums">{formatSize(stats[acc.id]?.storageSize)}</div>
-                      </div>
-                      <div className="text-center p-3 bg-muted/30  border border-border/50">
-                        <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Last Sync</div>
-                        <div className="text-xs font-medium h-7 flex items-center justify-center text-center">
-                          {stats[acc.id]?.lastSync === 'Never' || !stats[acc.id]?.lastSync ? 'Never' : new Date(stats[acc.id]?.lastSync).toLocaleTimeString()}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 text-xs font-mono opacity-80">
-                      <div className="bg-muted/50 p-3  border border-border/50 flex items-center gap-3">
-                        <Server className="w-4 h-4 text-primary opacity-50" />
-                        <div>
-                          <div className="text-[10px] uppercase font-bold tracking-tighter opacity-50 flex items-center gap-2">
-                            IMAP {acc.ssl ? <Shield className="w-2 h-2 text-green-500" /> : null}
-                          </div>
-                          {acc.host}:{acc.port}
-                        </div>
-                      </div>
-                      <div className="bg-muted/50 p-3  border border-border/50 flex items-center gap-3">
-                        <Zap className="w-4 h-4 text-primary opacity-50" />
-                        <div>
-                          <div className="text-[10px] uppercase font-bold tracking-tighter opacity-50">SMTP</div>
-                          {acc.smtpHost}
-                        </div>
-                      </div>
-                    </div>
-                    {connectionResults[acc.id] && (
-                      <div className={`mt-4 p-3  flex items-start gap-3 text-xs ${connectionResults[acc.id].success ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
-                        {connectionResults[acc.id].success ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                        {connectionResults[acc.id].message}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {activeCategory === 'accounts' && <MailAccounts />}
 
           {activeCategory === 'profile' && (
             userProfile ? (

@@ -45,6 +45,7 @@ func Router() (http.Handler, error) {
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("/api/accounts/stats", handleAccountStats)
 	apiMux.HandleFunc("/api/accounts/sync", handleAccountSync)
+	registerAccountRoutes(apiMux)
 
 	// Register the protected mux with auth middleware
 	mux.Handle("/api/accounts", auth.Middleware(http.HandlerFunc(handleAccounts)))
@@ -286,7 +287,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.88",
+	Version: "0.0.89",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.
@@ -357,7 +358,14 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 		// update now has to name the account it is updating.
 		derived := false
 		if acc.ID == "" {
-			acc.ID = strings.ToLower(strings.ReplaceAll(acc.Name, " ", "-"))
+			acc.ID = accountSlug(acc.Name)
+			if acc.ID == "" {
+				acc.ID = accountSlug(acc.Email)
+			}
+			if acc.ID == "" {
+				http.Error(w, "an account needs a name", http.StatusBadRequest)
+				return
+			}
 			derived = true
 		}
 
@@ -373,6 +381,7 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if existing != nil {
+			keepUnsent(existing, &acc)
 			// Because GET redacts the password, an edit that does not touch
 			// the password field submits it empty. Treat that as "leave it
 			// alone" rather than wiping a working credential.
@@ -385,8 +394,10 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 			if acc.Password == "" {
 				if sameServer(existing, &acc) {
 					acc.Password = existing.Password
+				} else if existing.Disconnected || existing.Password == "" {
+					// Nothing stored to protect; the edit simply has no password yet.
 				} else {
-					http.Error(w, "the IMAP host or port changed, so the stored password no longer applies; send the password again",
+					http.Error(w, "the server changed, so the stored password no longer applies; type the password again",
 						http.StatusBadRequest)
 					return
 				}
@@ -422,11 +433,16 @@ func handleAccounts(w http.ResponseWriter, r *http.Request) {
 }
 
 // sameServer reports whether an update leaves the account pointed at the same
-// mailbox, and so may keep the credential stored for it.
+// servers, and so may keep the credential stored for it.
+//
+// Both servers: outgoing mail signs in with the incoming password unless the
+// outgoing server has its own, so an edit that moved only the SMTP host would
+// otherwise hand the stored password to whatever host was named there.
 func sameServer(existing, updated *account.Account) bool {
 	return strings.EqualFold(existing.Host, updated.Host) &&
 		existing.Port == updated.Port &&
-		strings.EqualFold(existing.User, updated.User)
+		strings.EqualFold(existing.User, updated.User) &&
+		(updated.SMTPPassword != "" || strings.EqualFold(existing.SMTPHost, updated.SMTPHost))
 }
 
 func handleAccountStats(w http.ResponseWriter, r *http.Request) {
@@ -457,6 +473,10 @@ func handleAccountSync(w http.ResponseWriter, r *http.Request) {
 	acc, err := store.GetAccount(id)
 	if err != nil || acc == nil {
 		http.Error(w, "account not found", http.StatusNotFound)
+		return
+	}
+	if acc.Disconnected {
+		http.Error(w, "this account is disconnected: its mail is kept, but it has no login to sync with", http.StatusConflict)
 		return
 	}
 

@@ -1,10 +1,10 @@
 package sync
 
 import (
-	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -125,6 +125,7 @@ func (sm *SyncManager) StartSync(acc *account.Account) {
 	}
 
 	store.UpdateAccountStatus(acc.ID, "success", "")
+	store.MarkAccountSynced(acc.ID)
 }
 
 func (sm *SyncManager) syncMailbox(c *client.Client, acc *account.Account, mailboxName string) (int, error) {
@@ -306,32 +307,76 @@ func parseIMAPMessage(accountID string, imapMsg *imap.Message) (*message.Message
 	return msg, raw, nil
 }
 
+// AccessToken, when set, gives an access token for an account that signs in
+// with Google. Set by the package that holds the Google sign-in, which this
+// one cannot import without a cycle.
+var AccessToken func(acc *account.Account) (string, error)
+
+// ConnectIMAP connects and signs in.
+//
+// Encryption is mandatory. With SSL on, the connection is TLS from the first
+// byte; with it off, the server must offer STARTTLS before any credential is
+// sent, as it already must for SMTP. Turning SSL off used to send the
+// password in plaintext.
 func ConnectIMAP(acc *account.Account) (*client.Client, error) {
-	addr := fmt.Sprintf("%s:%d", acc.Host, acc.Port)
+	if acc.Disconnected {
+		return nil, fmt.Errorf("account %s is disconnected: it keeps its mail but has no login; edit it to connect again", acc.ID)
+	}
+	addr := net.JoinHostPort(acc.Host, fmt.Sprint(acc.Port))
+	dialer := &net.Dialer{Timeout: account.DialTimeout}
 	var c *client.Client
 	var err error
 	if acc.SSL {
-		// Certificate verification is mandatory. This previously passed
-		// InsecureSkipVerify:true, which silently accepted any certificate and
-		// left every login and every message body open to a trivial MITM.
-		// ServerName is set explicitly so verification is against the host the
-		// user configured rather than whatever the connection resolved to.
-		c, err = client.DialTLS(addr, &tls.Config{
-			ServerName: acc.Host,
-			MinVersion: tls.VersionTLS12,
-		})
+		// Certificate verification is mandatory, against the host the user
+		// configured rather than whatever the connection resolved to.
+		c, err = client.DialWithDialerTLS(dialer, addr, account.TLSConfig(acc.Host))
 	} else {
-		c, err = client.Dial(addr)
+		c, err = client.DialWithDialer(dialer, addr)
+		if err == nil {
+			if ok, _ := c.SupportStartTLS(); !ok {
+				c.Logout()
+				return nil, fmt.Errorf("%s does not offer STARTTLS; refusing to send a password in plaintext", addr)
+			}
+			if err = c.StartTLS(account.TLSConfig(acc.Host)); err != nil {
+				c.Logout()
+				return nil, fmt.Errorf("STARTTLS failed: %w", err)
+			}
+		}
 	}
 	if err != nil {
 		return nil, err
 	}
-	if err := c.Login(acc.User, acc.Password); err != nil {
+	// A server can accept the connection and then stall; the deadline covers
+	// the sign-in too. Lifted afterwards, because a sync legitimately holds
+	// the connection for a long time.
+	c.Timeout = account.DialTimeout
+	if acc.UsesGoogle() {
+		err = loginGoogle(c, acc)
+	} else {
+		err = c.Login(acc.User, acc.Password)
+	}
+	if err != nil {
 		// Close the connection rather than leaking it: the caller only defers
 		// Logout on success, so a failed login would otherwise hold the socket
 		// open until GC.
 		c.Logout()
 		return nil, err
 	}
+	c.Timeout = 0
 	return c, nil
+}
+
+func loginGoogle(c *client.Client, acc *account.Account) error {
+	if AccessToken == nil {
+		return fmt.Errorf("Sign in with Google is not available in this build")
+	}
+	tok, err := AccessToken(acc)
+	if err != nil {
+		return err
+	}
+	user := acc.User
+	if user == "" {
+		user = acc.Email
+	}
+	return c.Authenticate(account.XOAuth2(user, tok))
 }

@@ -164,66 +164,125 @@ func (m *Message) Validate() error {
 	return nil
 }
 
-// Send delivers the message using the account's SMTP settings.
+// AccessToken, when set, gives an access token for an account that signs in
+// with Google. Set by the package holding the Google sign-in.
+var AccessToken func(acc *account.Account) (string, error)
+
+// connect opens an encrypted, signed-in SMTP session for the account.
 //
 // TLS is mandatory: implicit TLS on port 465, STARTTLS otherwise. A server
 // that offers neither is refused rather than silently downgraded to plaintext,
 // since the credentials and the message body would both be exposed.
-func Send(acc *account.Account, m *Message) error {
-	if err := m.Validate(); err != nil {
-		return err
+func connect(acc *account.Account) (*smtp.Client, error) {
+	if acc.Disconnected {
+		return nil, fmt.Errorf("account %s is disconnected and cannot send; edit it to connect again", acc.ID)
 	}
-
 	host := acc.SMTPHost
 	port := acc.SMTPPort
 	if host == "" {
-		return fmt.Errorf("account %s has no SMTP host configured", acc.ID)
+		return nil, fmt.Errorf("account %s has no SMTP host configured", acc.ID)
 	}
 	if port == 0 {
 		port = 587
 	}
 	addr := net.JoinHostPort(host, fmt.Sprint(port))
-	tlsConfig := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+	tlsConfig := account.TLSConfig(host)
+	dialer := &net.Dialer{Timeout: account.DialTimeout}
 
-	var client *smtp.Client
-	var err error
-
+	conn, err := dialer.Dial("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("cannot connect to %s: %w", addr, err)
+	}
+	// The whole conversation up to sign-in is bounded; a send then lifts it.
+	conn.SetDeadline(time.Now().Add(2 * account.DialTimeout))
 	if port == 465 {
-		conn, dialErr := tls.Dial("tcp", addr, tlsConfig)
-		if dialErr != nil {
-			return fmt.Errorf("cannot connect to %s: %w", addr, dialErr)
-		}
-		client, err = smtp.NewClient(conn, host)
-		if err != nil {
+		tlsConn := tls.Client(conn, tlsConfig)
+		if err := tlsConn.Handshake(); err != nil {
 			conn.Close()
-			return fmt.Errorf("SMTP handshake failed: %w", err)
+			return nil, fmt.Errorf("cannot connect to %s: %w", addr, err)
 		}
-	} else {
-		client, err = smtp.Dial(addr)
-		if err != nil {
-			return fmt.Errorf("cannot connect to %s: %w", addr, err)
-		}
+		conn = tlsConn
+	}
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("SMTP handshake failed: %w", err)
+	}
+	if port != 465 {
 		ok, _ := client.Extension("STARTTLS")
 		if !ok {
 			client.Close()
-			return fmt.Errorf("%s does not offer STARTTLS; refusing to send credentials in plaintext", addr)
+			return nil, fmt.Errorf("%s does not offer STARTTLS; refusing to send credentials in plaintext", addr)
 		}
 		if err := client.StartTLS(tlsConfig); err != nil {
 			client.Close()
-			return fmt.Errorf("STARTTLS failed: %w", err)
+			return nil, fmt.Errorf("STARTTLS failed: %w", err)
 		}
+	}
+
+	user, password := acc.SMTPLogin()
+	switch {
+	case acc.UsesGoogle():
+		if AccessToken == nil {
+			client.Close()
+			return nil, errors.New("Sign in with Google is not available in this build")
+		}
+		tok, err := AccessToken(acc)
+		if err != nil {
+			client.Close()
+			return nil, err
+		}
+		if err := client.Auth(&xoauth2Auth{user: user, token: tok}); err != nil {
+			client.Close()
+			return nil, fmt.Errorf("SMTP authentication failed: %w", err)
+		}
+	case password != "":
+		if err := client.Auth(smtp.PlainAuth("", user, password, host)); err != nil {
+			client.Close()
+			return nil, fmt.Errorf("SMTP authentication failed: %w", err)
+		}
+	}
+	conn.SetDeadline(time.Time{})
+	return client, nil
+}
+
+// Verify connects to the account's outgoing server and signs in, then hangs
+// up. Nothing is sent.
+func Verify(acc *account.Account) error {
+	client, err := connect(acc)
+	if err != nil {
+		return err
+	}
+	client.Quit()
+	return nil
+}
+
+// xoauth2Auth is XOAUTH2 for net/smtp.
+type xoauth2Auth struct{ user, token string }
+
+func (a *xoauth2Auth) Start(*smtp.ServerInfo) (string, []byte, error) {
+	_, ir, _ := account.XOAuth2(a.user, a.token).Start()
+	return "XOAUTH2", ir, nil
+}
+
+func (a *xoauth2Auth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if more {
+		// Google's failure detail, which must be answered with an empty line.
+		return []byte{}, errors.New("Google refused the access token: " + string(fromServer))
+	}
+	return nil, nil
+}
+
+// Send delivers the message using the account's SMTP settings.
+func Send(acc *account.Account, m *Message) error {
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	client, err := connect(acc)
+	if err != nil {
+		return err
 	}
 	defer client.Close()
-
-	if acc.Password != "" {
-		user := acc.User
-		if user == "" {
-			user = acc.Email
-		}
-		if err := client.Auth(smtp.PlainAuth("", user, acc.Password, host)); err != nil {
-			return fmt.Errorf("SMTP authentication failed: %w", err)
-		}
-	}
 
 	if err := client.Mail(m.From); err != nil {
 		return fmt.Errorf("server rejected sender %s: %w", m.From, err)

@@ -262,7 +262,7 @@ func runVault(ctx *Context, args []string) error {
 		}
 		readable, unreadable := 0, 0
 		for _, a := range accounts {
-			if a.Host != "" && a.Password == "" {
+			if a.Host != "" && a.Password == "" && !a.Disconnected {
 				unreadable++
 			} else {
 				readable++
@@ -307,7 +307,7 @@ func runVault(ctx *Context, args []string) error {
 		// Refuse to rotate while anything is unreadable: re-encrypting with a
 		// new key would turn a recoverable problem into a permanent one.
 		for _, a := range accounts {
-			if a.Host != "" && a.Password == "" {
+			if a.Host != "" && a.Password == "" && !a.Disconnected {
 				return Fail(ExitError,
 					"account %s cannot be decrypted with the current key; "+
 						"rotating now would discard it permanently", a.ID)

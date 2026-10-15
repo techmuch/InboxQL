@@ -150,8 +150,10 @@ each.
 
 ## Mail Accounts
 
-Add, edit, test and remove IMAP accounts, with per-account message counts.
-[Accounts](accounts-and-import.md) covers the fields.
+Add an account from its address — the servers are worked out — or enter the
+settings by hand; sign in with Google for Gmail; test, edit, disconnect
+(keeping the mail) and remove, with each account's state in a sentence.
+[Accounts](accounts-and-import.md#adding-an-account) covers it.
 
 ## Calendars
 

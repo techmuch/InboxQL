@@ -420,7 +420,8 @@ func checkAccounts(rep *Report) []*account.Account {
 	// not match what the row was sealed with.
 	undecryptable := 0
 	for _, acc := range accounts {
-		if acc.Host != "" && acc.Password == "" {
+		// A disconnected account has no password on purpose.
+		if acc.Host != "" && acc.Password == "" && !acc.Disconnected {
 			undecryptable++
 		}
 	}
@@ -448,6 +449,10 @@ func checkIMAP(rep *Report, accounts []*account.Account, skip bool) {
 		name := fmt.Sprintf("imap: %s", acc.ID)
 		if acc.Host == "" {
 			rep.add(name, StatusWarn, "no host configured")
+			continue
+		}
+		if acc.Disconnected {
+			rep.add(name, StatusOK, "disconnected — its mail is kept and it is not synced")
 			continue
 		}
 		start := time.Now()

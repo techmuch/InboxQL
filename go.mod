@@ -7,6 +7,7 @@ require (
 	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/emersion/go-imap v1.2.1
 	github.com/emersion/go-message v0.15.0
+	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21
 	github.com/gomlx/compute v0.1.14
 	github.com/gomlx/compute-onnx v0.1.13
 	github.com/gomlx/gomlx v0.28.16
@@ -24,7 +25,6 @@ require (
 )
 
 require (
-	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21 // indirect
 	github.com/emersion/go-textwrapper v0.0.0-20200911093747-65d896831594 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/gomlx/exceptions v0.0.3 // indirect

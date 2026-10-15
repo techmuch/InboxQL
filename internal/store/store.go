@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 41
+	SchemaVersion = 42
 )
 
 var (
@@ -1869,6 +1869,32 @@ func migrateDB(db *sql.DB) error {
 		currentVersion = 41
 	}
 
+	if currentVersion < 42 {
+		log.Println("Applying schema migration v42 (account sign-in and status)...")
+		// The outgoing server's own login, for the providers where it differs;
+		// blank means "the same as incoming". How the account signs in, for
+		// Sign in with Google. When a sync last finished, which the card used
+		// to approximate with the newest message's date. And whether the
+		// account was disconnected: its mail kept, its login forgotten.
+		for _, stmt := range []string{
+			`ALTER TABLE accounts ADD COLUMN smtp_user TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE accounts ADD COLUMN smtp_password TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE accounts ADD COLUMN auth TEXT NOT NULL DEFAULT 'password'`,
+			`ALTER TABLE accounts ADD COLUMN oauth_client_id TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE accounts ADD COLUMN oauth_client_secret TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE accounts ADD COLUMN disconnected INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE accounts ADD COLUMN last_synced_at INTEGER`,
+		} {
+			if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+				return fmt.Errorf("failed to apply schema v42: %w", err)
+			}
+		}
+		if _, err := db.Exec("PRAGMA user_version = 42;"); err != nil {
+			return err
+		}
+		currentVersion = 42
+	}
+
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)
 	return nil
 }
@@ -2038,10 +2064,22 @@ func SaveAccount(acc *account.Account) error {
 	if err != nil {
 		return fmt.Errorf("failed to encrypt account password: %w", err)
 	}
+	smtpEncrypted := ""
+	if acc.SMTPPassword != "" {
+		if smtpEncrypted, err = vault.Encrypt(acc.SMTPPassword); err != nil {
+			return fmt.Errorf("failed to encrypt SMTP password: %w", err)
+		}
+	}
+	auth := acc.Auth
+	if auth == "" {
+		auth = account.AuthPassword
+	}
 
 	_, err = db.Exec(`
-		INSERT INTO accounts (id, name, email, host, port, user, password, ssl, smtp_host, smtp_port, last_sync_status, last_sync_error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO accounts (id, name, email, host, port, user, password, ssl, smtp_host, smtp_port,
+			smtp_user, smtp_password, auth, oauth_client_id, oauth_client_secret, disconnected,
+			last_sync_status, last_sync_error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = EXCLUDED.name,
 			email = EXCLUDED.email,
@@ -2052,63 +2090,124 @@ func SaveAccount(acc *account.Account) error {
 			ssl = EXCLUDED.ssl,
 			smtp_host = EXCLUDED.smtp_host,
 			smtp_port = EXCLUDED.smtp_port,
+			smtp_user = EXCLUDED.smtp_user,
+			smtp_password = EXCLUDED.smtp_password,
+			auth = EXCLUDED.auth,
+			oauth_client_id = EXCLUDED.oauth_client_id,
+			oauth_client_secret = EXCLUDED.oauth_client_secret,
+			disconnected = EXCLUDED.disconnected,
 			last_sync_status = EXCLUDED.last_sync_status,
 			last_sync_error = EXCLUDED.last_sync_error;
-	`, acc.ID, acc.Name, acc.Email, acc.Host, acc.Port, acc.User, encrypted, acc.SSL, acc.SMTPHost, acc.SMTPPort, acc.LastSyncStatus, acc.LastSyncError)
+	`, acc.ID, acc.Name, acc.Email, acc.Host, acc.Port, acc.User, encrypted, acc.SSL, acc.SMTPHost, acc.SMTPPort,
+		acc.SMTPUser, smtpEncrypted, auth, acc.OAuthClientID, acc.OAuthClientSecret, acc.Disconnected,
+		acc.LastSyncStatus, acc.LastSyncError)
 	return err
+}
+
+const accountColumns = `id, name, email, host, port, user, password, ssl, smtp_host, smtp_port,
+	smtp_user, smtp_password, auth, oauth_client_id, oauth_client_secret, disconnected, last_synced_at,
+	last_sync_status, last_sync_error`
+
+// scanAccount reads one row of accountColumns, decrypting both passwords.
+func scanAccount(row interface{ Scan(...any) error }) (*account.Account, error) {
+	acc := &account.Account{}
+	var synced sql.NullInt64
+	if err := row.Scan(&acc.ID, &acc.Name, &acc.Email, &acc.Host, &acc.Port, &acc.User, &acc.Password, &acc.SSL,
+		&acc.SMTPHost, &acc.SMTPPort, &acc.SMTPUser, &acc.SMTPPassword, &acc.Auth, &acc.OAuthClientID,
+		&acc.OAuthClientSecret, &acc.Disconnected, &synced, &acc.LastSyncStatus, &acc.LastSyncError); err != nil {
+		return nil, err
+	}
+	if synced.Valid {
+		t := time.UnixMilli(synced.Int64)
+		acc.LastSyncedAt = &t
+	}
+	var err error
+	if acc.Password, err = vault.Decrypt(acc.Password); err != nil {
+		return acc, fmt.Errorf("account %s: %w", acc.ID, err)
+	}
+	if acc.SMTPPassword != "" {
+		if acc.SMTPPassword, err = vault.Decrypt(acc.SMTPPassword); err != nil {
+			return acc, fmt.Errorf("account %s SMTP password: %w", acc.ID, err)
+		}
+	}
+	return acc, nil
 }
 
 // GetAccount loads an account with its password decrypted, ready to use for an
 // IMAP login.
 func GetAccount(id string) (*account.Account, error) {
-	acc := &account.Account{}
-	err := db.QueryRow("SELECT id, name, email, host, port, user, password, ssl, smtp_host, smtp_port, last_sync_status, last_sync_error FROM accounts WHERE id = ?", id).
-		Scan(&acc.ID, &acc.Name, &acc.Email, &acc.Host, &acc.Port, &acc.User, &acc.Password, &acc.SSL, &acc.SMTPHost, &acc.SMTPPort, &acc.LastSyncStatus, &acc.LastSyncError)
+	acc, err := scanAccount(db.QueryRow("SELECT "+accountColumns+" FROM accounts WHERE id = ?", id))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-
-	decrypted, err := vault.Decrypt(acc.Password)
-	if err != nil {
-		return nil, fmt.Errorf("account %s: %w", id, err)
-	}
-	acc.Password = decrypted
 	return acc, nil
 }
 
 func ListAccounts() ([]*account.Account, error) {
-	rows, err := db.Query("SELECT id, name, email, host, port, user, password, ssl, smtp_host, smtp_port, last_sync_status, last_sync_error FROM accounts")
+	rows, err := db.Query("SELECT " + accountColumns + " FROM accounts ORDER BY name COLLATE NOCASE")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var accs []*account.Account
 	for rows.Next() {
-		acc := &account.Account{}
-		if err := rows.Scan(&acc.ID, &acc.Name, &acc.Email, &acc.Host, &acc.Port, &acc.User, &acc.Password, &acc.SSL, &acc.SMTPHost, &acc.SMTPPort, &acc.LastSyncStatus, &acc.LastSyncError); err != nil {
+		acc, err := scanAccount(rows)
+		if acc == nil {
 			return nil, err
 		}
-		decrypted, err := vault.Decrypt(acc.Password)
 		if err != nil {
 			// One unreadable row must not blank out the whole account list, so
 			// the error is logged and that account is returned without a
 			// password rather than aborting the query.
 			log.Printf("WARN: could not decrypt password for account %s: %v", acc.ID, err)
-			acc.Password = ""
-		} else {
-			acc.Password = decrypted
+			acc.Password, acc.SMTPPassword = "", ""
 		}
 		accs = append(accs, acc)
 	}
-	return accs, nil
+	return accs, rows.Err()
 }
 
 func DeleteAccount(id string) error {
 	_, err := db.Exec("DELETE FROM accounts WHERE id = ?", id)
 	return err
+}
+
+// MarkAccountSynced records that a sync just finished without error.
+func MarkAccountSynced(id string) error {
+	_, err := db.Exec("UPDATE accounts SET last_synced_at = ? WHERE id = ?", time.Now().UnixMilli(), id)
+	return err
+}
+
+// DisconnectAccount forgets an account's login and stops it syncing, keeping
+// its mail. Saving the account with a password again connects it.
+func DisconnectAccount(id string) error {
+	empty, err := vault.Encrypt("")
+	if err != nil {
+		return err
+	}
+	res, err := db.Exec(`UPDATE accounts SET password = ?, smtp_password = '', disconnected = 1,
+		last_sync_status = 'disconnected', last_sync_error = '' WHERE id = ?`, empty, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// AccountFootprint is what removing an account would delete: its messages,
+// their stored size, and its drafts.
+func AccountFootprint(id string) (messages int, bytes int64, drafts int, err error) {
+	if err = db.QueryRow("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM messages WHERE account_id = ?", id).
+		Scan(&messages, &bytes); err != nil {
+		return
+	}
+	err = db.QueryRow("SELECT COUNT(*) FROM drafts WHERE account_id = ?", id).Scan(&drafts)
+	return
 }
 
 func UpdateAccountStatus(id string, status string, lastError string) error {

@@ -10,38 +10,94 @@ you afterwards.
 
 ## Adding an account
 
-**Settings → Mail Accounts → Add Account.**
+**Settings → Mail Accounts → Add account**, then your address and **Continue**.
+InboxQL works out the servers itself and says where it found them:
+
+1. **its own list** of the large providers — Gmail, iCloud, Outlook.com,
+   Yahoo, AOL, Fastmail, Zoho, GMX, Proton — and, from a domain's mail records,
+   a company domain whose mail is on Google Workspace or Microsoft 365;
+2. **the settings your domain publishes**, in the format Thunderbird defined;
+3. **your domain's DNS service records**.
+
+All three ask only your mail domain and DNS — the places you are about to
+connect to anyway. If none answers, the page offers a fourth: **Mozilla's
+directory** of mail providers. That one asks a third party, so it is a button
+rather than automatic, and it tells Mozilla the domain — never your address.
+
+Then the password, and **Sign in and add**: InboxQL signs in to both the
+incoming (IMAP) and outgoing (SMTP) server before saving anything, and says
+plainly what went wrong if either refuses — the password was rejected, the
+server name does not exist, it did not answer, or its certificate is not
+trusted. Saving starts the first sync. On a large mailbox that takes a while,
+and you can work with what has arrived while the rest comes in. After that, a
+sync only asks for what is new.
+
+**Enter settings manually** opens the full form, for a server nothing could
+find or one you want to set yourself:
 
 | Field | What to put |
 |---|---|
-| IMAP server | e.g. `imap.gmail.com`, `imap.mail.me.com`, `outlook.office365.com` |
-| Port | 993 almost everywhere — IMAP over TLS |
+| Incoming server and port | `imap.example.com`, 993 almost everywhere |
+| Encrypted from the start | on for port 993; off means STARTTLS, usually on port 143 |
 | Username | usually your full address |
-| Password | for Gmail, iCloud and most providers with two-step sign-in, an **app password** |
-| SMTP server | only needed to send replies; optional |
+| Password | for most providers with two-step sign-in, an **app password** |
+| Outgoing server and port | only needed to send; 465 is encrypted from the start, 587 uses STARTTLS |
+| Own username and password | only if the outgoing server's login differs from the incoming one |
 
-**Test Connection** before saving. A failure is classified rather than
-reported as one opaque error: the password was rejected, the server name does
-not exist, the network cannot reach it, or its certificate did not verify.
-InboxQL always verifies a server's certificate; there is no setting to turn
-that off.
+A password is never sent unencrypted, whichever you choose: a server that
+offers no encryption is refused. InboxQL always verifies a server's
+certificate; there is no setting to turn that off.
 
-Saving starts the first sync. On a large mailbox that takes a while, and you
-can work with what has arrived while the rest comes in. After that, a sync
-only asks for what is new.
+### Providers that need more than a password
 
-From a terminal the same thing is:
+| Provider | What it takes |
+|---|---|
+| Gmail, Google Workspace | **Sign in with Google**, or an app password (needs 2-Step Verification) |
+| iCloud | an app-specific password, from account.apple.com |
+| Yahoo, AOL, Fastmail | an app password, from the account's security settings |
+| Zoho, GMX | IMAP switched on in the provider's settings first |
+| Outlook.com, Microsoft 365 | **not yet** — Microsoft has switched off password sign-in for IMAP, and InboxQL cannot yet sign in with a Microsoft account. Import the mail instead. |
+| Proton Mail | Proton Mail Bridge, running on this computer, then its address and password under *Enter settings manually* |
+
+The Add page says which applies, with a link to where the app password is made.
+
+### Gmail
+
+**Sign in with Google** connects Gmail without an app password: Google asks
+you to allow InboxQL, and this computer keeps the sign-in. Tick *Connect this
+Google account's calendar too* and the same consent connects your calendars.
+
+Google lets an app read mail only through an *OAuth client*, and until InboxQL
+has a verified one of its own, you use one from your own Google Cloud project.
+If you have already connected Google Calendar, it is the same client and
+InboxQL reuses it without asking. Otherwise, about five minutes, once:
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a
+   project.
+2. Under **OAuth consent screen**, choose *External*, fill in the names, and add
+   your own Google address as a **test user**.
+3. Under **Credentials**, choose **Create credentials → OAuth client ID**, of
+   type **Desktop app**.
+4. Paste its client ID and secret into the Sign in with Google box.
+
+Google shows a warning that the app is unverified, because it is your own;
+that is expected. The sign-in asks for full access to Gmail — Google has no
+narrower permission that IMAP accepts. It is kept, encrypted, in your
+mailbox's vault, and used only to talk to Gmail directly.
+
+From a terminal:
 
 ```sh
-INBOXQL_ACCOUNT_PASSWORD='app-password' iql account add \
-  --name work --email me@example.com --host imap.example.com
-iql account verify work     # test the connection, and say what is wrong
-iql account sync work       # returns when the sync has finished
+INBOXQL_ACCOUNT_PASSWORD='app-password' iql account add --email me@example.com
+iql account discover me@example.com   # what it would use, and where it looked
+iql account verify work               # sign in to both servers, and say what is wrong
+iql account sync work                 # returns when the sync has finished
 ```
 
-Passwords are never command-line flags, because those end up in your shell
-history and are visible to every other program on the machine. They come from
-an environment variable, standard input, or a prompt.
+`--host` and the other server flags are only needed when nothing can be found,
+or to override what was. Passwords are never command-line flags, because those
+end up in your shell history and are visible to every other program on the
+machine. They come from an environment variable, standard input, or a prompt.
 
 ### What happens to the password
 
@@ -50,16 +106,34 @@ It is encrypted with AES-256-GCM using a key kept beside your database,
 that a password is stored, not what it is. Leave the field empty when editing
 and the stored one is kept.
 
-One exception: change an account's server, port or username and you must type
-the password again. A credential for one server is not a credential for
+One exception: change either server, the port or the username and you must
+type the password again. A credential for one server is not a credential for
 another, and InboxQL will not present it to a host it was not given for.
 
-### Removing an account
+### Each account's card
 
-Removing an account **deletes every message stored for it**, including
-anything imported into it. Your mail on the server is not touched — the next
-time you add the account it syncs again — but imported mail has nowhere to come
-back from. That is why imports belong in their own account, below.
+The card says how the account is in a sentence — *Synced 4 min ago*, or what
+went wrong with a link to fix it — with **Sync now**, **Test**, **Edit**,
+**Disconnect** and **Remove**. **Test** signs in to both servers, as adding did.
+
+### Disconnecting, and removing
+
+**Disconnect** is for an account you have finished with — a job you left, a
+provider you moved away from. InboxQL forgets the login and stops syncing it,
+and **keeps all its mail**, still searchable. **Connect again** asks for the
+password.
+
+**Remove** deletes the account and **every message stored for it**, including
+anything imported into it. The confirmation says exactly how much — *12,408
+messages (1.2 GB)* — and asks you to type the account's name. Your mail on the
+server is not touched, and the next time you add the account it syncs again,
+but imported mail has nowhere to come back from. That is why imports belong in
+their own account, below.
+
+```sh
+iql account disconnect work
+iql account remove work
+```
 
 ## Importing from Apple Mail
 

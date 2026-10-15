@@ -73,7 +73,21 @@ func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	f, ok := googleFlows.Take(r.URL.Query().Get("state"))
 	if !ok {
-		page(http.StatusBadRequest, "This sign-in has expired", "Start again from Settings → Calendars. You can close this tab.")
+		page(http.StatusBadRequest, "This sign-in has expired", "Start again from Settings. You can close this tab.")
+		return
+	}
+	if f.Mail {
+		got, err := f.FinishMail(r.Context(), r.URL.Query().Get("code"))
+		if err != nil {
+			page(http.StatusBadGateway, "Gmail not connected", html.EscapeString(err.Error()))
+			return
+		}
+		body := "InboxQL can now read and send mail as " + html.EscapeString(got.Mail.Email) + "."
+		if got.Calendar != nil {
+			engine().Kick()
+			body += " Your Google calendars are connected too."
+		}
+		page(http.StatusOK, "Connected "+got.Mail.Email, body+" You can close this tab and return to InboxQL.")
 		return
 	}
 	acct, err := f.Finish(r.Context(), r.URL.Query().Get("code"))

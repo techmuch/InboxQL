@@ -67,7 +67,7 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'machine-settings', label: 'Machine settings (settings.json)', section: 'system', keywords: 'settings.json machine file create' },
   { id: 'ai-assistants', label: 'AI assistants', section: 'system', keywords: 'skills claude code codex gemini agents install' },
 
-  { id: 'mail-accounts', label: 'Mail accounts', section: 'accounts', keywords: 'add account imap smtp server password sync gmail' },
+  { id: 'mail-accounts', label: 'Mail accounts', section: 'accounts', keywords: 'add account imap smtp server password app sync gmail google sign in outlook icloud yahoo disconnect remove test connection' },
 
   { id: 'calendars-connected', label: 'Connected calendars', section: 'calendars', keywords: 'sync calendar accounts' },
   { id: 'calendar-invitations', label: 'Invitations in mail', section: 'calendars', keywords: 'invites ics meeting' },

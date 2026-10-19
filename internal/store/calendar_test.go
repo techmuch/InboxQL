@@ -38,7 +38,7 @@ func TestUpsertExpandsAndOverrides(t *testing.T) {
 	// Move the second occurrence; re-upserting is idempotent.
 	o := weekly("s1", start)
 	o.Recurrence = nil
-	o.RecurrenceID = start.Add(7 * 24 * time.Hour)
+	o.RecurrenceID = occ[1].Start
 	o.Start, o.End = o.RecurrenceID.Add(2*time.Hour), o.RecurrenceID.Add(3*time.Hour)
 	o.Summary = "Standup (moved)"
 	for i := 0; i < 2; i++ {

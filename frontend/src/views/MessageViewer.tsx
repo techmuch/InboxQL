@@ -21,6 +21,8 @@ import {
 } from './AttachmentPreview';
 import { useViewerStore, openContact, openAttachmentByKey, openQuery, type ViewerKind } from '../lib/tabs';
 import { previewPlaces, useAttachmentTargetStore } from '../lib/attachmentTarget';
+import { cidParts, hasRemoteContent, installLinkHandlers, openInNewTab, prepareHtml, type LinkHover } from '../lib/emailLinks';
+import { openComposeWith } from '../lib/appUi';
 
 /**
  * Extract a clean email address from an address header string.
@@ -98,6 +100,22 @@ const RecipientList = ({
 };
 
 /**
+ * Where the link under the pointer really goes, at the bottom of the window
+ * as a browser's status bar has it — not of the message, whose frame is as
+ * tall as the message and usually ends off screen. When the link's text names a
+ * different site, that is said too: it is what phishing depends on.
+ */
+const LinkStatus = ({ hover }: { hover: NonNullable<LinkHover> }) => (
+  <div role="status" aria-live="polite"
+    className="pointer-events-none fixed bottom-8 left-2 z-40 max-w-[min(48rem,90vw)] truncate border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground shadow-md">
+    {hover.claims && (
+      <span className="mr-1.5 font-semibold text-amber-700 dark:text-amber-300">Says {hover.claims}, goes to</span>
+    )}
+    <span className="font-mono">{hover.url}</span>
+  </div>
+);
+
+/**
  * The message viewer, as its own workbench tab.
  *
  * This used to be a mode of the mail client: selecting a message replaced the
@@ -150,6 +168,19 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
   const [copied, setCopied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   useEffect(() => setActionError(null), [message?.id]);
+  // Remote images are held back per message, and asked for per message: a
+  // sender learns nothing until the person chooses to load them.
+  const [remoteOk, setRemoteOk] = useState(false);
+  useEffect(() => setRemoteOk(false), [message?.id]);
+  const hasRemote = useMemo(() => !!message?.htmlBody && hasRemoteContent(message.htmlBody), [message?.htmlBody]);
+  const parts = useMemo(() => cidParts(attachments), [attachments]);
+  const htmlDoc = useMemo(
+    () => (message?.htmlBody
+      ? prepareHtml(message.htmlBody, { remote: remoteOk, parts, origin: window.location.origin })
+      : ''),
+    [message?.htmlBody, remoteOk, parts],
+  );
+  const [linkHover, setLinkHover] = useState<LinkHover>(null);
 
   // Set default view mode based on message content
   useEffect(() => {
@@ -537,17 +568,28 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
               )}
             </div>
 
+            {message.htmlBody && hasRemote && !remoteOk && (
+              <div className="flex items-center justify-between gap-3 text-xs px-3 py-1.5 rounded border border-border bg-muted/40 text-muted-foreground">
+                <span>Images from the web are hidden, so the sender can’t tell you opened this.</span>
+                <button onClick={() => setRemoteOk(true)} className="shrink-0 font-semibold text-foreground underline">Load images</button>
+              </div>
+            )}
             {message.htmlBody ? (
               <div className="border border-blue-500/20 bg-white dark:bg-zinc-950 rounded overflow-hidden shadow-sm">
+                {/* Scripts stay off: the frame shares this page's origin, so a
+                    script in a message could read the mailbox. Links are
+                    handled from out here instead; see lib/emailLinks. */}
                 <iframe
-                  srcDoc={message.htmlBody}
-                  sandbox="allow-same-origin allow-popups"
+                  srcDoc={htmlDoc}
+                  sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                   title="HTML Message"
                   className="w-full min-h-[500px] border-0"
                   style={{ display: 'block' }}
                   onLoad={(e) => {
+                    setLinkHover(null);
                     try {
                       const doc = e.currentTarget.contentWindow?.document;
+                      if (doc) installLinkHandlers(doc, { openWeb: openInNewTab, openMail: openComposeWith, onHover: setLinkHover });
                       if (doc?.body) {
                         const height = doc.body.scrollHeight;
                         if (height > 0) {
@@ -559,6 +601,7 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
                     }
                   }}
                 />
+                {linkHover && <LinkStatus hover={linkHover} />}
               </div>
             ) : (
               <div className="space-y-4">

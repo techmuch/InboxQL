@@ -85,6 +85,8 @@ export interface MessageAttachment {
   contentHash?: string;
   storagePath?: string;
   inline: boolean;
+  /** The part's Content-ID, by which the HTML body refers to it as cid:…. */
+  contentId?: string;
   skipped?: string;
 }
 

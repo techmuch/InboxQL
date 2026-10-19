@@ -3,6 +3,7 @@ import { CommandPalette, commandRegistry } from 'nexus-shell';
 import { Loader2, Send, X } from 'lucide-react';
 import { sendNew, undoSend, useSendingStore } from '../lib/sending';
 import { useAppUi } from '../lib/appUi';
+import type { MailtoDraft } from '../lib/emailLinks';
 import { BINDINGS } from '../lib/keySequences';
 import { openQuery } from '../lib/tabs';
 import { matchesSetting, matchesWords, openSetting, SECTION_LABEL, SETTINGS, type SettingEntry } from '../lib/settingsIndex';
@@ -16,7 +17,7 @@ export const AppDialogs = () => {
   const ui = useAppUi();
   return (
     <>
-      {ui.compose && <ComposeDialog onClose={() => ui.set('compose', false)} />}
+      {ui.compose && <ComposeDialog initial={ui.composeDraft} onClose={() => ui.set('compose', false)} />}
       {ui.task && <NewTaskDialog onClose={() => ui.set('task', false)} />}
       {ui.keys && <KeyboardHelp onClose={() => ui.set('keys', false)} />}
       <FindAnything open={ui.palette} onClose={() => ui.set('palette', false)} />
@@ -94,13 +95,13 @@ const SendingToast = () => {
  * New message. Send holds it for a few seconds, with Undo, then sends it;
  * Save draft keeps it in Drafts.
  */
-const ComposeDialog = ({ onClose }: { onClose: () => void }) => {
+const ComposeDialog = ({ initial, onClose }: { initial: MailtoDraft | null; onClose: () => void }) => {
   const [accounts, setAccounts] = useState<{ id: string; name: string; email?: string }[]>([]);
   const [accountId, setAccountId] = useState('');
-  const [to, setTo] = useState('');
-  const [cc, setCc] = useState('');
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
+  const [to, setTo] = useState(initial?.to ?? '');
+  const [cc, setCc] = useState(initial?.cc ?? '');
+  const [subject, setSubject] = useState(initial?.subject ?? '');
+  const [body, setBody] = useState(initial?.body ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);

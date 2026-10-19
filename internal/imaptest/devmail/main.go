@@ -106,6 +106,9 @@ func controlPort(addr string, srv *imaptest.Server, smtp *imaptest.SMTP) {
 		var req struct {
 			Subject, From string
 			Labels        []string
+			// Raw is a whole RFC 822 message, sent as it is, for an HTML
+			// message or anything else Message does not make.
+			Raw string
 		}
 		if err := read(r, &req); err != nil {
 			http.Error(w, err.Error(), 400)
@@ -115,7 +118,11 @@ func controlPort(addr string, srv *imaptest.Server, smtp *imaptest.SMTP) {
 			req.From = "someone@example.com"
 		}
 		id := fmt.Sprintf("%d@devmail", time.Now().UnixNano())
-		srv.Deliver(imaptest.Message(id, req.Subject, req.From), req.Labels...)
+		msg := imaptest.Message(id, req.Subject, req.From)
+		if req.Raw != "" {
+			msg = req.Raw
+		}
+		srv.Deliver(msg, req.Labels...)
 		json.NewEncoder(w).Encode(map[string]string{"messageId": id})
 	})
 	mux.HandleFunc("POST /change", func(w http.ResponseWriter, r *http.Request) {

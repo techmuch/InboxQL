@@ -72,6 +72,20 @@ the list with what you can do to all of them at once — mark them read, unread
 or starred, **Archive**, **Move to Inbox**, **Trash**, **Spam**, **Label** —
 and **Narrow to these**, which turns the selection into a query.
 
+**Links in a message open in a new browser tab.** Hover over one, or tab to
+it, and the address it really goes to shows at the bottom left of the window.
+When the link's text names a different site — *www.paypal.com* on a link to
+somewhere else — that is said in amber first, because it is what most
+phishing relies on. An email link (`mailto:`) opens **New message**, filled
+in, and a link to elsewhere in the message scrolls there. Anything else — a
+script, a local file — does nothing.
+
+**Images from the web wait until you ask.** Loading one tells the sender you
+opened the message, when, and roughly where from — that is all a tracking
+pixel is. A message with any shows a bar above it; **Load images** shows them
+for that message. Images carried inside the message itself — a logo, a
+pasted screenshot — are shown as usual.
+
 ## Archiving and labelling
 
 The viewer's toolbar has **Archive** (or **Move to Inbox** for mail that is not

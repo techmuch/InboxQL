@@ -38,6 +38,13 @@ address per press, after which the picture is kept here. A Gravatar lookup
 tells Gravatar the address you looked up, which is why it is never done for
 everyone at once and never done by a page loading.
 
+A link you click in a message opens in its own tab without telling the site
+where you came from, and the site cannot reach back into InboxQL. Scripts in
+a message never run: the message is shown in a sandboxed frame with them
+switched off. Images, stylesheets and fonts a message would fetch from the web are
+not fetched until you press **Load images** on it, because fetching them tells
+the sender you opened it.
+
 ## When a password is asked for
 
 InboxQL listens on `127.0.0.1` — this computer only — and there it does not ask

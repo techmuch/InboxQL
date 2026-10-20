@@ -52,3 +52,11 @@
 .iql-doc blockquote { border-left: 3px solid hsl(var(--border)); padding-left: 1em; color: hsl(var(--muted-foreground)); margin: 0 0 1em; }
 .iql-doc hr { border: 0; border-top: 1px solid hsl(var(--border)); margin: 2em 0; }
 .iql-doc .iql-doc-target, .iql-doc-target { background: hsl(var(--primary) / 0.12); transition: background 1.2s; }
+/* A link that opens a place in the application rather than another page. */
+.iql-doc a.iql-app-link { text-decoration-style: dotted; }
+.iql-doc a.iql-app-link::after { content: '↗'; font-size: 0.75em; margin-left: 0.15em; opacity: 0.6; }
+/* Screenshots come in both themes; the one matching the application's is shown. */
+.iql-doc img.iql-shot { display: block; max-width: 100%; height: auto; border: 1px solid hsl(var(--border)); margin: 0.5em 0 1.4em; }
+.iql-doc img.iql-shot-dark { display: none; }
+.theme-dark .iql-doc img.iql-shot-light { display: none; }
+.theme-dark .iql-doc img.iql-shot-dark { display: block; }

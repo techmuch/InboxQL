@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Tag, User, X } from 'lucide-react';
 import { openQuery } from '../lib/tabs';
+import { Help } from './Help';
 
 export interface LabelLevel {
   label: string;
@@ -143,6 +144,7 @@ export const LabelChips = ({ messageId }: { messageId: string }) => {
           +{hidden} said no
         </button>
       )}
+      <Help topic="message-labels" />
       {menu && <RulingMenu menu={menu} onClose={() => setMenu(null)} onRule={send} />}
     </div>
   );

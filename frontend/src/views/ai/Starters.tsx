@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Loader2, Package, Zap } from 'lucide-react';
+import { Help } from '../Help';
 
 /**
  * A pack of annotators worth beginning from — as switches, not an install.
@@ -139,7 +140,8 @@ export const Starters = () => {
         Starting points, meant to be edited. Each extractor is gated by a cheap rule label,
         because a query costs nothing and a span engine costs about twenty seconds a message.
         Switching one on creates it — nothing runs until you say so. Switching one off keeps
-        everything it already found, so it is safe to change your mind.
+        everything it already found, so it is safe to change your mind.{' '}
+        <Help topic="ai-starters" className="align-middle" />
       </p>
 
       <div className="space-y-2">

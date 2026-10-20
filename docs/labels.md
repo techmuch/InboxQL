@@ -80,7 +80,7 @@ and also entirely local; `iql gliner install` downloads it once.
 ### LLM — understanding
 
 A prompt sent to a language model, through the AI provider configured in
-Settings → AI Configuration. Use it when the question needs understanding
+Settings → [AI Configuration](#setting/ai-models). Use it when the question needs understanding
 rather than locating — *what is the sender actually asking for?* — and expect
 it to be slower and, for extraction, less trustworthy: a generative model can
 return a value that is nowhere in the message.
@@ -176,7 +176,7 @@ toss.
 
 ## Making your own
 
-**New annotator** on the Annotators tab, or:
+**New annotator** on the [Annotators](#open/annotators) tab, or:
 
 ```sh
 iql annotate create waiting-on-legal --engine laya \
@@ -202,7 +202,7 @@ seconds a message is a long time to find out an instruction was badly worded.
 
 A pass handles at most 200 messages per annotator and leaves the rest for the
 next. On a laptop running on battery, the automatic pass after a sync waits for
-mains power unless you allow it in Settings → System.
+mains power unless you allow it in Settings → System → [Heavy work on battery](#setting/heavy-work-on-battery).
 
 ## Switching off, and deleting
 

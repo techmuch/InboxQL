@@ -9,7 +9,7 @@ people is one file that arrived five times — and "which version is this?" and
 ## The File tab
 
 Click any attachment and it opens on its own, in the File tab (or inline in
-the message — Settings → General → **Attachment Previews** chooses which, or
+the message — Settings → General → [**Attachment Previews**](#setting/attachment-previews) chooses which, or
 both). The File tab shows:
 
 - a preview, for PDFs, images and text;

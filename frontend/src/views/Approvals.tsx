@@ -4,6 +4,7 @@ import { sendDraft } from '../lib/sending';
 import { approveChange, listChanges, rejectChange, type Change } from './Calendar/api';
 import { openCalendar } from '../lib/calendarNav';
 import { openMessageByID } from '../lib/tabs';
+import { Help } from './Help';
 
 interface Ticket {
   id: string; title: string; body?: string; status: string; confidence?: number;
@@ -71,7 +72,7 @@ export const Approvals = () => {
       <div className="mx-auto max-w-3xl space-y-6">
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold">Waiting for approval</h1>
+            <h1 className="flex items-center gap-2 text-xl font-semibold">Waiting for approval <Help topic="approvals" /></h1>
             <p className="text-sm text-muted-foreground">
               {loading ? 'Looking…' : total === 0 ? 'Nothing is waiting for you.' : `${total} waiting for you.`}
             </p>

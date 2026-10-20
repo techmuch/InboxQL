@@ -7,8 +7,8 @@ iql where     # which mailbox a command will use, and why
 iql doctor    # checks the mailbox, the key, the accounts and the models
 ```
 
-In the application, **Settings → System** shows the same things for the
-running server, and **View → Log** shows what it has been doing — filter it
+In the application, **Settings → [System](#setting/this-server)** shows the same things for the
+running server, and **View → [Log](#open/log)** shows what it has been doing — filter it
 with `in:logs level>warn after:1d`.
 
 ## The page does not load
@@ -19,7 +19,7 @@ Run `iql service status`.
   with `iql service install`, or run `iql start` in a terminal.
 - **Installed, not running** — the reason is at the end of
   `~/.iql/logs/service.log`. The most common is another program already using
-  port 8420. Pick another port in Settings → System (if you can reach it), or
+  port 8420. Pick another port in Settings → System → [Listen address](#setting/listen-address) (if you can reach it), or
   edit `"addr"` in `~/.iql/settings.json`, then `iql service restart`.
 - **Running** — check the address. `iql where` prints the one it listens on,
   and a site name such as `inboxql.localhost` only works once the hosts-file
@@ -78,7 +78,7 @@ the grant to the exact file.
 
 ## An account will not sync
 
-The account's card in Settings → Mail Accounts says why it is not connected
+The account's card in Settings → [Mail Accounts](#setting/mail-accounts) says why it is not connected
 and when it tries again. `iql account verify <id>` classifies the failure: the
 password was rejected, the server name was not found, the network could not
 reach it, or the certificate did not verify. For Gmail and iCloud a rejected
@@ -121,7 +121,7 @@ database's statistics.
 
 The first run of a local model loads it, which takes several seconds before
 the first message is evaluated. On battery, the automatic pass after a sync
-waits for mains power — Settings → System says when that is happening. A run
+waits for mains power — Settings → System → [Power](#setting/power) says when that is happening. A run
 evaluates at most 200 messages at a time; the rest wait for the next.
 
 ## Reporting a problem

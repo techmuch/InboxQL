@@ -23,6 +23,7 @@ import { useViewerStore, openContact, openAttachmentByKey, openQuery, type Viewe
 import { previewPlaces, useAttachmentTargetStore } from '../lib/attachmentTarget';
 import { cidParts, hasRemoteContent, installLinkHandlers, openInNewTab, prepareHtml, type LinkHover } from '../lib/emailLinks';
 import { openComposeWith } from '../lib/appUi';
+import { Help } from './Help';
 
 /**
  * Extract a clean email address from an address header string.
@@ -571,7 +572,10 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
             {message.htmlBody && hasRemote && !remoteOk && (
               <div className="flex items-center justify-between gap-3 text-xs px-3 py-1.5 rounded border border-border bg-muted/40 text-muted-foreground">
                 <span>Images from the web are hidden, so the sender can’t tell you opened this.</span>
-                <button onClick={() => setRemoteOk(true)} className="shrink-0 font-semibold text-foreground underline">Load images</button>
+                <span className="flex shrink-0 items-center gap-2">
+                  <button onClick={() => setRemoteOk(true)} className="font-semibold text-foreground underline">Load images</button>
+                  <Help topic="load-images" />
+                </span>
               </div>
             )}
             {message.htmlBody ? (

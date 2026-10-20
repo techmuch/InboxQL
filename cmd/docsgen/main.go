@@ -95,6 +95,20 @@ func run(out string) error {
 	if err := os.WriteFile(filepath.Join(out, "search.json"), b, 0o644); err != nil {
 		return err
 	}
+	// The screenshots, beside the pages that show them.
+	if err := os.MkdirAll(filepath.Join(out, "images"), 0o755); err != nil {
+		return err
+	}
+	for _, name := range docs.Images() {
+		img, err := docs.Image(name)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(out, "images", name), img, 0o644); err != nil {
+			return err
+		}
+	}
+
 	fmt.Printf("wrote %d guides and a search index of %d sections to %s\n", len(guides), len(docs.Index()), out)
 	return nil
 }
@@ -123,6 +137,13 @@ const pageTemplate = `<!doctype html>
   @media (prefers-color-scheme: dark) {
     :root { --bg: #0c0a09; --fg: #f5f5f4; --muted: #a8a29e; --faint: #292524;
             --card: #1c1917; --code: #171412; --accent: #60a5fa; --mark: #1e3a5f; }
+  }
+  /* Every screenshot comes in both themes; the reader's is shown. */
+  img.iql-shot { display: block; max-width: 100%; height: auto; border: 1px solid var(--faint); margin: 8px 0 20px; }
+  img.iql-shot-dark { display: none; }
+  @media (prefers-color-scheme: dark) {
+    img.iql-shot-light { display: none; }
+    img.iql-shot-dark { display: block; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg);

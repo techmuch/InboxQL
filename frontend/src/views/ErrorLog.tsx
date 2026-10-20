@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Filter, Loader2, RefreshCw, ScrollText, Trash2, Copy, Check } from 'lucide-react';
 import { useErrorLogStore } from '../lib/tabs';
+import { Help } from './Help';
 
 /** Lowest first; the order is what makes a floor mean "this and above". */
 const LEVELS = ['debug', 'info', 'warn', 'error'] as const;
@@ -139,6 +140,7 @@ export const ErrorLog = () => {
       <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0">
         <ScrollText className="w-4 h-4 text-muted-foreground" />
         <h2 className="text-sm font-bold">Log</h2>
+        <Help topic="log" />
 
         {/* Two controls that look alike and are not. This one hides rows that
             exist; the one beside it decides whether they are written at all. */}

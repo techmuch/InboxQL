@@ -28,9 +28,11 @@ both find the theme.
 The section to open when you want to know what is going on. **Help → About
 InboxQL** opens it directly.
 
+![Settings, System: how this server is running, and where its mailbox is](images/settings-system.webp)
+
 ### This server
 
-**Running as** says how the server was started, because that decides how it
+[**Running as**](#setting/this-server) says how the server was started, because that decides how it
 restarts, when it stops, and which settings it obeys:
 
 | | |
@@ -78,7 +80,7 @@ installed, and where.
 
 ### Updates
 
-Says whether a newer release exists; **Check now** asks again, otherwise it
+[Updates](#setting/updates) says whether a newer release exists; **Check now** asks again, otherwise it
 checks at most hourly. **Update to …** shows what will happen, then downloads
 the release, verifies it, backs up your mailbox, replaces the program and
 restarts the server, showing its progress as it goes. The page reconnects on
@@ -89,7 +91,7 @@ inboxql`. [Installing](installing.md#updating) has the details.
 
 ### AI assistants
 
-The AI coding tools on this computer — Claude Code, Codex, Gemini CLI — and
+[AI assistants](#setting/ai-assistants) lists the AI coding tools on this computer — Claude Code, Codex, Gemini CLI — and
 whether the iql skill is installed for each. The skill is a short guide that
 tells an agent the rules before it starts: draft and queue mail, and send only
 when you ask; how queries work; and that `iql help agents` has the rest. **Install**,
@@ -99,7 +101,7 @@ line](command-line.md#driving-it-from-an-agent).
 
 ### Machine settings
 
-The editor for `~/.iql/settings.json`. Each field says whether it **applies
+[Machine settings](#setting/machine-settings) is the editor for `~/.iql/settings.json`. Each field says whether it **applies
 now** or **after a restart**:
 
 | Setting | Applies | |
@@ -134,23 +136,25 @@ then on.
 
 ## User Profile
 
-Your name, email address and picture. **Use my Gravatar** asks Gravatar once for
+Your [name](#setting/display-name), [email address](#setting/profile-email) and [picture](#setting/profile-image). **Use my Gravatar** asks Gravatar once for
 the picture of the address on the profile and keeps it in the mailbox, so the
 picture in the corner of every page is loaded from InboxQL rather than from
 Gravatar. You can also give any picture's address yourself.
 
 ## General
 
-How the Desk looks and behaves in this browser: the colour theme, **Inbox
-Layout** (a row per message or per conversation), **Conversations** (start
-closed or open), **Viewer Tabs** (one shared tab or one per kind), and
-**Attachment Previews** (in the message, in the File tab, or both). The Desk's
-default rail entries can be re-added here too. [The Desk](desk.md) explains
+How the Desk looks and behaves in this browser: the [colour theme](#setting/theme), [**Inbox
+Layout**](#setting/inbox-layout) (a row per message or per conversation), **Conversations** (start
+closed or open), [**Viewer Tabs**](#setting/viewer-tabs) (one shared tab or one per kind), and
+[**Attachment Previews**](#setting/attachment-previews) (in the message, in the File tab, or both). The Desk's
+default [rail entries](#setting/rail-entries) can be re-added here too. [The Desk](desk.md) explains
 each.
+
+![Settings, General: the colour theme, the inbox layout and how conversations start](images/settings-general.webp)
 
 ## Mail Accounts
 
-Add an account from its address — the servers are worked out — or enter the
+[Add an account](#setting/mail-accounts) from its address — the servers are worked out — or enter the
 settings by hand; sign in with Google for Gmail; test, edit, disconnect
 (keeping the mail) and remove. Each card says in a sentence whether the
 account is live, how much of its older mail is here, and how many changes
@@ -159,19 +163,19 @@ are waiting to reach the server.
 
 ## Calendars
 
-Connected Google and Exchange accounts, with when each last synced, **Sync
+[Connected Google](#setting/calendars-connected) and Exchange accounts, with when each last synced, **Sync
 now** and **Disconnect** (which removes them from InboxQL only). Connecting
 Google needs a client ID from your own Google Cloud project; the page walks
 through it. [Calendar](calendar.md#connecting-google-calendar) has the details.
 
 ## Import Mail
 
-Bring in mail from Apple Mail, read-only. See
+[Bring in mail](#setting/import-source) from Apple Mail, read-only. See
 [Importing](accounts-and-import.md#importing-from-apple-mail).
 
 ## AI Configuration
 
-Which model providers InboxQL may use — Ollama or Swama on this machine, or any
+[Which model providers](#setting/ai-models) InboxQL may use — Ollama or Swama on this machine, or any
 OpenAI-compatible service — as named profiles, with a **Remote** or **Local**
 badge on each. It also holds the starter annotators, and the defaults for
 ticket proposals, similarity and topic extraction. Nothing here is used until
@@ -180,27 +184,27 @@ mailbox without your consent per annotator. See [Labels](labels.md).
 
 ## Logging
 
-What InboxQL writes in its own log, which you can read under **View → Log** or
-query with `in:logs`: how slow a query must be to be recorded as slow, which
-noisy categories to include, how many lines to keep, and whether the text of
-your queries is written down. How *much* is logged — the level — is set in the
+What InboxQL writes in its own log, which you can read under **View → [Log](#open/log)** or
+query with `in:logs`: [how slow a query must be](#setting/log-slow-queries) to be recorded as slow, [which
+noisy categories](#setting/log-categories) to include, [how many lines to keep](#setting/log-lines), and [whether the text of
+your queries is written down](#setting/log-query-text). How *much* is logged — the level — is set in the
 Log tab itself.
 
 ## Maintenance
 
-Jobs that work through the whole mailbox, with progress: **Extract
+[Jobs that work through the whole mailbox](#setting/health-checks), with progress: **Extract
 attachments**, **Read file contents**, **Read scans (OCR)**, **Embed file
 text** and **Rebuild indexes**. Anything that sends file contents to a model
 says so before it starts.
 
 ## Data Management
 
-**Erase All Local Data** deletes every stored message and attachment from this
+[**Erase All Local Data**](#setting/erase-data) deletes every stored message and attachment from this
 mailbox. Your mail on the server is untouched and will sync again; imported
 mail will not come back. There is no undo.
 
 ## Browser Storage
 
-What this browser has stored for InboxQL — the window layout, a cached profile —
+[What this browser](#setting/browser-storage) has stored for InboxQL — the window layout, a cached profile —
 with **Reset Layout** for a layout that has got into a muddle, and **Clear All
 Browser Storage**. None of it is your mail.

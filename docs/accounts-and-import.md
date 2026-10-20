@@ -11,7 +11,7 @@ you afterwards.
 
 ## Adding an account
 
-**Settings → Mail Accounts → Add account**, then your address and **Continue**.
+**Settings → [Mail Accounts](#setting/mail-accounts) → Add account**, then your address and **Continue**.
 InboxQL works out the servers itself and says where it found them:
 
 1. **its own list** of the large providers — Gmail, iCloud, Outlook.com,
@@ -119,6 +119,8 @@ made here are still waiting to reach the server. **Sync now** looks at
 everything at once, rather than waiting; **Test** signs in to both servers, as
 adding did; then **Edit**, **Disconnect** and **Remove**.
 
+![An account's card: live, its messages, and its incoming and outgoing servers](images/mail-accounts.webp)
+
 ## Keeping a copy, both ways
 
 While InboxQL is running — and as the login service, it always is — every
@@ -179,7 +181,7 @@ iql account remove work
 
 ## Importing from Apple Mail
 
-**Settings → Import Mail**, or `iql import` in a terminal.
+**Settings → [Import Mail](#setting/import-source)**, or `iql import` in a terminal.
 
 The import reads Mail's own files in `~/Library/Mail`. It is strictly
 read-only: nothing in Mail is changed, moved or deleted, and Mail can stay
@@ -280,7 +282,7 @@ Any mail that can be saved as a standard `.eml` message can come in this way.
 ## Where the mail lives afterwards
 
 Everything is in your mailbox folder — `~/.iql/data` for an installed copy —
-and **Settings → System** says which folder that is. Queries can still tell
+and **Settings → System → [Mailbox](#setting/mailbox-location)** says which folder that is. Queries can still tell
 the sources apart:
 
 ```

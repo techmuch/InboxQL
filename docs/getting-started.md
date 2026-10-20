@@ -65,11 +65,16 @@ The menus along the top:
 Your name at the top right has your profile, Settings and Sign out. And
 **Ctrl+K** (**⌘K**) finds any of it by name, every setting included.
 
+A small **?** beside a heading — on the Desk's rail, the query bar, a Settings
+section, the Calendar and the rest — opens the part of this documentation that
+explains it. Going the other way, a link marked **↗** in a guide opens the
+place in the application it describes: Settings at that setting, or a tab.
+
 ## Your first hour
 
 ### 1. Add an account
 
-Open **Settings → Mail Accounts** and choose **Add account**. Type your
+Open **Settings → [Mail Accounts](#setting/mail-accounts)** and choose **Add account**. Type your
 address: InboxQL works out the servers. Then the password — for iCloud, Yahoo
 and most providers with two-step sign-in an *app password*, not the one you
 sign in with; Gmail can use **Sign in with Google** instead. InboxQL signs in

@@ -78,7 +78,7 @@ iql service uninstall   # stop it and remove the definition; mail is untouched
 iql open                # open it in your browser
 ```
 
-**Settings → System** shows the same state and has a **Restart** button.
+**Settings → System → [Login service](#setting/login-service)** shows the same state and has a **Restart** button.
 
 ### On battery
 
@@ -90,7 +90,7 @@ Settings → System.
 
 ## Updating
 
-From the application: **Settings → System → Updates**. It says whether a newer
+From the application: **Settings → System → [Updates](#setting/updates)**. It says whether a newer
 release exists, and **Update** installs it.
 
 From a terminal:
@@ -139,7 +139,7 @@ Use a name ending in `.localhost` or `.test`. Names ending in `.local` are
 refused: macOS looks those up on the network before it reads the hosts file,
 so every page would wait. `iql hosts remove` takes the lines out again.
 
-You can also set the name in Settings → System; the hosts-file step is still
+You can also set the name in Settings → System → [Site name](#setting/site-name); the hosts-file step is still
 one command in a terminal, because a web page asking for an administrator's
 password is exactly what an attack looks like.
 

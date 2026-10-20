@@ -5,7 +5,7 @@ import {
   Power, RefreshCw, RotateCw, Server, Settings2,
 } from 'lucide-react';
 import { expectRestart, useRestartExpectation, clearRestartExpectation } from '../lib/devReload';
-import { openDoc } from '../lib/docsNav';
+import { openHelp } from '../lib/helpTopics';
 
 /**
  * Everything about the machine this mailbox is served from: where the mail
@@ -212,7 +212,7 @@ export const SystemPanel = () => {
         <h2 className="text-2xl font-bold text-foreground mb-1">System</h2>
         <p className="text-muted-foreground text-sm">
           Where your mail is, how this server is running, and the machine settings that decide both.{' '}
-          <button className="text-primary hover:underline" onClick={() => openDoc('settings', 'system')}>What each part means</button>
+          <button className="text-primary hover:underline" onClick={() => openHelp('settings-system')}>What each part means</button>
         </p>
       </div>
 

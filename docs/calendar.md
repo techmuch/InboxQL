@@ -63,7 +63,7 @@ delete one.
   that provider, which tells the organizer.
 - For an invitation that only arrived **by mail**, the answer goes back by mail,
   as a calendar reply the organizer's calendar understands. It waits in the
-  outbox until you send it, from **Intelligence → Waiting for approval** or
+  outbox until you send it, from **Intelligence → [Waiting for approval](#open/approvals)** or
   with `iql outbox approve <draft-id>`.
 
 ## Connecting Google Calendar
@@ -78,7 +78,7 @@ from your own Google Cloud project — about five minutes, once:
    your own Google address as a **test user**.
 3. Under **Credentials**, choose **Create credentials → OAuth client ID**, of
    type **Desktop app**.
-4. In InboxQL, **Settings → Calendars → Connect Google**, paste the client ID
+4. In InboxQL, **Settings → Calendars → [Connect Google](#setting/google-calendar)**, paste the client ID
    and secret, and sign in.
 
 Google signs you in in a new tab and sends you back to this computer. InboxQL

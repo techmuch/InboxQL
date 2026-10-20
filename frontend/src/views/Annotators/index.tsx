@@ -11,6 +11,7 @@ import {
 import { Notice } from '../ai/Models';
 import { useQueryStore } from '../../lib/filters';
 import { ReviewPanel, ScoreLine, type AnnotatorScore } from './Review';
+import { Help } from '../Help';
 
 /**
  * Annotators — the labelling and extraction surface.
@@ -128,6 +129,7 @@ export const Annotators = () => {
             <h2 className="flex items-center gap-2 text-2xl font-bold text-foreground">
               <Tag className="h-6 w-6 text-primary" />
               Annotators
+              <Help topic="annotators" />
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               A named, versioned instruction applied to messages. A label answers yes or no;

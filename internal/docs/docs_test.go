@@ -1,6 +1,8 @@
 package docs
 
 import (
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -33,7 +35,8 @@ func TestGuideLinksResolve(t *testing.T) {
 		src, _ := source(g)
 		for _, m := range mdLink.FindAllStringSubmatch(string(src), -1) {
 			dest := m[1]
-			if strings.Contains(dest, "://") || strings.HasPrefix(dest, "#") || strings.HasPrefix(dest, "mailto:") {
+			if strings.Contains(dest, "://") || strings.HasPrefix(dest, "#") || strings.HasPrefix(dest, "mailto:") ||
+				shot.MatchString(dest) { // screenshots: TestScreenshots
 				continue
 			}
 			lm := guideLink.FindStringSubmatch(dest)
@@ -90,5 +93,107 @@ func TestIndexCutsIntoSections(t *testing.T) {
 		if strings.Contains(s.Text, "<?claude") || strings.Contains(s.Text, "](") {
 			t.Errorf("%s/%s carries markup into the index", s.Slug, s.ID)
 		}
+	}
+}
+
+// A link into the application opens it in Help; on the site, which cannot,
+// it is bold text, so "Settings → General → Color theme" still reads.
+func TestAppLinks(t *testing.T) {
+	p, _ := Render("settings", AppLinks)
+	if !strings.Contains(p.HTML, `href="#setting/theme" class="iql-app-link"`) {
+		t.Error("an app link is not marked for the reader")
+	}
+	p, _ = Render("settings", SiteLinks)
+	if strings.Contains(p.HTML, "#setting/") || strings.Contains(p.HTML, "#open/") {
+		t.Error("the site links into an application it does not have")
+	}
+	if !strings.Contains(p.HTML, "<strong>colour theme</strong>") {
+		t.Error("an app link's text is lost on the site")
+	}
+}
+
+// helpTopic is one line of frontend/src/lib/helpTopics.ts.
+var helpTopic = regexp.MustCompile(`\{ id: '([^']+)'.*?doc: '([^']+)'(?:, anchor: '([^']+)')?`)
+
+// Every "?" in the application opens a guide section that exists. The list
+// is in the frontend; the headings are only known to this renderer, so the
+// check is here.
+func TestHelpTopicsResolve(t *testing.T) {
+	src, err := os.ReadFile("../../frontend/src/lib/helpTopics.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	topics := helpTopic.FindAllStringSubmatch(string(src), -1)
+	if len(topics) < 10 {
+		t.Fatalf("read %d topics; has the format of helpTopics.ts changed?", len(topics))
+	}
+	for _, m := range topics {
+		p, err := Render(m[2], AppLinks)
+		if err != nil {
+			t.Errorf("topic %s names guide %q, which does not exist", m[1], m[2])
+			continue
+		}
+		if m[3] == "" {
+			continue
+		}
+		found := false
+		for _, h := range p.Headings {
+			found = found || h.ID == m[3]
+		}
+		if !found {
+			t.Errorf("topic %s names %s#%s, and %s has no such heading", m[1], m[2], m[3], m[2])
+		}
+	}
+}
+
+// Every screenshot a guide shows exists in every theme, and every file in
+// docs/images is shown somewhere — the binary carries them all, so one that
+// no guide uses is weight for nothing.
+func TestScreenshots(t *testing.T) {
+	have := map[string]bool{}
+	for _, name := range Images() {
+		have[name] = true
+	}
+	used := map[string]bool{}
+	img := regexp.MustCompile(`!\[[^\]]*\]\(([^)\s]+)\)`)
+	for _, g := range Guides {
+		src, _ := source(g)
+		for _, m := range img.FindAllStringSubmatch(string(src), -1) {
+			s := shot.FindStringSubmatch(m[1])
+			if s == nil {
+				t.Errorf("%s shows %q, which is not a screenshot in images/", g.Slug, m[1])
+				continue
+			}
+			for _, theme := range ShotThemes {
+				name := s[1] + "." + theme + ".webp"
+				used[name] = true
+				if !have[name] {
+					t.Errorf("%s shows %s, and there is no %s — run make screenshots", g.Slug, m[1], name)
+				}
+			}
+		}
+	}
+	for name := range have {
+		if !used[name] {
+			t.Errorf("docs/images/%s is in no guide", name)
+		}
+	}
+
+	p, _ := Render("desk", AppLinks)
+	for _, want := range []string{
+		`src="/api/docs/images/desk.light.webp" alt="The Desk`,
+		`class="iql-shot iql-shot-light"`,
+		`src="/api/docs/images/desk.dark.webp" alt="The Desk`,
+	} {
+		if !strings.Contains(p.HTML, want) {
+			t.Errorf("the app's page lacks %s", want)
+		}
+	}
+	p, _ = Render("desk", SiteLinks)
+	if !strings.Contains(p.HTML, `src="images/desk.dark.webp"`) {
+		t.Error("the site's page does not show the screenshot from beside it")
+	}
+	if _, err := Image("../desk.md"); err == nil {
+		t.Error("Image reads outside docs/images")
 	}
 }

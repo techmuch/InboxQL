@@ -13,6 +13,7 @@ import { addDays, addMonths, monthGrid, sameDay, startOfDay, startOfMonth, start
 import { useCalendarNav, type CalendarView } from '../../lib/calendarNav';
 import { requestSettingsSection } from '../../lib/settingsNav';
 import { openTool } from '../../lib/tabs';
+import { Help } from '../Help';
 
 /**
  * The Calendar tab.
@@ -325,6 +326,7 @@ export const Calendar = () => {
           <h2 className="ml-1 flex items-center gap-2 text-base font-semibold">
             <CalendarDays className="h-4 w-4 text-muted-foreground" /> {title(view, anchor)}
           </h2>
+          <Help topic="calendar" />
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           <div className="ml-auto flex items-center gap-2">
             {accounts.length > 0 && (

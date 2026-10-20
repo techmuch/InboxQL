@@ -3,6 +3,7 @@ import { Paperclip, Download, X, FileText, Image as ImageIcon, Mail, MessagesSqu
 import { openMessageByID, openQuery, openTool, previewMessageByID, useViewerStore } from '../lib/tabs';
 import { movedByKeyboard, navRow, useRovingFocus } from '../lib/rovingFocus';
 import { ariaCurrent, useIsCurrent } from '../lib/rowState';
+import { Help } from './Help';
 
 export interface AttachmentFile {
   key: string;
@@ -461,6 +462,7 @@ export const AttachmentViewer = ({ file, currentMessageId, onClose }: {
             <Sparkles className="w-4 h-4" />
           </button>
         )}
+        <Help topic="file-tab" className="mx-1" />
         <a
           href={attachmentURL(file.key, false)}
           download={file.filename}

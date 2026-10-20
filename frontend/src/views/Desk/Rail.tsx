@@ -8,6 +8,7 @@ import type { LabelCount } from '../../lib/mail';
 import type { SavedQuery } from './api';
 import { openCompose } from '../../lib/appUi';
 import type { Annotator } from '../ai/api';
+import { Help } from '../Help';
 
 /**
  * The rail.
@@ -136,6 +137,7 @@ export const Rail = ({
 
         <Heading
           label="Saved"
+          help="rail"
           action={
             <button
               onClick={() => setArranging(a => !a)}
@@ -281,12 +283,13 @@ export const Rail = ({
   );
 };
 
-const Heading = ({ label, action }: { label: string; action?: React.ReactNode }) => (
-  <div className="flex items-center px-4 pt-4 pb-1">
+const Heading = ({ label, action, help }: { label: string; action?: React.ReactNode; help?: string }) => (
+  <div className="flex items-center gap-1 px-4 pt-4 pb-1">
     <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
       {label}
     </span>
     {action}
+    {help && <Help topic={help} />}
   </div>
 );
 

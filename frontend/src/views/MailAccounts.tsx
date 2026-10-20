@@ -3,7 +3,7 @@ import {
   AlertCircle, ArrowLeft, Check, ExternalLink, Loader2, LogIn, Plug, Plus, RefreshCw, Server, Settings2, Trash2, Unplug, X,
 } from 'lucide-react';
 import { settingAnchor } from '../lib/settingsIndex';
-import { openDoc } from '../lib/docsNav';
+import { openHelp } from '../lib/helpTopics';
 
 /**
  * Settings → Mail Accounts.
@@ -555,7 +555,7 @@ export const GoogleSignIn = ({ email, accountId, onConnected }: { email: string;
         <div className="mt-3 space-y-2 text-xs">
           <p>
             Google lets an app read mail only through an OAuth client. Use the one from your own Google Cloud project — the same
-            kind the calendar uses; <button className="text-primary underline" onClick={() => openDoc('accounts-and-import', 'gmail')}>how to make one</button>.
+            kind the calendar uses; <button className="text-primary underline" onClick={() => openHelp('gmail-app-password')}>how to make one</button>.
             Its redirect address is <span className="font-mono">{redirect}</span>.
           </p>
           <input aria-label="Client ID" className={field} placeholder="Client ID — ….apps.googleusercontent.com" value={clientId} onChange={e => setClientId(e.target.value)} />

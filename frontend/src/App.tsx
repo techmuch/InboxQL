@@ -42,6 +42,7 @@ import { openDoc, DOCS_TAB } from './lib/docsNav';
 import { version as appVersion } from '../package.json';
 import 'nexus-shell/style.css';
 import './App.css';
+import { Help } from './views/Help';
 
 // --- Login View ---
 const LoginView = ({ onLogin }: { onLogin: (user: any) => void }) => {
@@ -226,7 +227,7 @@ const Dashboard = () => {
   return (
     <div className="p-6 overflow-auto h-full bg-background text-foreground">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Analytics Pulse</h2>
+        <h2 className="flex items-center gap-2 text-2xl font-bold">Analytics Pulse <Help topic="dashboard" /></h2>
         {terms.length > 0 && (
           <button onClick={clearAll} className="flex items-center gap-1.5 text-[10px] font-semibold text-primary hover:bg-primary/20 bg-primary/10 px-2.5 py-1  transition-colors">
             <X className="w-2.5 h-2.5" /> Clear Filters
@@ -729,14 +730,18 @@ const SettingsView = () => {
         </div>
         <div className="flex-1 overflow-auto py-2">
           {filteredCategories.map(cat => (
-            <button 
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className={`w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors ${activeCategory === cat.id ? 'bg-primary/10 text-primary font-semibold' : 'hover:bg-accent text-foreground/70'}`}
-            >
-              <cat.icon className="w-4 h-4" />
-              {cat.label}
-            </button>
+            <div key={cat.id} className={`flex items-center pr-3 ${activeCategory === cat.id ? 'bg-primary/10' : ''}`}>
+              <button
+                onClick={() => setActiveCategory(cat.id)}
+                className={`flex-1 flex items-center gap-3 px-4 py-2 text-sm transition-colors ${activeCategory === cat.id ? 'text-primary font-semibold' : 'hover:bg-accent text-foreground/70'}`}
+              >
+                <cat.icon className="w-4 h-4" />
+                {cat.label}
+              </button>
+              {/* The open section's guide, beside its name rather than over its
+                  page, where it would sit on the section's own buttons. */}
+              {activeCategory === cat.id && cat.id !== 'security' && <Help topic={`settings-${cat.id}`} />}
+            </div>
           ))}
           {matchingSettings.length > 0 && (
             <div className="mt-3 border-t border-border pt-2">

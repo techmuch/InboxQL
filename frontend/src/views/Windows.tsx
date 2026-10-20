@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Monitor, RefreshCw, Send, Radio, RadioTower } from 'lucide-react';
 import { listWindows, sendToWindow, useWindowsStore, type WindowInfo } from '../lib/windows';
+import { Help } from './Help';
 
 /**
  * Every open window, and what each is showing.
@@ -73,6 +74,7 @@ export const Windows = () => {
       <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0">
         <Monitor className="w-4 h-4 text-muted-foreground" />
         <h2 className="text-sm font-bold">Windows</h2>
+        <Help topic="windows" />
         <span className="text-[11px] text-muted-foreground">
           {myName
             ? <>this one is <span className="font-mono font-bold text-foreground">{myName}</span>{connected ? '' : ' · not connected'}</>

@@ -4,6 +4,7 @@ import { approveChange, getEvent, rejectChange, respond, type EventDetail, type 
 import { fmtRange } from './dates';
 import { openContact, openMessageByID } from '../../lib/tabs';
 import { Avatar } from '../Avatar';
+import { Help } from '../Help';
 
 /**
  * An event's card: when and where, who, the mail it came from, how you have
@@ -71,6 +72,7 @@ export const EventPanel = ({ occurrence, onClose, onEdit, onDelete, onChanged }:
       <div className="mb-2 flex items-start gap-2">
         <span className="mt-1.5 h-3 w-3 shrink-0" style={{ background: occurrence.color || detail.calendar?.color || '#2563eb' }} />
         <h2 className={`flex-1 text-lg font-semibold leading-snug ${ev.myStatus === 'declined' ? 'line-through opacity-60' : ''}`}>{ev.summary || '(no title)'}</h2>
+        <Help topic="event-card" className="mt-1.5" />
         <button onClick={onClose} aria-label="Close" className="p-1 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
       </div>
 

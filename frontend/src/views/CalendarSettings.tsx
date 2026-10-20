@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { settingAnchor } from '../lib/settingsIndex';
 import { CalendarDays, ExternalLink, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { syncAccount, type CalendarAccount } from './Calendar/api';
-import { openDoc } from '../lib/docsNav';
+import { openHelp } from '../lib/helpTopics';
 
 /**
  * Settings → Calendars: the accounts calendars come from, and connecting new
@@ -62,7 +62,7 @@ export const CalendarSettings = () => {
         <h2 className="text-2xl font-bold text-foreground mb-1">Calendars</h2>
         <p className="text-muted-foreground text-sm">
           Where your calendars come from. Invitations in your mail are read whether or not anything is connected.{' '}
-          <button className="text-primary hover:underline" onClick={() => openDoc('calendar', 'connecting-google-calendar')}>How to connect</button>
+          <button className="text-primary hover:underline" onClick={() => openHelp('settings-calendars')}>How to connect</button>
         </p>
       </div>
 

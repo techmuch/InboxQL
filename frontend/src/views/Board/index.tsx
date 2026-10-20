@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Mail, Paperclip, RefreshCw } from 'lucide-react';
 import { openQuery } from '../../lib/tabs';
+import { Help } from '../Help';
 
 interface TicketSource {
   messageId: string;
@@ -115,6 +116,7 @@ export const Board = () => {
         >
           <RefreshCw size={14} />
         </button>
+        <Help topic="board" className="ml-1" />
       </div>
 
       {error && <p className="px-3 py-2 text-sm text-destructive border-b border-border">{error}</p>}

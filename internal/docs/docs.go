@@ -8,6 +8,19 @@
 // the site describes the newest release, which after an update you have not
 // installed is a different program. cmd/docsgen renders the same files, with
 // the same renderer, into the site.
+//
+// # Pointing at the application, and pictures of it
+//
+// A guide links into the application with `[Color theme](#setting/theme)` (a
+// setting from frontend/src/lib/settingsIndex.ts) or `[Log](#open/log)` (a
+// place from frontend/src/lib/appPlaces.ts); on the site, which cannot open
+// either, the link is bold text. The other way, a "?" in the application is
+// a topic in frontend/src/lib/helpTopics.ts naming a heading here.
+//
+// A screenshot is `![what it shows](images/desk.webp)`. `make screenshots`
+// takes every one, light and dark, from a made-up mailbox; both are rendered
+// and the reader's theme shows one. Tests on both sides fail on a link, topic
+// or picture that names something that is not there.
 package docs
 
 import (
@@ -100,25 +113,65 @@ type Section struct {
 	Text    string `json:"text"`
 }
 
-// LinkStyle says how a link to another guide is written: in the application
-// it is a fragment the reader intercepts, on the site a file.
-type LinkStyle func(slug, fragment string) string
+// LinkStyle says how links are written for one reader: in the application
+// a guide is a fragment the reader intercepts, on the site a file.
+type LinkStyle struct {
+	// Guide is a link to another guide, or a heading in one.
+	Guide func(slug, fragment string) string
+	// InApp says the reader can open places in the application:
+	// `#setting/<id>` and `#open/<place>`. The site cannot, so there they
+	// render as bold text — the path written around them still reads.
+	InApp bool
+	// Image is where a screenshot is served from, given its path under docs.
+	Image func(path string) string
+}
 
 // AppLinks are what the in-app reader expects.
-func AppLinks(slug, fragment string) string {
+var AppLinks = LinkStyle{InApp: true, Guide: func(slug, fragment string) string {
 	if fragment != "" {
 		return "#doc/" + slug + "/" + fragment
 	}
 	return "#doc/" + slug
-}
+}, Image: func(path string) string { return "/api/docs/" + path }}
 
 // SiteLinks are what the generated site serves.
-func SiteLinks(slug, fragment string) string {
+var SiteLinks = LinkStyle{Guide: func(slug, fragment string) string {
 	if fragment != "" {
 		return slug + ".html#" + fragment
 	}
 	return slug + ".html"
+}, Image: func(path string) string { return path }}
+
+// shot matches a screenshot as a guide writes it: `![…](images/desk.webp)`.
+// The files are taken in both themes, desk.light.webp and desk.dark.webp, by
+// `make screenshots`, and both are rendered; the reader's theme shows one.
+var shot = regexp.MustCompile(`^images/([a-z0-9-]+)\.webp$`)
+
+// ShotThemes are the themes every screenshot is taken in.
+var ShotThemes = []string{"light", "dark"}
+
+// Image returns a screenshot's bytes, by file name: desk.light.webp.
+func Image(name string) ([]byte, error) {
+	if !imageName.MatchString(name) {
+		return nil, fs.ErrNotExist
+	}
+	return fs.ReadFile(inboxql.Docs, "docs/images/"+name)
 }
+
+// Images lists the screenshots' file names.
+func Images() []string {
+	entries, _ := fs.ReadDir(inboxql.Docs, "docs/images")
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
+}
+
+var imageName = regexp.MustCompile(`^[a-z0-9-]+\.(light|dark)\.webp$`)
+
+// appLink matches a link into the application: a setting, or a place.
+var appLink = regexp.MustCompile(`^#(setting|open)/([A-Za-z0-9-]+)$`)
 
 var md = goldmark.New(
 	goldmark.WithExtensions(extension.GFM, extension.Typographer),
@@ -172,6 +225,8 @@ func Render(slug string, links LinkStyle) (*Page, error) {
 	doc := md.Parser().Parse(text.NewReader(src))
 
 	page := &Page{Guide: g, Words: len(strings.Fields(string(src)))}
+	var inert []*ast.Link
+	var shots []*ast.Image
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -188,15 +243,55 @@ func Render(slug string, links LinkStyle) (*Page, error) {
 			} else if n.Level <= 3 {
 				page.Headings = append(page.Headings, Heading{Level: n.Level, Text: t, ID: string(idText)})
 			}
+		case *ast.Image:
+			if shot.Match(n.Destination) {
+				shots = append(shots, n)
+			}
 		case *ast.Link:
-			if m := guideLink.FindStringSubmatch(string(n.Destination)); m != nil {
+			if appLink.Match(n.Destination) {
+				if links.InApp {
+					n.SetAttributeString("class", []byte("iql-app-link"))
+				} else {
+					inert = append(inert, n)
+				}
+			} else if m := guideLink.FindStringSubmatch(string(n.Destination)); m != nil {
 				if target := slugForFile(m[1]); target != "" {
-					n.Destination = []byte(links(target, m[2]))
+					n.Destination = []byte(links.Guide(target, m[2]))
 				}
 			}
 		}
 		return ast.WalkContinue, nil
 	})
+	// Changed after the walk, which a change to the tree under it would upset.
+	for _, img := range shots {
+		name := shot.FindStringSubmatch(string(img.Destination))[1]
+		prev := ast.Node(img)
+		for i, theme := range ShotThemes {
+			n := img
+			if i > 0 {
+				n = ast.NewImage(ast.NewLink())
+				for c := img.FirstChild(); c != nil; c = c.NextSibling() {
+					if t, ok := c.(*ast.Text); ok {
+						n.AppendChild(n, ast.NewTextSegment(t.Segment))
+					}
+				}
+				img.Parent().InsertAfter(img.Parent(), prev, n)
+			}
+			n.Destination = []byte(links.Image("images/" + name + "." + theme + ".webp"))
+			n.SetAttributeString("class", []byte("iql-shot iql-shot-"+theme))
+			n.SetAttributeString("loading", []byte("lazy"))
+			prev = n
+		}
+	}
+	for _, l := range inert {
+		strong := ast.NewEmphasis(2)
+		for c := l.FirstChild(); c != nil; {
+			next := c.NextSibling()
+			strong.AppendChild(strong, c)
+			c = next
+		}
+		l.Parent().ReplaceChild(l.Parent(), l, strong)
+	}
 	// The page shows its title in its own header, so the first heading is
 	// not rendered twice.
 	if first := doc.FirstChild(); first != nil {

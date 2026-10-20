@@ -117,11 +117,11 @@ contract.
 Calendar changes an agent proposes still wait for you to approve them.
 
 When an agent moves one of your windows to show you something, the window says
-what it was told and why, and **View → Windows** keeps the record.
+what it was told and why, and **View → [Windows](#open/windows)** keeps the record.
 
 ## The log
 
 InboxQL's log lives in the mailbox and records what it did, including — by
 default — the text of queries you run, because those make problems
 diagnosable. A query can name a person, so you can switch that off in
-Settings → Logging; the timings are kept and the words are not.
+Settings → Logging → [Record the text of queries](#setting/log-query-text); the timings are kept and the words are not.

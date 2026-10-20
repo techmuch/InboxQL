@@ -11,6 +11,8 @@ from:*@stripe.com after:2026-01-01 has:attachment
 is:unread -from:*@acme.com | count by week
 ```
 
+![A query with a stage: all mail, counted by label](images/query.webp)
+
 The same text works in the Desk's query bar and on the command line, as
 `iql query "…"`.
 

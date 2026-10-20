@@ -175,5 +175,5 @@ The skill is short — the rules that stop an agent doing harm, the commands it
 will use most, and a pointer to `iql help agents` for everything else.
 Codex and Gemini CLI read the same folder, so one install serves both. Only a
 skill iql wrote is ever replaced or removed, and a new version of iql keeps
-installed ones current. Settings → System → **AI assistants** does the same
+installed ones current. Settings → System → [**AI assistants**](#setting/ai-assistants) does the same
 with buttons.

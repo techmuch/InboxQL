@@ -13,6 +13,8 @@ Open it from **Go → Desk**, or press **g** then **d**.
 The column on the left has three kinds of row, kept apart because they behave
 differently.
 
+![The Desk: the rail of folders and saved queries, the query bar, and the inbox](images/desk.webp)
+
 **Inbox, Starred, Sent, Drafts, All Mail, Spam and Trash** are the mailbox
 itself, with live unread counts. You can hide one you never use; you cannot
 delete it, because it *is* the mail. **Reset** brings hidden ones back.
@@ -72,6 +74,8 @@ the list with what you can do to all of them at once — mark them read, unread
 or starred, **Archive**, **Move to Inbox**, **Trash**, **Spam**, **Label** —
 and **Narrow to these**, which turns the selection into a query.
 
+### Links and images
+
 **Links in a message open in a new browser tab.** Hover over one, or tab to
 it, and the address it really goes to shows at the bottom left of the window.
 When the link's text names a different site — *www.paypal.com* on a link to
@@ -80,11 +84,15 @@ phishing relies on. An email link (`mailto:`) opens **New message**, filled
 in, and a link to elsewhere in the message scrolls there. Anything else — a
 script, a local file — does nothing.
 
+![Hovering over a link whose text names one site and goes to another: the warning at the bottom left](images/link-warning.webp)
+
 **Images from the web wait until you ask.** Loading one tells the sender you
 opened the message, when, and roughly where from — that is all a tracking
 pixel is. A message with any shows a bar above it; **Load images** shows them
 for that message. Images carried inside the message itself — a logo, a
 pasted screenshot — are shown as usual.
+
+![A message with images from the web held back, and Load images above it; the logo carried in the message shows](images/load-images.webp)
 
 ## Archiving and labelling
 
@@ -92,6 +100,8 @@ The viewer's toolbar has **Archive** (or **Move to Inbox** for mail that is not
 in it), **Report spam**, **Move to Trash**, **Mark read/unread** and **Label**.
 The star on each row stars it. **Label** lists your labels with a tick on the
 ones the message has; type to find one, or type a new name to create it.
+
+![The Label menu on a message, with a tick on the labels it has](images/label-picker.webp)
 
 Your labels show as chips on each row and under the subject; click one to see
 everything with that label, or its **×** to take it off.
@@ -111,7 +121,7 @@ is right; see [teaching an annotator](labels.md#teaching-it-rulings).
 
 ## Conversations
 
-Settings → General → **Inbox Layout** (or **View → Conversations**) chooses between one row per message,
+Settings → General → [**Inbox Layout**](#setting/inbox-layout) (or **View → Conversations**) chooses between one row per message,
 newest first, and **one row per conversation**: messages grouped into the
 conversation they belong to, together with any tickets and drafts it produced.
 
@@ -129,7 +139,7 @@ the safer mistake.
 ## Viewer tabs
 
 Messages, contacts and files open in viewer tabs. Settings → General →
-**Viewer Tabs**, or **View → Viewer tabs**, chooses between **one shared tab**, where opening anything
+[**Viewer Tabs**](#setting/viewer-tabs), or **View → Viewer tabs**, chooses between **one shared tab**, where opening anything
 replaces what was there, and **a tab for each kind**, so opening a file leaves
 the message you were reading where it was.
 
@@ -151,11 +161,13 @@ it, the bar says why and the message waits in Drafts.
 
 ## Waiting for approval
 
-**Intelligence → Waiting for approval** (**g a**) gathers everything waiting
+**Intelligence → [Waiting for approval](#open/approvals)** (**g a**) gathers everything waiting
 on you in one place: cards an extractor proposed (**Accept** or **Reject**),
 calendar changes an agent proposed (**Approve** or **Reject**), and mail
 queued in the outbox — typically written by an agent — with **Send** and
 **Back to drafts**. From a terminal, `iql outbox approve <draft-id>` sends one.
+
+![Waiting for approval, with a reply an agent wrote waiting to be sent](images/approvals.webp)
 
 ## Keyboard
 
@@ -201,6 +213,43 @@ move through suggestions, **Escape** closes them.
 
 The Desk, Contacts, the Board, Settings and the rest are tabs in one window,
 and you can split and rearrange them. The layout is remembered per browser.
-**View → Windows** lists every window you have open on this mailbox and what
-each is showing — useful when an agent has pointed one of them at something,
-because what it did is recorded there.
+
+### Windows
+
+**View → [Windows](#open/windows)** lists every window you have open on this
+mailbox: its name, whether it is live, and what it is showing — its query and
+its tabs. Each also says what it was last told and why, which is useful when
+an agent has pointed one of them at something, because what it did is
+recorded there. The box on a window's card points it at a query yourself.
+
+![The Windows tab, showing this window and what it is showing](images/windows.webp)
+
+### The Log
+
+**View → [Log](#open/log)** is what InboxQL has been doing — syncs, imports,
+annotator runs, model calls, slow queries — newest first, each line with its
+level and the part of the program that wrote it.
+
+![The Log tab, with its showing and recording controls](images/log.webp)
+
+Two controls look alike and are not. **showing** hides lines that were
+recorded; **recording** decides what is written at all. Debug is loud — a sync
+writes thousands of lines a minute — so turn it back down once you have found
+what you were after. What else is recorded, and how slow a query has to be to
+count as slow, is under Settings → [Logging](#setting/log-slow-queries).
+
+The same lines are a query, which is where questions get asked:
+`in:logs level>warn after:7d`, or `in:logs | count by category`.
+
+### The Dashboard
+
+**Go → Dashboard** (**Ctrl+Shift+D**) is your mail at a glance: how much
+arrived each day over the year, who writes most, and the commonest subjects.
+Click a sender or a subject to narrow everything on the page to it; the
+filters are a query, shown above the charts, and **Open in Desk** takes it
+to the Desk to read the mail or save the query.
+
+![The Dashboard: a year of mail by day, the top senders and the commonest subjects](images/dashboard.webp)
+
+The subjects are the first word of each subject line, not real topics — an
+[annotator](labels.md) is the way to get those.

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronLeft, ChevronRight, ExternalLink, Loader2, Search, X } from 'lucide-react';
 import { searchDocs, type DocHit, type DocSection } from '../lib/docsSearch';
 import { DOC_EVENT, takeDocRequest, type DocRequest } from '../lib/docsNav';
+import { openSetting } from '../lib/settingsIndex';
+import { openPlace } from '../lib/appPlaces';
 
 /**
  * Help → Documentation: the guides, searchable, in a tab.
@@ -97,14 +99,20 @@ export const Docs = () => {
     setCurrent({ slug, anchor, at: Date.now() });
   }, []);
 
-  // Links inside a guide: other guides move the reader; the web opens in a
-  // new tab; everything else is left alone.
+  // Links inside a guide: other guides move the reader; a setting or a place
+  // in the application opens it beside the guide; the web opens in a new
+  // tab; everything else is left alone.
   const onBodyClick = (e: React.MouseEvent) => {
     const a = (e.target as HTMLElement).closest('a');
     if (!a) return;
     const href = a.getAttribute('href') ?? '';
     const m = href.match(/^#doc\/([^/]+)(?:\/(.+))?$/);
-    if (m) {
+    const app = href.match(/^#(setting|open)\/([A-Za-z0-9-]+)$/);
+    if (app) {
+      e.preventDefault();
+      if (app[1] === 'setting') openSetting(app[2]);
+      else openPlace(app[2]);
+    } else if (m) {
       e.preventDefault();
       open(m[1], m[2] ? decodeURIComponent(m[2]) : undefined);
     } else if (href.startsWith('#')) {

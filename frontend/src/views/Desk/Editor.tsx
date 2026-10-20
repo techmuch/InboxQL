@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, Loader2 } from 'lucide-react';
 import { complete, type Candidate, type Completion } from './api';
+import { Help } from '../Help';
 
 interface EditorProps {
   value: string;
@@ -202,6 +203,7 @@ export const Editor = ({
           {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
           Run
         </button>
+        <Help topic="query-bar" className="self-center" />
       </div>
 
       {errorMessage && <QueryCaret query={value} position={errorPosition} message={errorMessage} />}

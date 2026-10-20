@@ -29,6 +29,7 @@ import {
   type ContactResponsiveness,
 } from './Desk/api';
 import { AttachmentSection } from './AttachmentPreview';
+import { Help } from './Help';
 
 interface ContactTopic {
   topic: string;
@@ -219,7 +220,10 @@ export const ContactCard = ({ address }: { address: string }) => {
             <span className="absolute -bottom-1 -right-1"><KindIcon kind={contact.kind} small /></span>
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-2xl font-bold">{contactName(contact)}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="min-w-0 truncate text-2xl font-bold">{contactName(contact)}</h2>
+              <Help topic="contact-card" />
+            </div>
             <p className="truncate font-mono text-sm text-muted-foreground">{contact.address}</p>
             <PictureControls address={contact.address} />
 

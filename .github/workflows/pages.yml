@@ -41,7 +41,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The installer is what most people run first; a syntax error in it
       # would break every install, so it is checked before it is published.
@@ -50,7 +50,7 @@ jobs:
           sh -n site/install.sh
           shellcheck -s sh site/install.sh
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -61,9 +61,9 @@ jobs:
           go test ./internal/docs/
           go run ./cmd/docsgen -out site/docs
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

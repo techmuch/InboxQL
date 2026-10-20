@@ -5,6 +5,7 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"testing"
@@ -24,8 +25,13 @@ func (c *apiClient) do(method, path, body string, out any) int {
 	}
 	resp := c.srv.browserRequest(c.t, method, path, body, headers)
 	defer resp.Body.Close()
+	// An error's body is the reason; without it a CI failure is just a code.
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		c.t.Logf("%s %s: %d %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
 	if out != nil {
-		json.NewDecoder(resp.Body).Decode(out)
+		json.Unmarshal(raw, out)
 	}
 	return resp.StatusCode
 }

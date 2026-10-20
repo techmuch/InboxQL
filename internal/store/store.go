@@ -111,7 +111,13 @@ func InitDB(dataDir string) (*sql.DB, error) {
 		// failing instantly with "database is locked". WAL allows one writer at
 		// a time, and sync goroutines write messages concurrently, so without
 		// this a second account syncing is an error rather than a short wait.
-		db, err = sql.Open("sqlite3", dbPath+"?_busy_timeout=5000&_foreign_keys=on")
+		//
+		// _txlock=immediate starts every transaction as a writer. A deferred
+		// one reads first and upgrades on its first write; if another writer
+		// committed in between, SQLite refuses the upgrade at once with
+		// SQLITE_BUSY_SNAPSHOT and the busy timeout never applies. Every
+		// db.Begin here writes, so nothing is lost by taking the lock up front.
+		db, err = sql.Open("sqlite3", dbPath+"?_busy_timeout=5000&_foreign_keys=on&_txlock=immediate")
 		if err != nil {
 			err = fmt.Errorf("failed to open database: %w", err)
 			return

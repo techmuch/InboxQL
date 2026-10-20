@@ -129,6 +129,19 @@ const yearOfMail = () => {
       `A message about ${subject.toLowerCase()}.`, '',
     ].join('\r\n'), labels: i < 4 ? ['\\Inbox'] : /Receipt|Invoice/.test(subject) ? ['Receipts'] : [] });
   }
+  // Maya writes far more than anyone, mostly in bursts around projects, so
+  // her contact card has a year worth charting.
+  for (let i = 0; i < 70; i++) {
+    const daysAgo = Math.floor((i * 37) % 340 * (i % 3 ? 0.35 : 1)) + 1;
+    const when = new Date(Date.now() - daysAgo * 86400000 - (i % 7) * 3600000);
+    const subject = `${['Plans', 'Notes', 'Draft', 'Lunch'][i % 4]} ${['again', 'for Thursday', 'v2', 'quick one'][i % 4]}`;
+    out.push({ raw: [
+      'From: Maya Okafor <maya@harbor.example>', 'To: me@gmail.example', `Subject: ${subject}`,
+      `Date: ${when.toUTCString()}`, `Message-ID: <maya${i}@harbor.example>`,
+      'MIME-Version: 1.0', 'Content-Type: text/plain; charset=utf-8', '',
+      `A note about ${subject.toLowerCase()}.`, '',
+    ].join('\r\n'), labels: [] });
+  }
   return out;
 };
 
@@ -230,6 +243,18 @@ const SCENES = {
     await settle(page);
     await page.keyboard.press('Control+Shift+D');
     await page.waitForTimeout(1500);
+  },
+
+  'contact-card': async page => {
+    await page.getByRole('textbox', { name: 'Query' }).fill('in:contacts email:=maya@harbor.example');
+    await page.getByRole('button', { name: 'Run' }).click();
+    await settle(page);
+    await page.getByTitle('Open this contact').first().click();
+    const section = page.getByText('How often they write', { exact: true });
+    await section.waitFor();
+    await page.waitForTimeout(1200);
+    const box = await section.locator('xpath=ancestor::section[1]').boundingBox();
+    return { x: box.x - 16, y: 76, width: box.width + 32, height: box.y + box.height + 16 - 76 };
   },
 
   // Every earlier scene was a window of its own; only this one is shown.

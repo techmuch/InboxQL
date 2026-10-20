@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile, BUNDLED_THEMES } from 'nexus-shell';
 import { Layout, Search, Mail, BarChart2, Server, Shield, Trash2, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, AlertTriangle, HardDrive, Wrench } from 'lucide-react';
-import { ResponsiveCalendar } from '@nivo/calendar';
+import { ActivityCalendar } from './views/ActivityCalendar';
 import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
 import { BrowserStoragePanel } from './views/BrowserStoragePanel';
@@ -144,7 +144,6 @@ const Dashboard = () => {
   const [volume, setVolume] = useState<any[]>([]);
   const [senders, setSenders] = useState<any[]>([]);
   const [topics, setTopics] = useState<any[]>([]);
-  const { theme } = useThemeStore();
   const query = useQueryStore(s => s.text);
   const setQuery = useQueryStore(s => s.set);
   const [terms, setTerms] = useState<QueryTerm[]>([]);
@@ -272,23 +271,7 @@ const Dashboard = () => {
           </div>
           <div className="flex-1 h-64 min-h-64">
             {calendarData.length > 0 ? (
-              <ResponsiveCalendar
-                data={calendarData}
-                from={fromDate}
-                to={toDate}
-                emptyColor={theme === 'dark' ? '#27272a' : '#f4f4f5'}
-                colors={['#61cdbb', '#97e3d5', '#e8c1a0', '#f47560']}
-                margin={{ top: 20, right: 0, bottom: 0, left: 20 }}
-                yearSpacing={40}
-                monthBorderColor={theme === 'dark' ? '#18181b' : '#ffffff'}
-                dayBorderWidth={2}
-                dayBorderColor={theme === 'dark' ? '#18181b' : '#ffffff'}
-                theme={{
-                  text: { fill: theme === 'dark' ? '#a1a1aa' : '#71717a', fontSize: 10, fontWeight: 600 },
-                  tooltip: { container: { background: theme === 'dark' ? '#18181b' : '#ffffff', color: theme === 'dark' ? '#fafafa' : '#18181b' } }
-                }}
-                onClick={(datum) => toggleTerm(`on:${datum.day}`)}
-              />
+              <ActivityCalendar data={calendarData} from={fromDate} to={toDate} onDay={day => toggleTerm(`on:${day}`)} />
             ) : (
               <div className="h-full flex items-center justify-center text-xs text-muted-foreground italic">
                 No temporal data available for these filters

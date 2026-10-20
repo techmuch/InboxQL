@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Bot,
   Building2,
+  CalendarDays,
   Check,
   Clock,
   FileText,
@@ -29,6 +30,8 @@ import {
   type ContactResponsiveness,
 } from './Desk/api';
 import { AttachmentSection } from './AttachmentPreview';
+import { ActivityCalendar, type DayCount } from './ActivityCalendar';
+import { activityQuery, activitySummary, activityWindow, dayQuery } from '../lib/contactActivity';
 import { Help } from './Help';
 
 interface ContactTopic {
@@ -130,6 +133,19 @@ export const ContactCard = ({ address }: { address: string }) => {
   }, [address]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Apart from load: it is one more query, and a chart that fails to load
+  // should not take the rest of the card with it.
+  const [activity, setActivity] = useState<DayCount[] | null>(null);
+  const span = activityWindow();
+  useEffect(() => {
+    let cancelled = false;
+    setActivity(null);
+    runQuery(activityQuery(quoted, span.from), 1000, 0)
+      .then(r => { if (!cancelled) setActivity((r.groups ?? []).map(g => ({ day: g.label, value: g.value }))); })
+      .catch(() => { if (!cancelled) setActivity([]); });
+    return () => { cancelled = true; };
+  }, [quoted, span.from]);
 
   const correct = async (patch: Partial<Contact>) => {
     await fetch('/api/contacts', {
@@ -309,6 +325,25 @@ export const ContactCard = ({ address }: { address: string }) => {
             value={contact.lastSeen ? new Date(contact.lastSeen).toLocaleDateString() : '—'}
           />
         </section>
+
+        {activity && (
+          <section className="space-y-2 border border-border bg-card p-4">
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5" /> How often they write
+            </h3>
+            <p className="text-xs text-muted-foreground" data-testid="activity-summary">{activitySummary(activity)}</p>
+            {activity.length > 0 && (
+              <div className="h-32">
+                <ActivityCalendar
+                  data={activity}
+                  from={span.from}
+                  to={span.to}
+                  onDay={day => openQuery(dayQuery(quoted, day))}
+                />
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Communication Dynamics & Open Loops */}
         {responsiveness && (

@@ -14,6 +14,10 @@ stored as a separate count, so it cannot disagree with the mailbox.
 
 - **Who they are** — name, organisation, and what kind of sender they are.
 - **How much** — messages, how many each way, first and last seen.
+- **How often they write** — their mail over the last twelve months, one
+  square a day, warmer in colour on busier days, with a line above it in words: how
+  many in the year, about how many a month, and their busiest month. Click a
+  day to see what they sent that day.
 - **Turnaround** — the median time *you* take to reply to them, and they to
   you.
 - **Addressing role** — how often you put them in To rather than Cc, which says
@@ -22,6 +26,8 @@ stored as a separate count, so it cannot disagree with the mailbox.
 - **Open loops** — below.
 - **Files** — what they sent you, or everything on any message they were on.
 - **Notes** — your own, private, in Markdown.
+
+![A contact card: the counts, and a year of their mail day by day](images/contact-card.webp)
 
 ## Pictures
 

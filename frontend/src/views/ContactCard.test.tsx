@@ -48,6 +48,13 @@ describe('ContactCard', () => {
               ...contactPeers,
             ],
           };
+        } else if (q.includes('| count by day')) {
+          body = {
+            query: q,
+            kind: 'groups',
+            count: 2,
+            groups: [{ label: '2026-03-02', value: 4 }, { label: '2026-04-10', value: 20 }],
+          };
         } else {
           body = { query: q, kind: 'groups', count: 0, groups: [] };
         }
@@ -181,5 +188,20 @@ describe('ContactCard', () => {
     await waitFor(() => {
       expect(screen.getByText('client')).toBeInTheDocument();
     });
+  });
+
+  it('says how often they write, from their own mail over the last year', async () => {
+    mockServer();
+    const fetchSpy = window.fetch as unknown as ReturnType<typeof vi.fn>;
+    render(<ContactCard address="alice@acme.com" />);
+
+    const summary = await screen.findByTestId('activity-summary');
+    expect(summary.textContent).toMatch(/^24 messages in the last year · about 2 a month · busiest in April 2026$/);
+
+    const queries = fetchSpy.mock.calls
+      .map(([u]) => new URL(String(u), 'http://x').searchParams.get('q') ?? '')
+      .filter(q => q.includes('count by day'));
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).toMatch(/^from:=alice@acme\.com after:\d{4}-\d{2}-\d{2} \| count by day$/);
   });
 });

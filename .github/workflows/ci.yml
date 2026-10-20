@@ -14,8 +14,9 @@ concurrency:
 
 env:
   # Pinned rather than "stable" so a toolchain release cannot turn a green
-  # branch red overnight. go.mod requires 1.25.6.
-  GO_VERSION: "1.25.6"
+  # branch red overnight. go.mod requires 1.27; setup-go sets GOTOOLCHAIN=local,
+  # so this must satisfy it rather than be upgraded behind the scenes.
+  GO_VERSION: "1.27.1"
   NODE_VERSION: "22"
   # FTS5 is a build tag in mattn/go-sqlite3, so a binary without it cannot
   # create the full-text index. The store degrades to substring matching rather

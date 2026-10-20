@@ -280,9 +280,17 @@ func handleMessageAnnotations(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(out.Labels)
 
+	// The body is the text the span engine indexed when there are spans in
+	// it, because their offsets point into that string. With none, nothing has
+	// to line up, so it is the message as a person reads it — not an HTML
+	// message's stored text, which starts with its stylesheet.
+	body := bodyOf(msg)
+	if len(spansIn(spans, "body")) == 0 {
+		body = message.Readable(msg)
+	}
 	parts := []struct{ name, label, text string }{
 		{"subject", "Subject", msg.Subject},
-		{"body", "Body", bodyOf(msg)},
+		{"body", "Body", body},
 	}
 
 	// Every readable file on the message, because that is where an invoice

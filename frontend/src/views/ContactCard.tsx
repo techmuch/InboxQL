@@ -386,23 +386,25 @@ export const ContactCard = ({ address }: { address: string }) => {
             {/* Open Loops */}
             <div className="space-y-3 pt-1">
               <div className="text-xs font-medium text-foreground">Open Loops (Pending Replies)</div>
-              {/* Says what these lists are made of. Who-sent-last alone lists
-                  every "thanks!" and every newsletter as waiting on you; the
-                  `loops` label is what tells an open loop from a closed one. */}
+              {/* Says what these lists are made of. Waiting is a judgement —
+                  "thanks!" closes a conversation, "I'll get back to you"
+                  leaves it on you — so only what the `waiting` element has
+                  judged is listed, and nothing is guessed from who wrote last. */}
               <p className="text-[11px] text-muted-foreground">
                 {responsiveness.loopsJudged
-                  ? <>Judged by the <span className="font-mono">loops</span> label where it has looked
+                  ? <>Judged by the <span className="font-mono">waiting</span> element; conversations it has not read yet are not listed
                       {(responsiveness.closedByJudgement ?? 0) > 0 &&
-                        <> — {responsiveness.closedByJudgement} closed conversation{responsiveness.closedByJudgement === 1 ? '' : 's'} left out</>}
-                      . Rows marked <span className="italic">unjudged</span> are listed on who sent last.</>
-                  : <>By who sent last, which counts every newsletter as waiting on you. Install the
-                      <span className="font-mono"> loops</span> label (Settings → AI → starters) to judge them.</>}
+                        <> — {responsiveness.closedByJudgement} where nobody is waiting left out</>}
+                      .</>
+                  : <>Nothing judges these yet. Install the <span className="font-mono">waiting</span> element
+                      (<span className="font-mono">iql elements install</span>) and let your AI harness read your mail
+                      with <span className="font-mono">iql work</span>.</>}
               </p>
 
               {responsiveness.awaitingMyReplyCount === 0 && responsiveness.awaitingTheirReplyCount === 0 && (
                 <div className="border border-border/70 bg-accent/20 px-3 py-2 text-xs text-muted-foreground flex items-center gap-2">
                   <Check className="h-4 w-4 text-green-500 shrink-0" />
-                  <span>All loops closed — no pending replies in either direction.</span>
+                  <span>Nobody is waiting, in either direction{responsiveness.loopsJudged ? '' : ' — or nothing has judged it yet'}.</span>
                 </div>
               )}
 
@@ -431,9 +433,6 @@ export const ContactCard = ({ address }: { address: string }) => {
                           >
                             {t.subject || '(no subject)'}
                           </button>
-                          {responsiveness.loopsJudged && !t.judged && (
-                            <span className="shrink-0 text-[10px] italic text-muted-foreground">unjudged</span>
-                          )}
                           <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
                             {new Date(t.lastMessageAt).toLocaleDateString()}
                           </span>
@@ -465,9 +464,6 @@ export const ContactCard = ({ address }: { address: string }) => {
                           >
                             {t.subject || '(no subject)'}
                           </button>
-                          {responsiveness.loopsJudged && !t.judged && (
-                            <span className="shrink-0 text-[10px] italic text-muted-foreground">unjudged</span>
-                          )}
                           <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
                             {new Date(t.lastMessageAt).toLocaleDateString()}
                           </span>

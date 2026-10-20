@@ -1,175 +1,29 @@
 package annotate
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/user/inboxql/internal/gliner"
+	"github.com/user/inboxql/internal/account"
+	"github.com/user/inboxql/internal/elements"
+	"github.com/user/inboxql/internal/message"
 	"github.com/user/inboxql/internal/store"
 )
 
-// The pairing is the pack's whole lesson: an expensive extractor gated by a
-// cheap rule. A pack where everything was a span extractor would teach the
-// opposite instinct and cost an hour of CPU on a small mailbox.
-func TestEveryExtractorIsGatedBySomethingCheap(t *testing.T) {
-	names := map[string]Starter{}
+// The pack is the elements catalog, answered by an AI harness through
+// `iql work`: nothing in it runs on the decision or span engines.
+func TestThePackIsTheElements(t *testing.T) {
+	if len(Starters) != len(elements.Catalog) {
+		t.Fatalf("%d starters for %d elements", len(Starters), len(elements.Catalog))
+	}
 	for _, s := range Starters {
-		names[s.Name] = s
-	}
-
-	extractors := 0
-	for _, s := range Starters {
-		if s.Engine != store.EngineGLiNER {
-			continue
+		if s.Engine != store.EngineAgent {
+			t.Errorf("%s runs on %s; the pack is answered by the harness", s.Name, s.Engine)
 		}
-		extractors++
-		if s.Scope == "" {
-			t.Errorf("%s is a span extractor with no scope — it would read the whole mailbox", s.Name)
-			continue
+		if _, ok := elements.ByName(s.Name); !ok {
+			t.Errorf("%s is not an element", s.Name)
 		}
-		if s.Needs == "" {
-			// Scoped by something other than a starter label, like
-			// has:attachment. Fine, but it must still narrow.
-			continue
-		}
-		gate, ok := names[s.Needs]
-		if !ok {
-			t.Errorf("%s is gated by %q, which is not in the pack", s.Name, s.Needs)
-			continue
-		}
-		// The gate has to be cheaper than what it gates, or it is not a gate.
-		// It used to have to be a rule — free — and the pack no longer ships
-		// rules; the decision model at ~3 s a message still narrows a span
-		// extractor at 15–20 s.
-		if engineCost(gate.Engine) >= engineCost(s.Engine) {
-			t.Errorf("%s is gated by %s, which runs on %s and is no cheaper than %s",
-				s.Name, gate.Name, gate.Engine, s.Engine)
-		}
-		if want := "label:" + s.Needs; s.Scope != want {
-			t.Errorf("%s scope = %q, want %q", s.Name, s.Scope, want)
-		}
-	}
-	if extractors == 0 {
-		t.Fatal("the pack has no extractors at all")
-	}
-}
-
-// A rule's instruction is a query, so an invalid one is an annotator that
-// matches nothing later and reads as "found no mail" rather than as a mistake.
-func TestStarterRulesAreValidQueries(t *testing.T) {
-	openAnnotateFixture(t)
-
-	for _, s := range Starters {
-		if s.Engine != store.EngineRule {
-			continue
-		}
-		t.Run(s.Name, func(t *testing.T) {
-			if err := store.ValidateQuery(s.Instructions); err != nil {
-				t.Errorf("%s: %v", s.Name, err)
-			}
-		})
-	}
-}
-
-// A scope is a query too, and one that does not compile makes the extractor
-// it gates unrunnable.
-//
-// Checked after installing, because `label:money` names an annotator and the
-// compiler rejects a label nobody has defined — which makes this a test that
-// the pack is self-consistent, not merely well-formed.
-func TestStarterScopesAreValidQueries(t *testing.T) {
-	openAnnotateFixture(t)
-	if _, _, err := InstallStarters(nil); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, s := range Starters {
-		if s.Scope == "" {
-			continue
-		}
-		t.Run(s.Name, func(t *testing.T) {
-			if err := store.ValidateQuery(s.Scope); err != nil {
-				t.Errorf("%s scope %q: %v", s.Name, s.Scope, err)
-			}
-		})
-	}
-}
-
-// A span extractor scores at most twelve labels at once, and its labels are
-// its schema's field names — so a starter with a wider schema is one that
-// cannot run.
-func TestStarterSchemasFitTheEngine(t *testing.T) {
-	for _, s := range Starters {
-		if s.Engine != store.EngineGLiNER {
-			continue
-		}
-		if len(s.Fields) == 0 {
-			t.Errorf("%s is an extractor with no fields, so it looks for nothing", s.Name)
-		}
-		if len(s.Fields) > gliner.MaxLabels {
-			t.Errorf("%s has %d fields; the engine scores at most %d",
-				s.Name, len(s.Fields), gliner.MaxLabels)
-		}
-		blob, err := json.Marshal(s.Fields)
-		if err != nil {
-			t.Errorf("%s: %v", s.Name, err)
-			continue
-		}
-		probe := &store.Annotator{SchemaJSON: string(blob)}
-		if len(probe.Labels()) != len(s.Fields) {
-			t.Errorf("%s: %d fields became %d labels", s.Name, len(s.Fields), len(probe.Labels()))
-		}
-	}
-}
-
-// Each engine can do one of the two kinds and not the other, and a starter
-// that asked for the wrong pairing would be refused at creation rather than
-// here.
-func TestStartersUseAnEngineThatCanDoTheirKind(t *testing.T) {
-	for _, s := range Starters {
-		switch {
-		case s.Kind == store.KindLabel && s.Engine == store.EngineGLiNER:
-			t.Errorf("%s is a label on the span engine, which cannot label", s.Name)
-		case s.Kind == store.KindExtract && s.Engine == store.EngineRule:
-			t.Errorf("%s is an extractor on the rule engine, which cannot extract", s.Name)
-		case s.Kind == store.KindExtract && s.Engine == store.EngineLaya:
-			t.Errorf("%s is an extractor on the decision engine, which cannot extract", s.Name)
-		}
-	}
-}
-
-// # The gate must stay free
-//
-// The pack's lesson is the pairing: a span extractor costs about twenty seconds
-// a message, so it is scoped to a label that costs nothing. A gate on a model
-// engine would make the expensive thing wait on a slow thing and teach the
-// opposite of the point.
-//
-// The decision labels are not gates. They are the questions a query cannot ask,
-// and they stand alone.
-// The pack ships no rule labels. They can still be written — a rule is the
-// right engine for anything a query can say — but nothing here starts you on
-// one, because the questions worth gating on are not queries.
-func TestThePackShipsNoRules(t *testing.T) {
-	for _, s := range Starters {
-		if s.Engine == store.EngineRule {
-			t.Errorf("%s is a rule label; the pack no longer ships any", s.Name)
-		}
-	}
-}
-
-// engineCost orders engines by what a message costs to evaluate.
-func engineCost(engine string) int {
-	switch engine {
-	case store.EngineRule:
-		return 0
-	case store.EngineLaya:
-		return 1
-	case store.EngineGLiNER:
-		return 2
-	default:
-		return 3
 	}
 }
 
@@ -183,8 +37,7 @@ func TestStarterNamesAreUnique(t *testing.T) {
 	}
 }
 
-// Installing creates; it does not run. Six extractors over a mailbox is an
-// hour of CPU on a small one, which is not a thing to begin by accident.
+// Installing creates; it does not run.
 func TestInstallCreatesInertAnnotators(t *testing.T) {
 	openAnnotateFixture(t)
 
@@ -198,90 +51,77 @@ func TestInstallCreatesInertAnnotators(t *testing.T) {
 	if len(skipped) != 0 {
 		t.Errorf("skipped %v on an empty database", skipped)
 	}
-
 	for _, name := range made {
 		a, err := store.GetAnnotator(name)
 		if err != nil || a == nil {
 			t.Fatalf("%s was not created: %v", name, err)
 		}
 		if a.Trigger != store.TriggerManual {
-			t.Errorf("%s has trigger %q, want manual — a pack must not start itself",
-				name, a.Trigger)
+			t.Errorf("%s has trigger %q, want manual", name, a.Trigger)
 		}
-		p, err := store.Progress(a, "")
-		if err != nil {
+		if _, ok := elements.FromAnnotator(a); !ok {
+			t.Errorf("%s does not read back as an element", name)
+		}
+	}
+}
+
+// A same-named annotator that never answered anything is replaced — the
+// starters most mailboxes installed and never ran. One that has answered is
+// left alone: its results belong to whoever made it.
+func TestInstallReplacesOnlyWhatNeverAnswered(t *testing.T) {
+	openAnnotateFixture(t)
+
+	for _, a := range []*store.Annotator{
+		{Name: "receipts", Kind: store.KindExtract, Engine: store.EngineGLiNER,
+			Instructions: "my own wording", SchemaJSON: `{"total":"x"}`},
+		{Name: "importance", Kind: store.KindLabel, Engine: store.EngineLaya,
+			Instructions: "how much this matters"},
+	} {
+		if err := store.SaveAnnotator(a); err != nil {
 			t.Fatal(err)
 		}
-		if p.Evaluated != 0 {
-			t.Errorf("%s has already evaluated %d messages", name, p.Evaluated)
-		}
 	}
-}
-
-// The scope is carried, not merely suggested: an extractor that needs
-// narrowing should not depend on whoever runs it remembering to say so.
-func TestInstallCarriesTheScope(t *testing.T) {
-	openAnnotateFixture(t)
-	if _, _, err := InstallStarters(nil); err != nil {
+	if err := store.SaveAccount(&account.Account{ID: "a", Name: "Me", Email: "me@x.com", User: "me@x.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMessage(&message.Message{ID: "m1", AccountID: "a", ContentHash: "m1", MessageID: "<m1@x>",
+		From: "x@y.com", Subject: "s", Date: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	used, _ := store.GetAnnotator("importance")
+	if err := store.SaveAnnotations(used.ID, used.Version, "m1", []*store.Annotation{{Status: store.StatusOK, Source: store.SourceLLM}}); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, s := range Starters {
-		if s.Scope == "" {
-			continue
-		}
-		a, err := store.GetAnnotator(s.Name)
-		if err != nil || a == nil {
-			t.Fatalf("%s missing", s.Name)
-		}
-		if a.Scope != s.Scope {
-			t.Errorf("%s scope = %q, want %q", s.Name, a.Scope, s.Scope)
-		}
-	}
-}
-
-// Never overwrite: an annotator with this name may have been edited, and its
-// results belong to whoever edited it.
-func TestInstallLeavesExistingAnnotatorsAlone(t *testing.T) {
-	openAnnotateFixture(t)
-
-	mine := &store.Annotator{
-		Name: "receipts", Kind: store.KindExtract, Engine: store.EngineGLiNER,
-		Instructions: "my own wording", SchemaJSON: `{"total":"x"}`,
-	}
-	if err := store.SaveAnnotator(mine); err != nil {
-		t.Fatal(err)
-	}
-
-	_, skipped, err := InstallStarters(nil)
+	made, skipped, err := InstallStarters(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := false
-	for _, n := range skipped {
-		if n == "receipts" {
-			found = true
-		}
+	if !contains(made, "receipts") {
+		t.Errorf("the unused receipts annotator was not replaced: made %v", made)
 	}
-	if !found {
-		t.Errorf("receipts was not reported as skipped: %v", skipped)
+	if !contains(skipped, "importance") {
+		t.Errorf("importance, which has answers, was not left alone: skipped %v", skipped)
 	}
 
-	after, _ := store.GetAnnotator("receipts")
-	if after.Instructions != "my own wording" {
-		t.Errorf("an existing annotator was overwritten: %q", after.Instructions)
+	r, _ := store.GetAnnotator("receipts")
+	if r.Engine != store.EngineAgent || r.Version < 2 {
+		t.Errorf("receipts = engine %s version %d; want the agent engine and a new version", r.Engine, r.Version)
+	}
+	if i, _ := store.GetAnnotator("importance"); i.Instructions != "how much this matters" {
+		t.Errorf("importance was overwritten: %q", i.Instructions)
 	}
 }
 
 func TestInstallOnlyWhatWasAskedFor(t *testing.T) {
 	openAnnotateFixture(t)
 
-	made, _, err := InstallStarters([]string{"purchased"})
+	made, _, err := InstallStarters([]string{"travel"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(made) != 1 || made[0] != "purchased" {
-		t.Fatalf("created %v, want just purchased", made)
+	if len(made) != 1 || made[0] != "travel" {
+		t.Fatalf("created %v, want just travel", made)
 	}
 	if a, _ := store.GetAnnotator("receipts"); a != nil {
 		t.Error("receipts was created without being asked for")
@@ -307,8 +147,7 @@ func TestScopeForPrefersTheExplicitOne(t *testing.T) {
 	}
 }
 
-// The floor is documented once for the pack rather than rediscovered six
-// times, and it is a read-time question, not a knob on the annotator.
+// Confidence is a read-time question, not a knob baked into an instruction.
 func TestStarterFloorIsStated(t *testing.T) {
 	if StarterFloor <= 0 || StarterFloor >= 1 {
 		t.Errorf("StarterFloor = %v, want a probability", StarterFloor)
@@ -318,4 +157,13 @@ func TestStarterFloorIsStated(t *testing.T) {
 			t.Errorf("%s bakes confidence into its instruction; it belongs at read time", s.Name)
 		}
 	}
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

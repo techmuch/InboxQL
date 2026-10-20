@@ -66,6 +66,8 @@ var Guides = []Guide{
 		Summary: "Every term, match mode and pipeline stage, with examples."},
 	{Slug: "labels", Group: "Using it", file: "docs/labels.md",
 		Summary: "Annotators: labels and extractors, the engines, and teaching them with rulings."},
+	{Slug: "reading", Group: "Using it", file: "docs/reading.md",
+		Summary: "Your AI harness reads conversations once: receipts, travel, events, tasks, who is waiting."},
 	{Slug: "calendar", Group: "Using it", file: "docs/calendar.md",
 		Summary: "Your calendars — invitations from mail, Google, Exchange — and answering, editing and asking."},
 	{Slug: "contacts", Group: "Using it", file: "docs/contacts.md",

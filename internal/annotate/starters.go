@@ -1,219 +1,79 @@
 package annotate
 
 import (
-	"encoding/json"
-	"fmt"
-
+	"github.com/user/inboxql/internal/elements"
 	"github.com/user/inboxql/internal/store"
 )
 
 // # Somewhere to start
 //
-// An annotator is the most capable thing here and the hardest to begin using:
-// you must invent a schema, choose an engine, write a scope and run a batch
-// job before seeing a single result. These are a first draft of the six
-// annotators most mailboxes want, meant to be edited rather than obeyed.
+// The pack is the elements catalog (internal/elements): receipts, travel,
+// calendar events, tasks, waiting, importance, what kind of sender someone
+// is, and topics — the things worth knowing about mail later.
 //
-// # The mix is the lesson
-//
-// Every expensive extractor ships behind a cheaper judgement that scopes it. A
-// span extractor costs fifteen to twenty seconds a message; the decision model
-// costs about three, so asking "is this a purchase" first narrows the expensive
-// job to the mail that could possibly hold a receipt.
-//
-// These gates used to be rule labels — subject-line queries, free and exact.
-// The pack no longer ships any: a rule can only say what a query can, and the
-// questions worth gating on ("is this actually a purchase, or a newsletter
-// with a price in it") are not queries. Rules can still be written; the pack
-// just does not start you on them.
+// It used to be a decision model gating span extractors: "is this a purchase"
+// at three seconds a message in front of a receipt extractor at twenty. Both
+// read a few hundred tokens of one message, which is too little to know that
+// "885911470902 FLEXVOLT 20-" is a DeWalt battery or that "I'll get back to you
+// Monday" means you owe the reply. The elements are answered by an AI harness
+// that reads whole conversations, through `iql work`.
 //
 // # They arrive inert
 //
-// Creating these runs nothing. They appear with coverage at zero and wait to
-// be told, because six extractors over a mailbox is not a thing to start by
-// accident.
+// Creating these runs nothing: the harness answers them when it is pointed at
+// `iql work next`.
 
-// StarterFloor is the confidence worth trusting these at.
+// StarterFloor is the confidence worth trusting a model's answers at.
 //
 // Not a knob on the annotator — `extract:x@0.6` asks the question at read
-// time, against stored scores, without re-running anything. It is here because
-// the pack should say it once rather than have six extractors each rediscover
-// it.
-//
-// 0.6 is not arbitrary. Below it, on a real mailbox, a span extractor asked
-// for reference numbers starts returning card-shaped strings: an EMV terminal
-// identifier at 0.53, a transaction certificate at 0.52, a fifteen-digit
-// number at 0.54. Above it they disappear and the real values stay.
+// time, against stored scores, without re-running anything.
 const StarterFloor = 0.6
 
 // Starter is one annotator worth having, and why.
 type Starter struct {
-	Name string
-	Kind string
-	// Engine is rule for the labels, gliner for the extractors.
+	Name   string
+	Kind   string
 	Engine string
-	// Instructions is a query for a rule, prose for anything else.
+	// Instructions is what the reader is asked.
 	Instructions string
-	// Fields are a span extractor's labels. Empty for a label.
+	// Fields are a record's fields, by name, for a listing. Empty for a label.
 	Fields map[string]string
-	// Scope narrows an extractor to what a cheap label already found.
+	// Scope narrows what it runs over. The elements carry none: the harness
+	// reads newest first and answers none where nothing applies.
 	Scope string
 	// About says what this is for, in one line, for a listing.
 	About string
-	// Needs names the starter this one is scoped by, so a pack can be created
-	// in an order where the scope already exists.
+	// Needs names a starter this one is scoped by. Unused by the elements.
 	Needs string
-	// Schema is a label's schema — its levels, and whether it judges one
-	// message or a whole conversation. Empty for a plain message label.
+	// Schema is the stored schema.
 	Schema string
 }
 
-// Starters are the pack.
-//
-// Chosen against a real mailbox rather than imagined: receipts and purchases
-// were its largest cluster, then files, then bills, tickets and travel. The
-// rules are deliberately broad — a label that misses is worse than one that
-// over-includes, because the extractor it scopes will simply find nothing in
-// the extras.
-var Starters = []Starter{
-	// The two conversation labels, which are what the pack is now built
-	// around: whether anybody is waiting on anybody, and how much a
-	// conversation needs you. Both judge the newest message with a line about
-	// the conversation in front of it, and a reply makes the conversation
-	// pending again.
-	//
-	// Scoped to the last ninety days because that is the mail these questions
-	// are about, and because the whole of a large mailbox is a day and a half
-	// of decisions where ninety days is about an hour.
-	{
-		Name: "loops", Kind: store.KindLabel, Engine: store.EngineLaya,
-		Instructions: "the newest message asks for something or expects a reply",
-		Schema:       `{"unit":"thread"}`,
-		Scope:        "after:90d",
-		About:        "open loops — waiting on you, or on them, by who sent the last message",
-	},
-	{
-		Name: "importance", Kind: store.KindLabel, Engine: store.EngineLaya,
-		Instructions: "how much this conversation needs my attention",
-		Schema: `{"unit":"thread","levels":[` +
-			`{"label":"important","describe":"a person needs something from me"},` +
-			`{"label":"normal","describe":"worth reading"},` +
-			`{"label":"low","describe":"informational, can wait"},` +
-			`{"label":"ignorable","describe":"automated or promotional"}]}`,
-		Scope: "after:90d",
-		About: "from important to ignorable, for whole conversations",
-	},
-
-	// Judged gates for the extractors, and questions a query cannot ask.
-	{
-		Name: "purchased", Kind: store.KindLabel, Engine: store.EngineLaya,
-		Instructions: "this message is a receipt, an invoice, an order confirmation or a payment",
-		About:        "a purchase, judged rather than matched — the gate for `receipts` and `bills`",
-	},
-	{
-		Name: "automated", Kind: store.KindLabel, Engine: store.EngineLaya,
-		Instructions: "this message was generated by a system rather than typed by a person",
-		About:        "machine-sent mail, which no sender-address rule gets right for long",
-	},
-
-	{
-		Name: "receipts", Kind: store.KindExtract, Engine: store.EngineGLiNER,
-		Scope: "label:purchased", Needs: "purchased",
-		About: "what you paid, to whom, and the reference for it",
-		Fields: map[string]string{
-			"amount":       "a monetary amount, as written",
-			"merchant":     "the shop or company",
-			"order number": "an order or confirmation number, as written",
-		},
-		Instructions: "Amounts, merchants and order numbers from receipts and purchase mail.",
-	},
-	{
-		Name: "bills", Kind: store.KindExtract, Engine: store.EngineGLiNER,
-		Scope: "label:purchased", Needs: "purchased",
-		About: "what is owed and by when",
-		Fields: map[string]string{
-			"amount":   "the amount owed, as written",
-			"due date": "the date payment is due, as written",
-			"merchant": "who is billing",
-		},
-		Instructions: "Amounts and due dates from bills and statements.",
-	},
-	{
-		Name: "paperwork", Kind: store.KindExtract, Engine: store.EngineGLiNER,
-		// Scoped by an attachment rather than a label: on a real mailbox most
-		// of the extractable values live inside the PDFs, and `has:attachment`
-		// is a cheaper and truer gate than any judgement.
-		Scope: "has:attachment",
-		About: "amounts and dates inside attached documents",
-		Fields: map[string]string{
-			"amount":   "a monetary amount, as written",
-			"due date": "a date something is due, as written",
-			"merchant": "the company the document is from",
-		},
-		Instructions: "Amounts, dates and companies from attached documents.",
-	},
-}
-
-// InstallStarters creates the pack, skipping anything already named.
-//
-// Creating is not running. They appear with coverage at zero and wait; six
-// extractors over a mailbox is an hour of CPU on a small one and a day on a
-// real one, which is not a thing to begin by accident.
-func InstallStarters(only []string) ([]string, []string, error) {
-	want := map[string]bool{}
-	for _, n := range only {
-		want[n] = true
-	}
-
-	existing := map[string]bool{}
-	list, err := store.ListAnnotators()
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, a := range list {
-		existing[a.Name] = true
-	}
-
-	var made, skipped []string
-	for _, s := range Starters {
-		if len(want) > 0 && !want[s.Name] {
-			continue
-		}
-		if existing[s.Name] {
-			// Never overwrite: an annotator with this name may have been
-			// edited, and its results belong to whoever edited it.
-			skipped = append(skipped, s.Name)
-			continue
-		}
-
-		schema := "{}"
-		if s.Schema != "" {
-			schema = s.Schema
-		}
-		if len(s.Fields) > 0 {
-			blob, err := json.Marshal(s.Fields)
-			if err != nil {
-				return made, skipped, err
+// Starters are the pack: the elements catalog, as starters.
+var Starters = func() []Starter {
+	out := make([]Starter, 0, len(elements.Catalog))
+	for _, e := range elements.Catalog {
+		var fields map[string]string
+		if len(e.Fields) > 0 {
+			fields = map[string]string{}
+			for _, f := range e.Fields {
+				fields[f.Name] = f.Describe
 			}
-			schema = string(blob)
 		}
-
-		a := &store.Annotator{
-			Name: s.Name, Kind: s.Kind, Engine: s.Engine,
-			Instructions: s.Instructions, SchemaJSON: schema,
-			// The scope is carried, not merely suggested: an extractor that
-			// needs narrowing to a cheap label should not depend on whoever
-			// runs it remembering to say so.
-			Scope:   s.Scope,
-			Trigger: store.TriggerManual,
-		}
-		if err := store.SaveAnnotator(a); err != nil {
-			return made, skipped, fmt.Errorf("creating %s: %w", s.Name, err)
-		}
-		made = append(made, s.Name)
-		existing[s.Name] = true
+		out = append(out, Starter{Name: e.Name, Kind: e.Kind(), Engine: store.EngineAgent,
+			Instructions: e.Instructions, Fields: fields, About: e.About, Schema: e.SchemaJSON()})
 	}
-	return made, skipped, nil
+	return out
+}()
+
+// InstallStarters creates the pack, or the named starters.
+//
+// A same-named annotator is replaced only when it has never answered anything
+// — the decision and span starters most mailboxes installed and never ran —
+// and otherwise left alone: its results belong to whoever made it.
+func InstallStarters(only []string) ([]string, []string, error) {
+	made, replaced, skipped, err := elements.Install(only, false)
+	return append(made, replaced...), skipped, err
 }
 
 // StarterByName finds one, for reporting what it is scoped by.

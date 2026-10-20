@@ -77,6 +77,11 @@ func TestContactResponsiveness(t *testing.T) {
 		}
 	}
 
+	// Who is waiting is judged, by the waiting element: m3 waits on me,
+	// m4 on Alice. m5 is not judged, so it waits on nobody.
+	judgeWaiting(t, "m3", "on-me")
+	judgeWaiting(t, "m4", "on-them")
+
 	resp, err := GetContactResponsiveness("alice@acme.com")
 	if err != nil {
 		t.Fatalf("GetContactResponsiveness: %v", err)
@@ -125,98 +130,5 @@ func TestContactResponsiveness(t *testing.T) {
 	// m1 at 10:00 UTC (h=10), m3 at 11:30 UTC (h=11)
 	if resp.HourlyDistribution[10] != 1 || resp.HourlyDistribution[11] != 1 {
 		t.Errorf("HourlyDistribution = %v, want 1 at h=10 and 1 at h=11", resp.HourlyDistribution)
-	}
-}
-
-// The open-loop lists read the `loops` label where it has looked.
-//
-// Who-sent-last alone puts "Great, let me know when done." in the list of
-// things waiting on you, and every newsletter with it. The label says whether
-// the newest message actually expects anything; who sent it still says which
-// way the loop points.
-func TestTheLoopsLabelClosesWhatWhoSentLastWouldList(t *testing.T) {
-	if _, err := InitDB(t.TempDir()); err != nil {
-		t.Fatalf("InitDB: %v", err)
-	}
-	t.Cleanup(CloseDB)
-	if err := SaveAccount(&account.Account{ID: "acct", Name: "Me", Email: "me@example.com", User: "me@example.com"}); err != nil {
-		t.Fatal(err)
-	}
-	base := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
-	for _, m := range []*message.Message{
-		{ID: "thanks", MessageID: "<a@x>", From: "Alice <alice@acme.com>", To: []string{"me@example.com"},
-			Subject: "Re: lunch", Body: "Thanks, sounds good!", Date: base, ContentHash: "a",
-			Header: []byte("Message-ID: <a@x>\r\n")},
-		{ID: "ask", MessageID: "<b@x>", From: "Alice <alice@acme.com>", To: []string{"me@example.com"},
-			Subject: "Contract", Body: "Can you send it by Friday?", Date: base.Add(time.Hour), ContentHash: "b",
-			Header: []byte("Message-ID: <b@x>\r\n")},
-		{ID: "unseen", MessageID: "<c@x>", From: "Alice <alice@acme.com>", To: []string{"me@example.com"},
-			Subject: "Other", Body: "Hmm", Date: base.Add(2 * time.Hour), ContentHash: "c",
-			Header: []byte("Message-ID: <c@x>\r\n")},
-	} {
-		m.AccountID = "acct"
-		if err := SaveMessage(m); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// Without the label, all three are listed on who-sent-last alone.
-	before, err := GetContactResponsiveness("alice@acme.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if before.LoopsJudged || len(before.AwaitingMyReplyThreads) != 3 {
-		t.Fatalf("before the label: judged %v, %d listed; want false, 3",
-			before.LoopsJudged, len(before.AwaitingMyReplyThreads))
-	}
-
-	if err := SaveAnnotator(&Annotator{Name: LoopsAnnotator, Kind: KindLabel, Engine: EngineLaya,
-		Instructions: "expects a reply", SchemaJSON: `{"unit":"thread"}`}); err != nil {
-		t.Fatal(err)
-	}
-	a, _ := GetAnnotator(LoopsAnnotator)
-	for id, open := range map[string]bool{"thanks": false, "ask": true} {
-		status := StatusEmpty
-		if open {
-			status = StatusOK
-		}
-		if err := SaveAnnotations(a.ID, a.Version, id, []*Annotation{{Status: status, Source: SourceLLM}}); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	after, err := GetContactResponsiveness("alice@acme.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !after.LoopsJudged || after.ClosedByJudgement != 1 {
-		t.Errorf("judged %v, closed %d; want true, 1", after.LoopsJudged, after.ClosedByJudgement)
-	}
-	got := map[string]PendingThread{}
-	for _, p := range after.AwaitingMyReplyThreads {
-		got[p.LastMessageID] = p
-	}
-	if _, ok := got["thanks"]; ok {
-		t.Error(`"Thanks, sounds good!" is still listed as waiting on you`)
-	}
-	if !got["ask"].Judged {
-		t.Error("the open request is not marked as judged")
-	}
-	// Not looked at yet: still listed, on who-sent-last, and said to be.
-	if p, ok := got["unseen"]; !ok || p.Judged {
-		t.Errorf("an unjudged conversation: listed %v, judged %v; want listed, not judged", ok, p.Judged)
-	}
-
-	// Your ruling outranks the label.
-	if err := RecordRuling(LoopsAnnotator, "thanks", Ruling{Matched: true, Via: RuledInflow}); err != nil {
-		t.Fatal(err)
-	}
-	ruled, _ := GetContactResponsiveness("alice@acme.com")
-	found := false
-	for _, p := range ruled.AwaitingMyReplyThreads {
-		found = found || p.LastMessageID == "thanks"
-	}
-	if !found {
-		t.Error("ruling a conversation open did not put it back in the list")
 	}
 }

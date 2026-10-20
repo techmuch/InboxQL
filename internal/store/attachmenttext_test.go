@@ -297,3 +297,26 @@ func testPDF(t *testing.T, text string) []byte {
 	b.WriteString("trailer\n<< /Root 1 0 R >>\n%%EOF\n")
 	return b.Bytes()
 }
+
+// A word in an attachment's text finds the mail it came in, as Gmail's search
+// does — the Home Depot receipt whose items are only in its PDF.
+func TestBareWordsReachAttachmentText(t *testing.T) {
+	blobs := openTextFixture(t)
+	if _, err := ExtractAttachmentText(blobs, false, nil); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	for q, want := range map[string]int{
+		"landscaping":            1,
+		"4815":                   1,
+		"tractor":                0,
+		"-landscaping Paperwork": 0,
+	} {
+		res, err := RunQuery(q, 0, 0)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if len(res.Messages) != want {
+			t.Errorf("%q matched %d messages, want %d", q, len(res.Messages), want)
+		}
+	}
+}

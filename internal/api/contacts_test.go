@@ -120,8 +120,10 @@ func TestContactsAPI(t *testing.T) {
 	if resp.Address != "alice@acme.com" {
 		t.Errorf("resp.Address = %q, want alice@acme.com", resp.Address)
 	}
-	if resp.AwaitingMyReplyCount != 1 {
-		t.Errorf("resp.AwaitingMyReplyCount = %d, want 1", resp.AwaitingMyReplyCount)
+	// Nothing has judged who is waiting, so nobody is: waiting is the
+	// waiting element's judgement, never a guess from who wrote last.
+	if resp.AwaitingMyReplyCount != 0 {
+		t.Errorf("resp.AwaitingMyReplyCount = %d, want 0 before anything is judged", resp.AwaitingMyReplyCount)
 	}
 
 	// 4. POST /api/contacts/tags -> remove tag "vip"

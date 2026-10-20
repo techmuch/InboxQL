@@ -9,7 +9,7 @@ import { sendDraft } from '../lib/sending';
 import { LabelPicker } from './LabelPicker';
 import { moveMessages, setFlag, changeLabels, shownLabels, labelQuery, type Move } from '../lib/mail';
 import { ContactCard } from './ContactCard';
-import { SpanPanel } from './SpanPanel';
+import { SpanPanel, isRecord } from './SpanPanel';
 import { LabelChips } from './LabelChips';
 import { InvitationCard } from './InvitationCard';
 import { useMessageSpans } from './MarkedText';
@@ -162,7 +162,10 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
   // are before it is opened. A message with none is the normal case.
   const { spans, setSpans, reload: reloadSpans } = useMessageSpans(message?.id);
   const { offers, reload: reloadOffers } = useMessageOffers(message?.id);
-  const markCount = spans?.fields.reduce((n, f) => n + f.marks, 0) ?? 0;
+  // Records with no position in the text — what an AI harness answered —
+  // count too: a receipt it read is a value found, wherever it was found.
+  const markCount = (spans?.fields.reduce((n, f) => n + f.marks, 0) ?? 0)
+    + (spans?.other.filter(isRecord).length ?? 0);
   // The tab appears when there is anything to show OR anything to run: a tab
   // gated on marks alone would hide the button that produces the first ones.
   const hasValues = markCount > 0 || offers.length > 0;

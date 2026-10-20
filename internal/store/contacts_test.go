@@ -257,6 +257,11 @@ func TestContactNotesAndTags(t *testing.T) {
 		t.Fatalf("expected 1 group 'client' with value 1, got %v", resGroup.Groups)
 	}
 
+	// Waiting is judged: say Alice's conversations wait on me.
+	for _, id := range queryIDs(t, "anyone:alice@acme.com | thread") {
+		judgeWaiting(t, id, "on-me")
+	}
+
 	// Query: in:contacts awaiting:me
 	resAwaiting, err := RunQuery("in:contacts awaiting:me", 10, 0)
 	if err != nil {

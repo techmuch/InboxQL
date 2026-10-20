@@ -314,6 +314,10 @@ func ReviewSample(name string, n int) ([]ReviewItem, error) {
 type Score struct {
 	Annotator string `json:"annotator"`
 	Engine    string `json:"engine"`
+	// Model is the model scored, when only one was; Models are all that have
+	// answered something ruled on.
+	Model  string   `json:"model,omitempty"`
+	Models []string `json:"models,omitempty"`
 	// Reviewed counts rulings from the review queue — a random draw — and is
 	// the only set accuracy is measured on.
 	Reviewed int `json:"reviewed"`
@@ -349,7 +353,12 @@ const MinScoreRulings = 20
 // above a "thanks!" correctly and still answered "no" to both, because 0.5 is
 // the wrong place to cut an uncalibrated score. The cutoff reported here is the
 // one these rulings say would have been right most often.
-func ScoreAnnotator(name string) (*Score, error) {
+func ScoreAnnotator(name string) (*Score, error) { return ScoreAnnotatorModel(name, "") }
+
+// ScoreAnnotatorModel scores only the answers one model gave, or all of them
+// when model is empty. Score.Models lists the models that have answered
+// something a person ruled on.
+func ScoreAnnotatorModel(name, model string) (*Score, error) {
 	a, err := GetAnnotator(name)
 	if err != nil {
 		return nil, err
@@ -362,9 +371,17 @@ func ScoreAnnotator(name string) (*Score, error) {
 		return nil, err
 	}
 
-	s := &Score{Annotator: a.Name, Engine: a.Engine}
+	s := &Score{Annotator: a.Name, Engine: a.Engine, Model: model}
+	seen := map[string]bool{}
 	var reviewed []HumanRuling
 	for _, r := range rulings {
+		if r.Model != "" && !seen[r.Model] {
+			seen[r.Model] = true
+			s.Models = append(s.Models, r.Model)
+		}
+		if model != "" && r.Model != model {
+			continue
+		}
 		if r.Unbiased() {
 			reviewed = append(reviewed, r)
 		} else {

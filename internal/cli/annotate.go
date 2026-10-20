@@ -1093,16 +1093,22 @@ func embedAttachments(ctx *Context, profile string, limit int, dryRun, allowRemo
 // same rulings, is how an engine is chosen for a question — by measurement
 // rather than by how many messages a conversation has, or by intuition.
 func annotateScore(ctx *Context, args []string) error {
-	name, _ := subcommand(args)
+	name, rest := subcommand(args)
 	if name == "" {
-		return Fail(ExitUsage, "usage: iql annotate score <name>")
+		return Fail(ExitUsage, "usage: iql annotate score <name> [--model <id>]")
+	}
+	fs := flag.NewFlagSet("score", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	model := fs.String("model", "", "score only this model's answers")
+	if err := parseArgs(fs, rest); err != nil {
+		return Fail(ExitUsage, "invalid flags")
 	}
 	if err := ctx.OpenStore(); err != nil {
 		return err
 	}
 	defer store.CloseDB()
 
-	s, err := store.ScoreAnnotator(name)
+	s, err := store.ScoreAnnotatorModel(name, *model)
 	if err != nil {
 		return Fail(ExitNotFound, "%v", err)
 	}
@@ -1112,6 +1118,11 @@ func annotateScore(ctx *Context, args []string) error {
 
 	p := ctx.Printer()
 	ctx.Printf("%s %s\n", p.Bold(s.Annotator), p.Dim("("+s.Engine+")"))
+	if s.Model != "" {
+		ctx.Printf("  %-14s %s\n", p.Dim("model"), s.Model)
+	} else if len(s.Models) > 1 {
+		ctx.Printf("  %s\n", p.Dim("answered by "+strings.Join(s.Models, ", ")+" — --model <id> scores one"))
+	}
 	if s.Reviewed == 0 {
 		ctx.Printf("  No reviewed rulings yet. Review some in the Annotators tab.\n")
 		if s.Inflow > 0 {

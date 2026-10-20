@@ -113,12 +113,12 @@ That is how much mail you sent in each of the last four weeks. Replace
 
 ### 4. Let it sort your mail
 
-**Intelligence → Labels & extractors** has a starter pack of labels and extractors —
-`importance`, `loops` (conversations waiting for a reply), `purchased`,
-`receipts` and a few others. They run on this machine, with models InboxQL
-downloads once. Switch on the ones you want and run them over the last few
-months. [Labels](labels.md) explains what each engine is good at, and how to
-correct one when it gets something wrong.
+Install the **elements** — receipts, travel, calendar events, tasks, who is
+waiting, importance, what kind of sender someone is, topics — with
+`iql elements install`, then ask the AI you already use (Claude Code,
+Antigravity) to run `iql work guide` and read your newest conversations.
+[Reading with your AI harness](reading.md) explains the loop, and
+[Labels](labels.md) how to correct an answer when it is wrong.
 
 ### 5. See how it is running
 

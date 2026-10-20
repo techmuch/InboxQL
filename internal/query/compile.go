@@ -77,6 +77,10 @@ type Options struct {
 	// GROUP BY by row offset gives a different answer each time the
 	// underlying data moves, which is worse than no paging.
 	Offset int
+
+	// emailOnly keeps a bare word to the email itself, for a file query's
+	// question about the mail a file came in.
+	emailOnly bool
 }
 
 func (o Options) defaultLimit() int {
@@ -431,47 +435,15 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 		return wrap(c.stringPredicate("COALESCE(c.notes, '')", t), negated), nil
 
 	case "awaiting":
-		val := strings.ToLower(strings.TrimSpace(t.Value))
-		switch val {
-		case "me":
-			return wrap(`EXISTS (
-				SELECT 1 FROM messages m_latest
-				JOIN message_participants p_latest ON p_latest.message_id = m_latest.id AND p_latest.role = 'from'
-				WHERE p_latest.address = c.address
-				  AND m_latest.date = (
-				      SELECT MAX(m_sub.date) FROM messages m_sub
-				      WHERE m_sub.thread_key = m_latest.thread_key
-				  )
-			)`, negated), nil
-		case "them":
-			if c.opt.SelfAddresses == nil {
-				return "", fmt.Errorf("awaiting:them needs configured accounts")
-			}
-			selfs, err := c.opt.SelfAddresses()
-			if err != nil {
-				return "", err
-			}
-			if len(selfs) == 0 {
-				return wrap("1=0", negated), nil
-			}
-			ph := make([]string, len(selfs))
-			for i, s := range selfs {
-				ph[i] = c.arg(strings.ToLower(s))
-			}
-			return wrap(`EXISTS (
-				SELECT 1 FROM messages m_latest
-				JOIN message_participants p_latest ON p_latest.message_id = m_latest.id AND p_latest.role = 'from'
-				JOIN messages m_contact ON m_contact.thread_key = m_latest.thread_key
-				JOIN message_participants p_contact ON p_contact.message_id = m_contact.id AND p_contact.address = c.address
-				WHERE p_latest.address IN (`+strings.Join(ph, ", ")+`)
-				  AND m_latest.date = (
-				      SELECT MAX(m_sub.date) FROM messages m_sub
-				      WHERE m_sub.thread_key = m_latest.thread_key
-				  )
-			)`, negated), nil
-		default:
-			return "", fmt.Errorf("awaiting:%s is not valid (try awaiting:me or awaiting:them)", t.Value)
+		dir, err := awaitingDir(t.Value)
+		if err != nil {
+			return "", err
 		}
+		selfs, err := c.selfList()
+		if err != nil {
+			return "", err
+		}
+		return wrap(ContactAwaiting(dir, "c.address", selfs), negated), nil
 
 	case "has":
 		switch strings.ToLower(t.Value) {
@@ -486,15 +458,12 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 		case "tag", "tags", "label", "labels":
 			return wrap("EXISTS (SELECT 1 FROM contact_labels ct WHERE ct.address = c.address)", negated), nil
 		case "awaiting":
-			return wrap(`EXISTS (
-				SELECT 1 FROM messages m_latest
-				JOIN message_participants p_latest ON p_latest.message_id = m_latest.id AND p_latest.role = 'from'
-				WHERE p_latest.address = c.address
-				  AND m_latest.date = (
-				      SELECT MAX(m_sub.date) FROM messages m_sub
-				      WHERE m_sub.thread_key = m_latest.thread_key
-				  )
-			)`, negated), nil
+			// has:awaiting is awaiting:me, the older spelling.
+			selfs, err := c.selfList()
+			if err != nil {
+				return "", err
+			}
+			return wrap(ContactAwaiting(AwaitingMe, "c.address", selfs), negated), nil
 		}
 		return "", fmt.Errorf("has:%s is not something a contact can have (try phone, name, org, notes, tag or awaiting)", t.Value)
 	}
@@ -676,7 +645,11 @@ func (c *compiler) attachmentTerm(t *Term, negated bool) (string, error) {
 		}
 	}
 
-	inner, args, err := CompileFilterFor(&Term{Field: t.Field, Value: t.Value, Op: t.Op}, c.opt, EntityMessage)
+	// The mail half reads the email alone: a word in another attachment on
+	// the same message is not a word in this file.
+	mailOpt := c.opt
+	mailOpt.emailOnly = true
+	inner, args, err := CompileFilterFor(&Term{Field: t.Field, Value: t.Value, Op: t.Op}, mailOpt, EntityMessage)
 	if err != nil {
 		return "", fmt.Errorf("%s is not a file field: %w", t.Field, err)
 	}
@@ -959,6 +932,15 @@ func (c *compiler) dispatch(t *Term, negated bool) (string, error) {
 	case "is":
 		return c.isTerm(t, negated)
 
+	case "awaiting":
+		// The newest message of each conversation waiting on me (or them):
+		// `awaiting:me | timeline` is the conversations you owe a reply.
+		dir, err := awaitingDir(t.Value)
+		if err != nil {
+			return "", err
+		}
+		return wrap(Waiting(dir, "m"), negated), nil
+
 	case "has":
 		return c.hasTerm(t, negated)
 
@@ -1159,15 +1141,39 @@ func isSelfFunc(v string) bool {
 var freeTextColumns = []string{"m.subject", "m.body", "m.normalized_body", "m.from_addr"}
 
 // freeText searches every indexed column.
+//
+// # Including what is attached
+//
+// A word also matches the text of the message's attachments, as Gmail's search
+// does. Home Depot's in-store receipts are a cover note with the items in an
+// attached PDF: the PDF's text had been extracted and indexed all along, and
+// `from:homedepot flexvolt` still found nothing, because a word only looked at
+// the email. `content:` on a file query still asks about the files alone.
 func (c *compiler) freeText(t *Term, negated bool) (string, error) {
 	if t.Op == OpGlob || t.Op == OpExact || !c.opt.FullText {
-		parts := make([]string, 0, len(freeTextColumns))
+		parts := make([]string, 0, len(freeTextColumns)+1)
 		for _, col := range freeTextColumns {
 			parts = append(parts, c.stringPredicate(col, t))
 		}
+		if !c.opt.emailOnly {
+			parts = append(parts, attachedText(c.stringPredicate("at.text", t)))
+		}
 		return wrap(strings.Join(parts, " OR "), negated), nil
 	}
-	return wrap(c.fts(ftsPhrase(t.Value)), negated), nil
+	phrase := ftsPhrase(t.Value)
+	if c.opt.emailOnly {
+		return wrap(c.fts(phrase), negated), nil
+	}
+	return wrap(c.fts(phrase)+" OR "+attachedText(
+		"at.rowid IN (SELECT rowid FROM attachment_text_fts WHERE attachment_text_fts MATCH "+c.arg(phrase)+")"),
+		negated), nil
+}
+
+// attachedText is true of a message one of whose attachments' extracted text
+// satisfies pred, over alias `at`.
+func attachedText(pred string) string {
+	return "EXISTS (SELECT 1 FROM attachments att JOIN attachment_text at ON at.content_hash = att.content_hash" +
+		" WHERE att.message_id = m.id AND (" + pred + "))"
 }
 
 // textColumn searches one FTS column, or falls back to the stored column for
@@ -1492,30 +1498,53 @@ func (c *compiler) extractTerm(t *Term, negated bool) (string, error) {
 
 	extra := []string{"a.status = 'ok'"}
 	if hasField && field != "" {
-		path := "$." + field
-		expr := "json_extract(a.data_json, " + c.arg(path) + ")"
-		if value == "" {
-			extra = append(extra, expr+" IS NOT NULL")
-		} else if n, err := strconv.ParseFloat(value, 64); err == nil {
-			sqlOp, err := comparisonOperator(op, "=")
-			if err != nil {
-				return "", fmt.Errorf("extract: %w", err)
-			}
-			extra = append(extra, "CAST("+expr+" AS REAL) "+sqlOp+" "+c.arg(n))
-		} else {
-			sqlOp, err := comparisonOperator(op, "=")
-			if err != nil {
-				return "", fmt.Errorf("extract: %w", err)
-			}
-			if sqlOp == "=" {
-				extra = append(extra, "LOWER(CAST("+expr+" AS TEXT)) = LOWER("+c.arg(value)+")")
-			} else {
-				extra = append(extra, "CAST("+expr+" AS TEXT) "+sqlOp+" "+c.arg(value))
-			}
+		// The field itself, or the field inside a list on the way to it:
+		// `receipts.items.brand` is the brand of any item of a receipt.
+		// Lists are where records keep their detail — a receipt's lines, a
+		// trip's legs — and a path that stopped at them could find a
+		// receipt but never what was on it.
+		segs := strings.Split(field, ".")
+		var alts []string
+		pred, err := c.extractValue("json_extract(a.data_json, "+c.arg("$."+field)+")", op, value)
+		if err != nil {
+			return "", err
 		}
+		alts = append(alts, pred)
+		for i := 1; i < len(segs); i++ {
+			list, rest := strings.Join(segs[:i], "."), strings.Join(segs[i:], ".")
+			// Bound in the order they appear: arguments go in as they are
+			// made, so the comparison is built last.
+			each := "EXISTS (SELECT 1 FROM json_each(a.data_json, " + c.arg("$."+list) + ") je" +
+				" WHERE json_type(a.data_json, " + c.arg("$."+list) + ") = 'array' AND "
+			inner, err := c.extractValue("json_extract(je.value, "+c.arg("$."+rest)+")", op, value)
+			if err != nil {
+				return "", err
+			}
+			alts = append(alts, each+inner+")")
+		}
+		extra = append(extra, "("+strings.Join(alts, " OR ")+")")
 	}
 
 	return wrap(c.annotationExists(name, extra...), negated), nil
+}
+
+// extractValue compares one extracted value: present, a number, or text,
+// text matching case-insensitively.
+func (c *compiler) extractValue(expr string, op Op, value string) (string, error) {
+	if value == "" {
+		return expr + " IS NOT NULL", nil
+	}
+	sqlOp, err := comparisonOperator(op, "=")
+	if err != nil {
+		return "", fmt.Errorf("extract: %w", err)
+	}
+	if n, err := strconv.ParseFloat(value, 64); err == nil {
+		return "CAST(" + expr + " AS REAL) " + sqlOp + " " + c.arg(n), nil
+	}
+	if sqlOp == "=" {
+		return "LOWER(CAST(" + expr + " AS TEXT)) = LOWER(" + c.arg(value) + ")", nil
+	}
+	return "CAST(" + expr + " AS TEXT) " + sqlOp + " " + c.arg(value), nil
 }
 
 func (c *compiler) threadTerm(t *Term, negated bool) (string, error) {
@@ -1866,4 +1895,26 @@ func isHashPrefix(v string) bool {
 		}
 	}
 	return true
+}
+
+func awaitingDir(v string) (string, error) {
+	switch d := strings.ToLower(strings.TrimSpace(v)); d {
+	case AwaitingMe, AwaitingThem:
+		return d, nil
+	}
+	return "", fmt.Errorf("awaiting:%s is not valid (try awaiting:me or awaiting:them)", v)
+}
+
+// selfList is me() as an SQL list for the waiting definitions, or "" when no
+// account has an address yet — then nothing is mine, and everything waits on
+// me.
+func (c *compiler) selfList() (string, error) {
+	if c.opt.SelfAddresses == nil {
+		return "", nil
+	}
+	selfs, err := c.opt.SelfAddresses()
+	if err != nil {
+		return "", err
+	}
+	return SQLList(selfs), nil
 }

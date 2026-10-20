@@ -59,8 +59,13 @@ var RailDefaults = []RailDefault{
 	},
 	{
 		Name: "awaiting-me", Title: "Waiting on me", Icon: "clock",
-		Query: "in:contacts awaiting:me",
-		About: "people whose last message you have not answered",
+		Query: "in:contacts awaiting:me -kind:system",
+		About: "people waiting on a reply from you — not machines, and not what loops called closed",
+	},
+	{
+		Name: "owe-reply", Title: "Owe a reply", Icon: "clock",
+		Query: "awaiting:me | timeline",
+		About: "conversations waiting on a reply from you",
 	},
 	{
 		Name: "this-week", Title: "This week", Icon: "clock",
@@ -69,8 +74,8 @@ var RailDefaults = []RailDefault{
 	},
 	{
 		Name: "unread", Title: "Unread", Icon: "inbox",
-		Query: "is:unread -folder:spam -folder:trash",
-		About: "unread mail, without the bins",
+		Query: "is:unread",
+		About: "unread mail; Trash and Spam stay out unless a query asks",
 	},
 	{
 		Name: "big-files", Title: "Large files", Icon: "paperclip",
@@ -134,4 +139,11 @@ func InstallRailDefaults(only []string) (added, skipped []string, err error) {
 // row that teaches somebody the feature does not work.
 func RailDefaultReach(d RailDefault) (int64, error) {
 	return CountQuery(d.Query)
+}
+
+// railUpgrades are installed entries whose default text changed, applied by
+// the v44 migration to entries still holding the old text.
+var railUpgrades = []struct{ name, from, to string }{
+	{"awaiting-me", "in:contacts awaiting:me", "in:contacts awaiting:me -kind:system"},
+	{"unread", "is:unread -folder:spam -folder:trash", "is:unread"},
 }

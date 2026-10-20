@@ -132,7 +132,9 @@ more.
 | `unlabeled:purchased` | has not looked yet |
 | `extract:receipts` | an extractor found at least one record |
 | `extract:receipts.amount>100` | …with an amount over 100 |
+| `extract:receipts.items.brand=DeWalt` | …with any item of that brand — a path through a list matches if any element does |
 | `extract:importance.level=important` | a levelled label picked that level |
+| `awaiting:me`, `awaiting:them` | the newest message of a conversation the `waiting` element judged to wait on you, or on them |
 
 `label:` answers for both kinds of label: the ones you, Gmail or your other
 mail client put on, and the ones an annotator decides. A label of yours is
@@ -262,6 +264,7 @@ extract:importance.level=important after:7d | thread
 is:unread to:me() -label:automated after:7d
 from:me() after:90d | top to 20
 in:contacts awaiting:me | sort last desc
+awaiting:me | timeline
 in:attachments filetype:pdf is:shared | count by from
 extract:receipts after:2026 | sum receipts.amount by month
 label:loops -from:me() after:30d | thread

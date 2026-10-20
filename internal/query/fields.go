@@ -180,6 +180,11 @@ var Registry = []Field{
 		Summary: "what the entity carries", Example: "has:attachment",
 	},
 	{
+		Name: "awaiting", Entity: EntityMessage, Type: TypeEnum,
+		Enum:    []string{"me", "them"},
+		Summary: "the newest message of a conversation waiting on you, or on them", Example: "awaiting:me | timeline",
+	},
+	{
 		Name: "after", Entity: EntityMessage, Type: TypeDate, Aliases: []string{"since"},
 		Summary: "on or after this date", Example: "after:2026-01-01",
 	},
@@ -453,7 +458,7 @@ var Registry = []Field{
 	{
 		Name: "awaiting", Entity: EntityContact, Type: TypeEnum,
 		Enum:    []string{"me", "them"},
-		Summary: "who a conversation is waiting on for a reply", Example: "in:contacts awaiting:me",
+		Summary: "people in a conversation waiting on you, or that you are waiting on", Example: "in:contacts awaiting:me",
 	},
 
 	// Attachment fields. The entity is the file, not the occurrence: two

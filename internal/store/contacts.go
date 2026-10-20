@@ -34,13 +34,15 @@ const (
 	// ruling means the same thing here as it does there, and two spellings of
 	// "human" would eventually be compared against each other.
 	ContactFromHuman = SourceHuman
+	// ContactFromAgent is an AI harness's reading, through `iql work`.
+	ContactFromAgent = SourceAgent
 )
 
 func sourceRank(s string) int {
 	switch s {
 	case ContactFromHuman:
 		return 3
-	case ContactFromModel:
+	case ContactFromModel, ContactFromAgent:
 		return 2
 	case ContactFromHeader, ContactFromRule:
 		return 1

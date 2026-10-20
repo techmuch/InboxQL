@@ -26,8 +26,11 @@ const (
 
 // Annotation sources, in increasing order of authority.
 const (
-	SourceRule  = "rule"
-	SourceLLM   = "llm"
+	SourceRule = "rule"
+	SourceLLM  = "llm"
+	// SourceAgent is an answer an AI harness gave through `iql work submit`.
+	// It ranks with the built-in models, below a person.
+	SourceAgent = "agent"
 	SourceHuman = "human"
 )
 
@@ -55,6 +58,10 @@ const (
 	// it because it labels and cannot extract, which is exactly the gap the
 	// span engine leaves.
 	EngineLaya = "laya"
+	// EngineAgent is answered from outside: an AI harness reads conversations
+	// with `iql work next` and answers with `iql work submit`. Nothing here
+	// runs it, so `annotate run` refuses it rather than doing nothing.
+	EngineAgent = "agent"
 )
 
 // Labels are the entity types a span extractor looks for.
@@ -206,8 +213,15 @@ func SaveAnnotator(a *Annotator) error {
 		// invalidates the old answers just as a reworded prompt would. For the
 		// other engines the schema describes the shape of a reply the model
 		// was asked for in words, and the words are what count.
-		if a.Engine == EngineGLiNER &&
+		//
+		// An element (EngineAgent) is the same: its levels and fields are what
+		// the harness is checked against. And a different engine is a
+		// different question even in the same words.
+		if (a.Engine == EngineGLiNER || a.Engine == EngineAgent) &&
 			!sameSchema(existing.SchemaJSON, a.SchemaJSON) {
+			a.Version = existing.Version + 1
+		}
+		if existing.Engine != a.Engine && a.Version == existing.Version {
 			a.Version = existing.Version + 1
 		}
 	} else {
@@ -800,6 +814,9 @@ type HumanRuling struct {
 	// Via is how the ruling was made: RuledInflow, RuledReview, or empty for a
 	// ruling recorded before anyone kept track.
 	Via string
+	// Model is the model that gave the machine's answer — for an element,
+	// the harness's model — so two models can be scored on the same rulings.
+	Model string
 }
 
 // Unbiased reports whether this ruling may be used to measure the model.
@@ -827,7 +844,7 @@ func HumanRulings(annotatorID string) ([]HumanRuling, error) {
 		       CASE WHEN h.status = ? THEN 1 ELSE 0 END,
 		       COALESCE(json_extract(mach.data_json, '$.level'), ''),
 		       COALESCE(json_extract(h.data_json, '$.level'), ''),
-		       COALESCE(h.ruled_via, '')
+		       COALESCE(h.ruled_via, ''), COALESCE(mach.model, '')
 		FROM annotations h
 		JOIN annotations mach
 		  ON mach.message_id = h.message_id
@@ -846,7 +863,7 @@ func HumanRulings(annotatorID string) ([]HumanRuling, error) {
 		var r HumanRuling
 		var said, ruled int
 		if err := rows.Scan(&r.MessageID, &said, &r.Confidence, &ruled,
-			&r.SaidLevel, &r.RuledLevel, &r.Via); err != nil {
+			&r.SaidLevel, &r.RuledLevel, &r.Via, &r.Model); err != nil {
 			return nil, err
 		}
 		r.Said, r.Ruled = said == 1, ruled == 1

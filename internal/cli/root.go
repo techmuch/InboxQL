@@ -144,6 +144,7 @@ var commandOrder = []string{
 	"account", "user", "vault", "llm", "maintenance", "ocr", "gliner", "laya", "backup", "restore",
 	"import", "export", "log", "ui", "skills", "annotate", "ticket", "contact", "calendar",
 	"query", "saved", "sql", "search", "read", "mail", "labels", "analyze", "draft", "send", "outbox",
+	"work", "elements",
 }
 
 func listedInOrder(name string) bool {
@@ -167,6 +168,7 @@ var commandGroup = map[string]string{
 	// query and sql lead the agent group: they are the general tools, and
 	// search is the narrow one kept for compatibility with existing callers.
 	"query": groupAgent, "saved": groupAgent, "sql": groupAgent,
+	"work": groupAgent, "elements": groupAgent,
 	"search": groupAgent, "read": groupAgent, "mail": groupAgent, "labels": groupAgent, "analyze": groupAgent,
 	"draft": groupAgent, "send": groupAgent, "outbox": groupAgent,
 }

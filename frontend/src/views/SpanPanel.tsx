@@ -8,6 +8,7 @@ import {
   countByLabel,
   markTotals,
   relabel,
+  type PlainAnnotation,
   type SpanResponse,
 } from './MarkedText';
 
@@ -221,12 +222,48 @@ export const SpanPanel = ({
                 {' '}
                 · {o.status}
                 {o.engine ? ` · ${o.engine}` : ''}
+                {o.model ? ` · ${o.model}` : ''}
                 {o.score !== undefined ? ` · ${(o.score * 100).toFixed(0)}%` : ''}
               </span>
+              {isRecord(o) && <RecordView data={o.data as Record<string, unknown>} />}
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+};
+
+/**
+ * A record an extractor with no offsets found — what an AI harness answered
+ * through `iql work`: a receipt's merchant, items and total. Shown as fields,
+ * with the quote it was checked against, because a name and a score alone say
+ * nothing about what was found.
+ */
+export const isRecord = (o: PlainAnnotation) =>
+  o.kind === 'extract' && o.status === 'ok' && !!o.data && typeof o.data === 'object' && !Array.isArray(o.data);
+
+const show = (v: unknown): string => {
+  if (v === null || v === undefined) return '';
+  if (Array.isArray(v)) return v.map(show).filter(Boolean).join('; ');
+  if (typeof v === 'object') return Object.values(v as Record<string, unknown>).map(show).filter(Boolean).join(' · ');
+  return String(v);
+};
+
+const RecordView = ({ data }: { data: Record<string, unknown> }) => {
+  const { quote, why, ...fields } = data;
+  return (
+    <div className="ml-3 mb-1 mt-0.5 space-y-0.5 font-sans text-foreground/80">
+      {Object.entries(fields).map(([k, v]) => (
+        <div key={k}>
+          <span className="text-muted-foreground">{k}:</span>{' '}
+          {Array.isArray(v) && v.some(x => typeof x === 'object')
+            ? <ul className="ml-4 list-disc">{v.map((x, j) => <li key={j}>{show(x)}</li>)}</ul>
+            : show(v)}
+        </div>
+      ))}
+      {typeof quote === 'string' && quote && <div className="italic text-muted-foreground">“{quote}”</div>}
+      {typeof why === 'string' && why && <div className="text-muted-foreground">{why}</div>}
     </div>
   );
 };

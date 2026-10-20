@@ -96,6 +96,13 @@ func queue(c *store.CalendarInfo, eventID, op, origin string, p Payload) (string
 
 // Create adds an event to a calendar.
 func (e *Engine) Create(calendarID string, ev calendar.Event, origin string) (*Result, error) {
+	return e.CreateFrom(calendarID, ev, origin, "", "")
+}
+
+// CreateFrom adds an event that came from a message, linked to it and its
+// conversation so the event can say where it came from — what an AI harness
+// proposes from `iql work`.
+func (e *Engine) CreateFrom(calendarID string, ev calendar.Event, origin, messageID, threadKey string) (*Result, error) {
 	cal, err := store.GetCalendar(calendarID)
 	if err != nil {
 		return nil, fmt.Errorf("no calendar %q", calendarID)
@@ -113,7 +120,8 @@ func (e *Engine) Create(calendarID string, ev calendar.Event, origin string) (*R
 		ev.Status = "confirmed"
 	}
 	agent := origin == OriginAgent
-	id, err := store.UpsertEvent(cal.ID, ev, store.EventMeta{Origin: origin, Proposed: agent, MyStatus: "organizer"})
+	id, err := store.UpsertEvent(cal.ID, ev, store.EventMeta{Origin: origin, Proposed: agent, MyStatus: "organizer",
+		SourceMessageID: messageID, ThreadKey: threadKey})
 	if err != nil {
 		return nil, err
 	}

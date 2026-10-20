@@ -133,7 +133,7 @@ func TestTickingAStarterCreatesItAndUntickingKeepsIt(t *testing.T) {
 	}
 	defer store.CloseDB()
 
-	const name = "purchased"
+	const name = "travel"
 
 	set := func(on bool) map[string]any {
 		t.Helper()
@@ -210,17 +210,17 @@ func TestUntickingAnAbsentStarterCreatesNothing(t *testing.T) {
 	}
 	defer store.CloseDB()
 
-	req := httptest.NewRequest(http.MethodPut, "/api/starters/purchased",
+	req := httptest.NewRequest(http.MethodPut, "/api/starters/travel",
 		strings.NewReader(`{"enabled":false}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("name", "purchased")
+	req.SetPathValue("name", "travel")
 	rr := httptest.NewRecorder()
 	handleSetStarter(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
 	}
-	a, err := store.GetAnnotator("purchased")
+	a, err := store.GetAnnotator("travel")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,10 +238,10 @@ func TestStarterListingReportsOffSeparatelyFromAbsent(t *testing.T) {
 	}
 	defer store.CloseDB()
 
-	if _, _, err := installOneStarter(t, "purchased"); err != nil {
+	if _, _, err := installOneStarter(t, "travel"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetAnnotatorEnabled("purchased", false); err != nil {
+	if err := store.SetAnnotatorEnabled("travel", false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -258,7 +258,7 @@ func TestStarterListingReportsOffSeparatelyFromAbsent(t *testing.T) {
 
 	var seen bool
 	for _, s := range got {
-		if s.Name == "purchased" {
+		if s.Name == "travel" {
 			seen = true
 			if !s.Installed {
 				t.Error("a switched-off starter reports as not installed")
@@ -267,47 +267,12 @@ func TestStarterListingReportsOffSeparatelyFromAbsent(t *testing.T) {
 				t.Error("it reports as on")
 			}
 		}
-		if s.Name != "purchased" && s.Installed {
+		if s.Name != "travel" && s.Installed {
 			t.Errorf("%s reports installed and nothing installed it", s.Name)
 		}
 	}
 	if !seen {
-		t.Fatal("purchased is not in the pack listing")
-	}
-}
-
-// A gate switched off freezes what it gates, for new mail only. Easy to do by
-// accident two rows apart in the same list, and invisible without being told.
-func TestStarterListingNamesASwitchedOffGate(t *testing.T) {
-	if _, err := store.InitDB(t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-	defer store.CloseDB()
-
-	if _, _, err := installOneStarter(t, "purchased"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := installOneStarter(t, "receipts"); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SetAnnotatorEnabled("purchased", false); err != nil {
-		t.Fatal(err)
-	}
-
-	rr := httptest.NewRecorder()
-	handleListStarters(rr, httptest.NewRequest(http.MethodGet, "/api/starters", nil))
-
-	var got []StarterInfo
-	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	for _, s := range got {
-		if s.Name == "receipts" && s.GateOff != "purchased" {
-			t.Errorf("receipts does not report its gate as off: %+v", s)
-		}
-		if s.Name == "purchased" && s.GateOff != "" {
-			t.Errorf("purchased reports a gate of its own: %q", s.GateOff)
-		}
+		t.Fatal("travel is not in the pack listing")
 	}
 }
 

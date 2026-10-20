@@ -541,6 +541,16 @@ iql --json query "in:contacts label:vip awaiting:me"
 iql --json query "in:contacts has:notes"
 ```
 
+**Waiting** has one definition, shared by queries and the contact card: a
+conversation waits when the `waiting` element has judged its newest message
+outside Trash and Spam *on-me* or *on-them* (the user's ruling first, then an
+answer at the element's current version). Nothing unjudged waits — no rule
+about who sent last is used. You are usually the one judging: see `work`
+below. Bare `awaiting:me` is about mail — the newest
+message of each conversation you owe a reply, so `awaiting:me | timeline`
+lists the conversations — and `in:contacts awaiting:me` is about people.
+Machines are contacts too; add `-kind:system` to leave them out.
+
 | Term | Matches |
 |---|---|
 | `kind:` | `person organization system unknown` |
@@ -548,7 +558,7 @@ iql --json query "in:contacts has:notes"
 | `tag:` | the same, under its old name, and it implies `in:contacts` on its own |
 | `has:` | `phone name org notes label awaiting` |
 | `notes:` | prose search in private contact notes |
-| `awaiting:` | `me` (contact sent last message) or `them` (user sent last message) |
+| `awaiting:` | `me` (a conversation they wrote in is judged to wait on the user) or `them` (one they are in is judged to wait on them) |
 | `messages:` `sent:` | interaction thresholds, e.g. `messages>10` |
 
 **Contact tags are labels now.** Same word as on mail, stored with who set it.
@@ -578,13 +588,11 @@ median reply turnaround time for me vs. them, open loops (`awaitingMyReplyCount`
 and `awaitingTheirReplyCount` with pending thread subjects and snippets), role
 ratio (`toRatio`), and a 24-hour histogram of incoming messages.
 
-**Open loops read the `loops` label where it has looked.** Who sent the last
-message says which way a loop points; the label says whether it is open at all.
-`loopsJudged` says whether the label exists, `closedByJudgement` how many
-conversations who-sent-last would have listed that it (or the user) closed, and
-each thread's `judged` whether it was looked at. Without the label the lists are
-who-sent-last alone, which counts every newsletter as waiting on the user — say
-that rather than presenting the list as a to-do list.
+**Open loops are the `waiting` element's judgements.** `loopsJudged` says
+whether the element is installed, `closedByJudgement` how many of the
+contact's conversations were judged to wait on no one. A conversation nobody
+has judged is in neither list — say so rather than presenting an empty list as
+"nobody is waiting" when much is unread (`unlabeled:waiting`).
 
 ---
 
@@ -858,22 +866,14 @@ iql --json annotate disable <name>
 
 ### Somewhere to start
 
-`annotate starters` is a pack of seven worth beginning from, meant to be
-edited. It reports how much of *this* mailbox each one reaches before it is
-installed.
-
-**The mix is the lesson.** Every span extractor ships behind a cheaper
-judgement that gates it — `receipts` is scoped to `label:purchased`, a decision
-label at about three seconds a message. Copy that pattern rather than making
-everything an extractor: the gate narrows a 20-second-per-message job to the
-mail that could possibly match.
-
-Creating them runs nothing. They arrive with coverage at zero.
+`annotate starters` installs the elements catalog — the same as
+`iql elements install`. They are answered by you through `iql work`, not by
+`annotate run`, which refuses them. See `work` below.
 
 ### Scope lives on the annotator
 
 `--scope` still wins when given, but an annotator remembers its own, so
-`iql annotate run receipts` covers `label:purchased` without being told. That is
+`iql annotate run invoices` covers its stored scope without being told. That is
 also what a triggered run reads, since nobody is there to pass a flag.
 
 ### Triggers say when, never what
@@ -1161,16 +1161,71 @@ A label can have **levels** (`"levels":[{"label":…,"describe":…}]`, best fir
 It then answers which level rather than yes or no — the decision model as a
 score question, the LLM by picking one — and an invented level is refused.
 
-The starter pack is built around two of these: `loops` (does the newest message
-expect a reply) and `importance` (important / normal / low / ignorable), both
-scoped to the last 90 days. It ships **no rule labels**; rules can still be
-written, the pack just does not start anyone on them.
+Two elements are levelled conversation labels: `waiting` (on-me / on-them /
+no-one) and `importance` (important / normal / low / ignorable).
 
 ### Deleting a gate
 
 `annotate delete <name>` is refused when another annotator's scope reads it
 (`label:<name>`), because a broken scope makes a run cover the whole mailbox.
 `--disable-dependents` switches those off in the same step — off, not deleted.
+
+---
+
+## `work` — read conversations and record what is worth knowing
+
+This is the main way you, the agent, add to the mailbox. A short catalog of
+**elements** lists what is worth knowing later; you read each conversation
+once and answer every element pending on it.
+
+```
+iql work guide                               the loop, the answer shape, the rules
+iql --json elements list                     the catalog and what is answered
+iql --json elements show receipts            one element in full
+iql elements install                         add the catalog (once)
+iql --json work next --limit 10 [--only receipts,travel] [--query "from:homedepot"]
+iql --json work submit < answers.json        one object, an array, or one per line
+iql --json work status                       answered, by element and model
+iql --json work clear --model <id> [--since 1d] [--only a,b]
+```
+
+| Element | Unit | Answer | Also |
+|---|---|---|---|
+| `receipts` | message | records: merchant, date, order, items[{name, brand, sku, quantity, price}], total, currency, payment | |
+| `travel` | message | records: kind, status, provider, confirmation, number, traveler, from, to, start, end, total | |
+| `events` | message | records: title, start, end, all_day, location, notes | proposed calendar events |
+| `tasks` | thread | records: what, owner (me/them/both), due | proposed tickets |
+| `waiting` | thread | level: on-me / on-them / no-one | drives `awaiting:` |
+| `importance` | thread | level: important / normal / low / ignorable | |
+| `sender` | sender | level: person / organization / system | sets the contact's kind |
+| `topics` | thread | tags | `topic:` |
+
+**`work next`** returns `elements` (the definitions — read their
+instructions), `topics` (in use; prefer them), and `items`: each with `thread`
+and `lease` to echo back, `messages` oldest first (readable `text`, attachment
+text, `mine` for the user's own), `people`, and `ask` — the elements to answer
+and the message ids or sender addresses each is about. Each item is leased to
+you for 30 minutes.
+
+**`work submit`** takes, per conversation, `{"thread", "lease", "model",
+"answers"}`. A thread element's answer is one object; a message element's maps
+message id to an answer; `sender` maps address to an answer. An answer is
+exactly one of `level`, `records`, `tags`, `none` (does not apply, why) or
+`skip` (cannot tell, why), with optional `confidence` (0–1, meant honestly),
+`why`, and `quote`. **Every level (except sender) and every record needs a
+quote copied from the conversation**; one that is not there refuses that
+conversation's whole submission, with the problems listed — fix and resend.
+Answers for elements not asked are refused.
+
+Records use the declared fields and types: numbers as numbers, dates
+`2026-10-24`, times `2026-10-24T14:30` local as written. Name a brand only
+when you can tell it (`885911…` is DeWalt's UPC prefix); leave it out rather
+than guess.
+
+Afterwards: `extract:receipts.items.brand=DeWalt`,
+`extract:travel.kind=flight`, `awaiting:me | timeline`, `topic:x`. Tasks and
+events are **proposals** the user approves. The user's rulings outrank yours,
+and `annotate score <element> --model <id>` measures you against them.
 
 ---
 

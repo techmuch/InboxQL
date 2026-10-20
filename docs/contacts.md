@@ -87,23 +87,39 @@ never leave this machine.
 The most useful part of a card is two short lists: **Awaiting your reply** and
 **Awaiting their reply**. Each is a conversation where somebody is waiting.
 
-The naive way to build them — whoever sent the last message is waiting on the
-other — counts every "thanks!" and every newsletter as waiting on you. So when
-the [`loops` label](labels.md#somewhere-to-start) has looked at a
-conversation, its judgement decides: a conversation `loops` says is closed is
-left out, and the card says how many it left out. Where `loops` has not looked
-yet, the row is marked, and the card says the list is built on who sent last.
+Whether someone is waiting is a judgement. "Thanks, sounds good!" closes a
+conversation; "I'll get back to you Monday" leaves the next move with you even
+though you wrote last; most automated mail waits on nobody. So nothing is
+guessed from who wrote last: the [`waiting` element](reading.md) — your AI
+harness reading the conversation — judges each one *on me*, *on them* or *no
+one*, and only what it has judged is listed. The card says how many it left
+out because nobody is waiting.
 
-Rule on `loops` where it is wrong — right-click its chip on the message — and
-the list follows your ruling.
+Rule on `waiting` where it is wrong — right-click its chip on the message — and
+the lists follow your ruling.
 
-Across your whole mailbox:
+Exactly, a conversation is **waiting** when its newest message outside Trash
+and Spam is judged *on me* or *on them*. Someone is waiting on you when a
+conversation waits on you and they wrote in it; you are waiting on them when a
+conversation waits on them and they are in it. A reply makes the conversation
+pending again, to be read afresh. `unlabeled:waiting` is what nobody has
+judged yet.
+
+The same definition answers queries, so the card and the rail always agree:
 
 ```
+awaiting:me | timeline               conversations you owe a reply
+awaiting:them | timeline             conversations waiting on someone else
 in:contacts awaiting:me              people waiting on you
+in:contacts awaiting:me -kind:system the same, without machines
 in:contacts awaiting:them            people you are waiting on
 in:contacts label:client awaiting:me
 ```
+
+The rail's **Waiting on me** is the people version without machines — a
+newsletter is not waiting on anyone — and **Owe a reply** is the conversation
+version. Add them from Settings → General →
+[Rail entries](#setting/rail-entries) if your rail does not have them.
 
 ## Querying contacts
 

@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 43
+	SchemaVersion = 45
 )
 
 var (
@@ -1962,6 +1962,45 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 43
+	}
+
+	if currentVersion < 44 {
+		log.Println("Applying schema migration v44 (rail entries say what they mean)...")
+		// Two rail entries installed from RailDefaults, rewritten only where
+		// they still hold the text they were installed with: an edited entry
+		// is the user's. Waiting on me leaves machines out, which do not wait
+		// on anyone; Unread no longer needs to exclude Trash and Spam, which
+		// every query now leaves out unless it mentions them.
+		for _, u := range railUpgrades {
+			if _, err := db.Exec("UPDATE saved_queries SET query = ? WHERE name = ? AND query = ?",
+				u.to, u.name, u.from); err != nil {
+				return fmt.Errorf("failed to apply schema v44: %w", err)
+			}
+		}
+		if _, err := db.Exec("PRAGMA user_version = 44;"); err != nil {
+			return err
+		}
+		currentVersion = 44
+	}
+
+	if currentVersion < 45 {
+		log.Println("Applying schema migration v45 (work leases)...")
+		// A conversation handed to an AI harness by `iql work next`, so a
+		// second run does not read it too while the first is answering. Only
+		// a new table: nothing existing changes.
+		if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS work_leases (
+			thread_key TEXT PRIMARY KEY,
+			token      TEXT NOT NULL,
+			asked      TEXT NOT NULL,
+			expires_at INTEGER NOT NULL,
+			created_at INTEGER NOT NULL
+		)`); err != nil {
+			return fmt.Errorf("failed to apply schema v45: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 45;"); err != nil {
+			return err
+		}
+		currentVersion = 45
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

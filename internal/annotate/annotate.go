@@ -272,6 +272,11 @@ func Run(ctx context.Context, name string, opt Options) (*Outcome, error) {
 			return nil, err
 		}
 
+	case store.EngineAgent:
+		return nil, fmt.Errorf("%s is answered by your AI harness, not run here: "+
+			"it reads with `iql work next --only %s` and answers with `iql work submit` (see `iql work guide`)",
+			a.Name, a.Name)
+
 	default:
 		return nil, fmt.Errorf("annotator %q has unknown engine %q", a.Name, a.Engine)
 	}

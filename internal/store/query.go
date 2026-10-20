@@ -54,6 +54,13 @@ type QueryResult struct {
 	// so a user learning the language can see what it became.
 	SQL  string `json:"sql,omitempty"`
 	Args []any  `json:"args,omitempty"`
+
+	// LeftOut names the bins — trash, spam — the query left out because it
+	// did not mention them, and Hidden counts the matching messages that are
+	// in them (up to query.HiddenCap). Hidden is counted for lists of
+	// messages and conversations, where "3 more in Trash" is worth saying.
+	LeftOut []string `json:"leftOut,omitempty"`
+	Hidden  int      `json:"hidden,omitempty"`
 }
 
 // The compiler is told the contact column list once, for the same reason it is
@@ -77,7 +84,7 @@ func queryOptions(limit, offset int) query.Options {
 				// drafts folder was asked for in a query about mail.
 				return "1=0", true
 			}
-			return folderClause(folder), true
+			return folderClauseOver("m", folder), true
 		},
 		IgnoredTopicWords:  ignoredTopicWords,
 		SimilarIDs:         similarMessageIDs,
@@ -207,7 +214,12 @@ func RunQueryContext(ctx context.Context, src string, limit, offset int) (res *Q
 	}
 
 	res = &QueryResult{Query: src, SQL: plan.SQL, Args: plan.Args,
-		GroupField: plan.GroupField, Bucket: plan.Bucket}
+		GroupField: plan.GroupField, Bucket: plan.Bucket, LeftOut: plan.LeftOut}
+	if plan.HiddenSQL != "" {
+		if err := db.QueryRowContext(ctx, plan.HiddenSQL, plan.HiddenArgs...).Scan(&res.Hidden); err != nil {
+			return nil, err
+		}
+	}
 
 	switch plan.Kind {
 	case query.PlanTopics:
@@ -549,7 +561,7 @@ func ExplainQuery(src string) (*QueryResult, error) {
 	case query.PlanEvents:
 		kind = "events"
 	}
-	return &QueryResult{Query: src, Kind: kind, SQL: plan.SQL, Args: plan.Args}, nil
+	return &QueryResult{Query: src, Kind: kind, SQL: plan.SQL, Args: plan.Args, LeftOut: plan.LeftOut}, nil
 }
 
 // annotatorExists reports whether an annotator name is real.

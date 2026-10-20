@@ -10,7 +10,9 @@ Open **Go → Contacts** (**g p**), or click a name on any message.
 ## What a contact card shows
 
 Everything on the card is worked out from your mail when you open it, never
-stored as a separate count, so it cannot disagree with the mailbox.
+stored as a separate count, so it cannot disagree with the mailbox. Mail in
+Trash and Spam is not counted, just as a [query](query-language.md#trash-and-spam-stay-out-unless-you-ask)
+leaves it out.
 
 - **Who they are** — name, organisation, and what kind of sender they are.
 - **How much** — messages, how many each way, first and last seen.

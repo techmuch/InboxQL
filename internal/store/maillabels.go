@@ -270,8 +270,16 @@ const sqlFromMe = `EXISTS (
 
 // hasLabelSQL is true of a message carrying a label. The correlation is an
 // unqualified id, for the reason sqlIsSent gives.
-func hasLabelSQL(label string) string {
-	return `EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = id AND ml.label = '` +
+func hasLabelSQL(label string) string { return hasLabelOver("", label) }
+
+// hasLabelOver is hasLabelSQL correlated to a table alias, for statements
+// with more than one id in scope.
+func hasLabelOver(alias, label string) string {
+	id := "id"
+	if alias != "" {
+		id = alias + ".id"
+	}
+	return `EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = ` + id + ` AND ml.label = '` +
 		strings.ReplaceAll(label, "'", "''") + `')`
 }
 

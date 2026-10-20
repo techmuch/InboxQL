@@ -72,6 +72,29 @@ carries any number. `folder:` names views over them: `folder:inbox` is
 inbox (outside Spam and Trash), and `folder:allmail` is everything but Spam and
 Trash. They overlap, as labels do.
 
+### Trash and Spam stay out unless you ask
+
+A query leaves out mail in Trash and Spam unless it mentions them, as Gmail's
+search does. `from:bob` is Bob's mail you have kept; the newsletter of his
+you binned, and the spam sent in his name, are not in it. That goes for
+everything built on queries: counts, charts, the Dashboard, a contact card's
+figures, saved queries and annotators.
+
+Each bin comes back when the query mentions it, and only that one:
+
+- **Trash** — `folder:trash`, `label:trash`, `is:deleted`
+- **Spam** — `folder:spam`, `label:spam`, `is:junk`
+- **Both** — `folder:all`, which is how you say "everywhere"
+
+A mention counts anywhere in the query: inside `( … OR … )`, after a `-`, or
+in a `saved:` query it uses. `id:` names messages exactly, so a query with one
+finds them wherever they are.
+
+When a list leaves something out, the Desk says so under the query bar —
+"3 more in Trash or Spam" — with **Show them**, which adds `folder:all`. A
+conversation says what it holds back, too: "4 messages · 1 in Trash".
+`--explain` and `iql query` say the same.
+
 ### State
 
 | Term | Matches |

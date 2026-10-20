@@ -49,7 +49,9 @@ func runSync(t *testing.T, acc *account.Account) Report {
 // Message-ID header.
 func labelsByMessageID(t *testing.T) map[string][]string {
 	t.Helper()
-	res, err := store.RunQuery("", 10000, 0)
+	// folder:all, because a query that does not mention Trash and Spam
+	// leaves them out, and these tests are about what is in them.
+	res, err := store.RunQuery("folder:all", 10000, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

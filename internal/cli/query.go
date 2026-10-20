@@ -440,6 +440,10 @@ func runQuery(ctx *Context, args []string) error {
 		if len(res.Args) > 0 {
 			ctx.Printf("\nparameters: %v\n", res.Args)
 		}
+		if len(res.LeftOut) > 0 {
+			ctx.Printf("\nleft out: %s, because the query does not mention %s\n",
+				binNames(res.LeftOut), pronoun(res.LeftOut))
+		}
 		return nil
 	}
 
@@ -467,7 +471,13 @@ func runQuery(ctx *Context, args []string) error {
 		return ctx.EmitJSON(res)
 	}
 
-	return printQueryResult(ctx, res)
+	if err := printQueryResult(ctx, res); err != nil {
+		return err
+	}
+	if res.Hidden > 0 {
+		ctx.Printf("\n%s\n", ctx.Printer().Dim(hiddenNote(res)))
+	}
+	return nil
 }
 
 func printQueryResult(ctx *Context, res *store.QueryResult) error {
@@ -1049,4 +1059,30 @@ func savedFolders(ctx *Context, args []string) error {
 		return nil
 	}
 	return Fail(ExitUsage, "unknown action %q (want list, hide, show or reset)", action)
+}
+
+// hiddenNote says how much a query left out of Trash and Spam, and how to get
+// it back — the reason anything is missing should never be a mystery.
+func hiddenNote(res *store.QueryResult) string {
+	n := fmt.Sprint(res.Hidden)
+	if res.Hidden >= query.HiddenCap {
+		n = fmt.Sprintf("%d+", query.HiddenCap)
+	}
+	return fmt.Sprintf("%s more in %s, left out because the query does not mention %s (add folder:all to include them)",
+		n, binNames(res.LeftOut), pronoun(res.LeftOut))
+}
+
+func binNames(bins []string) string {
+	names := make([]string, len(bins))
+	for i, b := range bins {
+		names[i] = strings.ToUpper(b[:1]) + b[1:]
+	}
+	return strings.Join(names, " or ")
+}
+
+func pronoun(bins []string) string {
+	if len(bins) == 1 {
+		return "it"
+	}
+	return "them"
 }

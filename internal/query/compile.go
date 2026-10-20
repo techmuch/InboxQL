@@ -105,19 +105,49 @@ type Compiled struct {
 // CompileFilter turns a filter expression into a WHERE clause over alias `m`.
 //
 // The returned SQL is always parenthesised and never empty — "everything"
-// compiles to "1=1" so callers can concatenate without special cases.
+// compiles to "1=1" so callers can concatenate without special cases. Like
+// every query about mail, it leaves out Trash and Spam unless it mentions
+// them (binned.go).
 func CompileFilter(n Node, opt Options) (string, []any, error) {
 	return CompileFilterFor(n, opt, EntityMessage)
 }
 
 // CompileFilterFor compiles a filter against a named row source.
 func CompileFilterFor(n Node, opt Options, entity string) (string, []any, error) {
-	c := &compiler{opt: opt, entity: entity}
-	sql, err := c.node(n, false)
+	f, err := compileFilter(n, opt, entity)
 	if err != nil {
 		return "", nil, err
 	}
-	return sql, c.args, nil
+	return f.where(), f.args, nil
+}
+
+// filter is a compiled filter and the bins it leaves out, kept apart so a
+// plan can also ask what it left out.
+type filter struct {
+	sql     string
+	args    []any
+	leftOut []string
+}
+
+// where is the filter with the bins left out.
+func (f filter) where() string {
+	if len(f.leftOut) == 0 {
+		return f.sql
+	}
+	return "(" + f.sql + " AND " + outside(f.leftOut) + ")"
+}
+
+func compileFilter(n Node, opt Options, entity string) (filter, error) {
+	c := &compiler{opt: opt, entity: entity}
+	sql, err := c.node(n, false)
+	if err != nil {
+		return filter{}, err
+	}
+	f := filter{sql: sql, args: c.args}
+	if binsApply(entity) {
+		f.leftOut = c.bins.leftOut()
+	}
+	return f, nil
 }
 
 type compiler struct {
@@ -129,6 +159,8 @@ type compiler struct {
 	// resolving names the saved query currently being inlined, and is what
 	// stops one from referencing another.
 	resolving string
+	// bins records which of Trash and Spam the query mentioned.
+	bins binned
 }
 
 // idColumn names the primary key of the table this query reads.
@@ -231,6 +263,7 @@ func wrap(sql string, negated bool) string {
 }
 
 func (c *compiler) term(t *Term, negated bool) (string, error) {
+	c.bins.note(t)
 	// A bare word has no field to look up; everything else is checked against
 	// its declaration before any SQL is generated, so an unusable term is an
 	// error with a suggestion rather than a query that runs and returns the
@@ -366,9 +399,12 @@ func (c *compiler) contactTerm(t *Term, negated bool) (string, error) {
 		return wrap(c.stringPredicate("COALESCE(c.phone, '')", t), negated), nil
 
 	case "messages", "sent":
-		col := "(SELECT COUNT(DISTINCT p.message_id) FROM message_participants p WHERE p.address = c.address)"
+		// Mail outside Trash and Spam, as the card counts it (store.contactDerived).
+		col := "(SELECT COUNT(DISTINCT p.message_id) FROM message_participants p WHERE p.address = c.address AND " +
+			Unbinned("p.message_id") + ")"
 		if t.Field == "sent" {
-			col = "(SELECT COUNT(*) FROM message_participants p WHERE p.address = c.address AND p.role = 'from')"
+			col = "(SELECT COUNT(*) FROM message_participants p WHERE p.address = c.address AND p.role = 'from' AND " +
+				Unbinned("p.message_id") + ")"
 		}
 		op, err := comparisonOperator(t.Op, "=")
 		if err != nil {

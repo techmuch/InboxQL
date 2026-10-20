@@ -293,7 +293,7 @@ type VersionInfo struct {
 }
 
 var currentVersionInfo = VersionInfo{
-	Version: "0.0.94",
+	Version: "0.0.95",
 }
 
 // SetVersionInfo sets the version metadata served at /api/version.
@@ -638,7 +638,9 @@ func legacyFilterQuery(r *http.Request, accountID, folder string) string {
 	add("on", r.URL.Query().Get("date"))
 	add("from", r.URL.Query().Get("from"))
 	add("subject", r.URL.Query().Get("topic"))
-	if folder != "" && folder != store.FolderAll {
+	// "all" is said rather than implied: a query that does not mention Trash
+	// and Spam leaves them out, and all means them too.
+	if folder != "" {
 		add("folder", folder)
 	}
 	return strings.Join(terms, " ")

@@ -208,7 +208,7 @@ var Registry = []Field{
 		Name: "folder", Entity: EntityMessage, Type: TypeEnum,
 		Enum:    []string{"inbox", "starred", "sent", "drafts", "allmail", "archive", "important", "spam", "trash", "all"},
 		Values:  ValuesFolders,
-		Summary: "a view over labels: inbox is label:inbox and not binned", Example: "folder:sent",
+		Summary: "a view over labels: inbox is label:inbox and not binned; all includes Trash and Spam", Example: "folder:sent",
 	},
 	{
 		Name: "mailbox", Entity: EntityMessage, Type: TypeText,

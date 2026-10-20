@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/user/inboxql/internal/query"
 )
 
 // PendingThread represents a conversation thread awaiting a reply.
@@ -112,10 +114,10 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 
 	// 1. Role counts (To vs Cc/Bcc)
 	roleRows, err := db.Query(`
-		SELECT role, COUNT(*)
-		FROM message_participants
-		WHERE address = ?
-		GROUP BY role`, addr)
+		SELECT p.role, COUNT(*)
+		FROM message_participants p
+		WHERE p.address = ? AND `+query.Unbinned("p.message_id")+`
+		GROUP BY p.role`, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +149,7 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 		SELECT m.date
 		FROM messages m
 		JOIN message_participants p ON p.message_id = m.id
-		WHERE p.address = ? AND p.role = 'from'`, addr)
+		WHERE p.address = ? AND p.role = 'from' AND `+query.Unbinned("m.id")+``, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +176,7 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 			SELECT DISTINCT m.thread_key AS tkey
 			FROM messages m
 			JOIN message_participants p ON p.message_id = m.id
-			WHERE p.address = ?
+			WHERE p.address = ? AND `+query.Unbinned("m.id")+`
 		)
 		SELECT
 			m.thread_key AS tkey,
@@ -186,6 +188,7 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 		FROM messages m
 		JOIN contact_threads ct ON ct.tkey = m.thread_key
 		LEFT JOIN message_participants p_from ON p_from.message_id = m.id AND p_from.role = 'from'
+		WHERE `+query.Unbinned("m.id")+`
 		ORDER BY tkey, m.date ASC`, addr)
 	if err != nil {
 		return nil, err

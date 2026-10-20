@@ -40,6 +40,7 @@ Log** and **The Dashboard** in the Desk guide.
 | Where | Topic | Guide section |
 |---|---|---|
 | Desk, the rail | `rail` | desk#the-rail |
+| Desk, what Trash and Spam held back | `trash-and-spam` | query-language#trash-and-spam-stay-out-unless-you-ask |
 | Desk, the query bar | `query-bar` | query-language |
 | Message viewer, the Load images bar | `load-images` | desk#links-and-images |
 | Message viewer, labels from annotators | `message-labels` | labels#reading-the-answers |

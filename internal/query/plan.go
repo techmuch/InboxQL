@@ -58,7 +58,22 @@ type Plan struct {
 	// came from `month` and not from a sender called 2026-03.
 	GroupField string
 	Bucket     string
+
+	// LeftOut names the bins — trash, spam — this query left out because it
+	// did not mention them. Empty when it mentioned both, or is not about
+	// mail.
+	LeftOut []string
+	// HiddenSQL counts the matching messages that were left out, up to
+	// HiddenCap, with the plan's own filter arguments (HiddenArgs). Set for
+	// lists of messages and conversations, so the Desk can say "3 more in
+	// Trash" rather than let them silently vanish.
+	HiddenSQL  string
+	HiddenArgs []any
 }
+
+// HiddenCap is as far as HiddenSQL counts. "1,000+ in Trash" says enough, and
+// counting further would cost as much as the query it annotates.
+const HiddenCap = 1000
 
 // threadKeyExpr names the column that identifies a conversation.
 //
@@ -74,16 +89,33 @@ const threadKeyExpr = "m.thread_key"
 // canonical column list and this package stays out of the schema's business.
 func Build(q *Query, opt Options, selectList string) (*Plan, error) {
 	entity := q.Entity()
-	where, args, err := CompileFilterFor(q.Filter, opt, entity)
+	f, err := compileFilter(q.Filter, opt, entity)
 	if err != nil {
 		return nil, err
 	}
 
-	p := &pipeline{opt: opt, where: where, args: args, selectList: selectList, entity: entity}
+	p := &pipeline{opt: opt, where: f.where(), args: f.args, selectList: selectList, entity: entity,
+		unbinned: f.sql, leftOut: f.leftOut}
 	if err := p.read(q.Stages); err != nil {
 		return nil, err
 	}
-	return p.build()
+	plan, err := p.build()
+	if err != nil {
+		return nil, err
+	}
+	plan.LeftOut = f.leftOut
+	return plan, nil
+}
+
+// withHidden adds the count of what the bins kept out of a list.
+func (p *pipeline) withHidden(plan *Plan) *Plan {
+	if len(p.leftOut) == 0 {
+		return plan
+	}
+	plan.HiddenSQL = "SELECT COUNT(*) FROM (SELECT 1 FROM messages m WHERE " + p.unbinned +
+		" AND " + inside(p.leftOut) + " LIMIT " + fmt.Sprint(HiddenCap) + ")"
+	plan.HiddenArgs = append([]any{}, p.args...)
+	return plan
 }
 
 type pipeline struct {
@@ -92,6 +124,10 @@ type pipeline struct {
 	args       []any
 	selectList string
 	entity     string
+	// unbinned is the filter before Trash and Spam were left out, and
+	// leftOut is which of them were.
+	unbinned string
+	leftOut  []string
 
 	extractor string
 	terminal  *Stage
@@ -162,8 +198,14 @@ func (p *pipeline) effectiveWhere() string {
 	if !p.expand {
 		return p.where
 	}
-	return "m.thread_key IN (SELECT t.thread_key FROM messages t WHERE t.id IN " +
+	where := "m.thread_key IN (SELECT t.thread_key FROM messages t WHERE t.id IN " +
 		"(SELECT m.id FROM messages m WHERE " + p.where + "))"
+	// Narrowed again after widening: otherwise the trashed reply in a
+	// conversation comes back in through the conversation.
+	if len(p.leftOut) > 0 {
+		where = "(" + where + " AND " + outside(p.leftOut) + ")"
+	}
+	return where
 }
 
 func (p *pipeline) build() (*Plan, error) {
@@ -255,7 +297,7 @@ func (p *pipeline) buildMessages() (*Plan, error) {
 		args = append(args, p.opt.Offset)
 	}
 
-	return &Plan{SQL: sql, Args: args, Kind: PlanMessages, Limit: limit, Ordered: ordered}, nil
+	return p.withHidden(&Plan{SQL: sql, Args: args, Kind: PlanMessages, Limit: limit, Ordered: ordered}), nil
 }
 
 // draftSelectList is the column list store.scanDraft expects.
@@ -932,8 +974,12 @@ func (p *pipeline) buildTimeline() (*Plan, error) {
 		args = append(args, p.opt.Offset)
 	}
 
-	return &Plan{SQL: sql, Args: args, Kind: PlanThreads, Limit: limit,
-		Entity: p.entity, Ordered: true}, nil
+	plan := &Plan{SQL: sql, Args: args, Kind: PlanThreads, Limit: limit,
+		Entity: p.entity, Ordered: true}
+	if p.entity == EntityMessage {
+		return p.withHidden(plan), nil
+	}
+	return plan, nil
 }
 
 // contactSelectList is the column list store.scanContact expects.
@@ -1231,6 +1277,7 @@ func (p *pipeline) buildContactTopics() (*Plan, error) {
 		theirs AS (
 			SELECT DISTINCT p.message_id
 			FROM message_participants p JOIN scope ON scope.address = p.address
+			WHERE ` + Unbinned("p.message_id") + `
 		),
 		totals AS (
 			SELECT (SELECT COUNT(*) FROM theirs) AS mine,

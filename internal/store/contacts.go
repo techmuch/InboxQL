@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/user/inboxql/internal/message"
+	"github.com/user/inboxql/internal/query"
 )
 
 // What a contact is.
@@ -135,15 +136,18 @@ const contactColumns = `c.address, COALESCE(c.header_name, ''), COALESCE(c.displ
 // Aliased so ORDER BY can name them: an output alias is the only way to sort
 // by a derived count without writing the subquery a second time and letting
 // the two drift.
-const contactDerived = `
-	(SELECT COUNT(DISTINCT p.message_id) FROM message_participants p WHERE p.address = c.address) AS messages,
-	(SELECT COUNT(*) FROM message_participants p WHERE p.address = c.address AND p.role = 'from') AS sent,
-	(SELECT COUNT(*) FROM message_participants p WHERE p.address = c.address AND p.role != 'from') AS received,
-	(SELECT MIN(m.date) FROM message_participants p JOIN messages m ON m.id = p.message_id WHERE p.address = c.address) AS first_seen,
-	(SELECT MAX(m.date) FROM message_participants p JOIN messages m ON m.id = p.message_id WHERE p.address = c.address) AS last_seen`
+//
+// Mail in Trash and Spam is not counted, as a query about their mail would not
+// count it (query/binned.go).
+var contactDerived = `
+	(SELECT COUNT(DISTINCT p.message_id) FROM message_participants p WHERE p.address = c.address AND ` + query.Unbinned("p.message_id") + `) AS messages,
+	(SELECT COUNT(*) FROM message_participants p WHERE p.address = c.address AND p.role = 'from' AND ` + query.Unbinned("p.message_id") + `) AS sent,
+	(SELECT COUNT(*) FROM message_participants p WHERE p.address = c.address AND p.role != 'from' AND ` + query.Unbinned("p.message_id") + `) AS received,
+	(SELECT MIN(m.date) FROM message_participants p JOIN messages m ON m.id = p.message_id WHERE p.address = c.address AND ` + query.Unbinned("m.id") + `) AS first_seen,
+	(SELECT MAX(m.date) FROM message_participants p JOIN messages m ON m.id = p.message_id WHERE p.address = c.address AND ` + query.Unbinned("m.id") + `) AS last_seen`
 
 // ContactSelectList is the column list scanContact expects.
-const ContactSelectList = contactColumns + "," + contactDerived
+var ContactSelectList = contactColumns + "," + contactDerived
 
 func scanContact(scan func(...any) error) (*Contact, error) {
 	c := &Contact{}

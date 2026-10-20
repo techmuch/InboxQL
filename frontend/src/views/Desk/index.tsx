@@ -12,6 +12,7 @@ import { movedByKeyboard, navRow, useRovingFocus } from '../../lib/rovingFocus';
 import { sequencePending } from '../../lib/keySequences';
 import { refKey, refOf, useSelectionStore } from '../../lib/selection';
 import { ariaCurrent } from '../../lib/rowState';
+import { HiddenNote } from './HiddenNote';
 import { SelectionBar } from './SelectionBar';
 import { Editor } from './Editor';
 import { Results } from './Results';
@@ -691,6 +692,11 @@ export const Desk = () => {
           messageLabels={labelsOf(selectedMessageIds)}
           labelOpen={labelOpen}
           onLabelOpenChange={setLabelOpen}
+        />
+
+        <HiddenNote
+          result={result}
+          onShow={async () => setQuery(await compose(query, { field: 'folder', term: 'folder:all' }))}
         />
 
         {/* Anything that is not a list of messages renders through the shared

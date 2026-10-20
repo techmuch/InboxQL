@@ -26,6 +26,7 @@ export interface HelpTopic {
 
 export const HELP_TOPICS: HelpTopic[] = [
   { id: 'rail', where: 'Desk, the rail', doc: 'desk', anchor: 'the-rail', label: 'The rail' },
+  { id: 'trash-and-spam', where: 'Desk, the note of what Trash and Spam held back', doc: 'query-language', anchor: 'trash-and-spam-stay-out-unless-you-ask', label: 'Trash and Spam stay out unless you ask' },
   { id: 'query-bar', where: 'Desk, the query bar', doc: 'query-language', label: 'The query language' },
   { id: 'load-images', where: 'Message viewer, the Load images bar', doc: 'desk', anchor: 'links-and-images', label: 'Links and images' },
   { id: 'message-labels', where: 'Message viewer, labels from annotators', doc: 'labels', anchor: 'reading-the-answers', label: 'Reading the answers' },

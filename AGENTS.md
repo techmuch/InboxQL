@@ -136,6 +136,16 @@ sync finds it there.
 
 Where a message was first read from is `mailbox:`, the raw folder name.
 
+**Trash and Spam are left out unless the query mentions them.** `from:bob`
+does not return Bob's mail in Trash or Spam; `from:bob folder:all` does.
+Mentioning one bin brings back that one only: `folder:trash`, `label:trash`,
+`is:deleted` for Trash; `folder:spam`, `label:spam`, `is:junk` for Spam. A
+mention anywhere counts, including after `-` and inside a `saved:` query. A
+query with `id:` is not narrowed. The JSON result says what was left out —
+`"leftOut": ["trash", "spam"]` and `"hidden": 3`, the number of matching
+messages in them (counted up to 1,000) — so an empty result is never a
+mystery. Contact counts leave the bins out the same way.
+
 **Shorthands** worth knowing, because they save several terms each:
 
 ```

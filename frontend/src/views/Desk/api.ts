@@ -96,6 +96,9 @@ export interface Thread {
   messageCount: number;
   ticketCount: number;
   draftCount: number;
+  /** Messages left out because the query did not mention Trash or Spam. */
+  inTrash?: number;
+  inSpam?: number;
   start: string;
   end: string;
 }
@@ -176,6 +179,12 @@ export interface QueryResult {
   groupField?: string;
   bucket?: string;
   sql?: string;
+  /**
+   * The bins — trash, spam — left out because the query did not mention
+   * them, and how many matching messages are in them (counted up to 1,000).
+   */
+  leftOut?: string[];
+  hidden?: number;
 }
 
 export interface SavedQuery {

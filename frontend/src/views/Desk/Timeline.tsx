@@ -272,10 +272,14 @@ const Badge = ({ icon, n, tone }: { icon: React.ReactNode; n: number; tone: 'pri
 );
 
 /** The line under a conversation's subject: what it holds, and who is in it. */
-function summarise(thread: Thread): string {
+export function summarise(thread: Thread): string {
   const parts = [plural(thread.messageCount, 'message')];
   if (thread.ticketCount > 0) parts.push(plural(thread.ticketCount, 'ticket'));
   if (thread.draftCount > 0) parts.push(plural(thread.draftCount, 'draft'));
+  // Left out because the query did not ask for them, and said so rather than
+  // silently missing: a reply you deleted is still part of the conversation.
+  if (thread.inTrash) parts.push(`${thread.inTrash} in Trash`);
+  if (thread.inSpam) parts.push(`${thread.inSpam} in Spam`);
   if (thread.participants?.length) parts.push(thread.participants.join(', '));
   return parts.join(' · ');
 }

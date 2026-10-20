@@ -56,38 +56,54 @@ func ValidFolder(name string) bool {
 // deduplicated against real mail.
 func IsDraftFolder(name string) bool { return name == FolderDrafts }
 
-// sqlIsFlagged is starred. Starred is a flag, as it is in IMAP and in Gmail's
-// IMAP, not a label.
-const sqlIsFlagged = `flags LIKE '%\\Flagged%'`
-
 var (
 	sqlInTrash = hasLabelSQL(LabelTrash)
 	sqlInSpam  = hasLabelSQL(LabelSpam)
-	// Binned mail — Trash and Spam — is left out of every other view, as
-	// Gmail leaves it out.
-	sqlBinned = "(" + sqlInTrash + " OR " + sqlInSpam + ")"
+
+	// The same over alias `m`, for statements that join.
+	sqlInTrashM = hasLabelOver("m", LabelTrash)
+	sqlInSpamM  = hasLabelOver("m", LabelSpam)
 )
 
-// folderClause returns the SQL predicate for a folder.
-func folderClause(folder string) string {
+// folderClause returns the SQL predicate for a folder over the bare messages
+// table.
+func folderClause(folder string) string { return folderClauseOver("", folder) }
+
+// folderClauseOver is the same predicate over a table alias. The query
+// language needs it: a files query joins attachments to messages, both have
+// an id, and an unqualified one is ambiguous.
+func folderClauseOver(alias, folder string) string {
+	col := func(c string) string {
+		if alias == "" {
+			return c
+		}
+		return alias + "." + c
+	}
+	label := func(l string) string { return hasLabelOver(alias, l) }
+	trash, spam := label(LabelTrash), label(LabelSpam)
+	// Binned mail — Trash and Spam — is left out of every other view, as
+	// Gmail leaves it out.
+	binned := "(" + trash + " OR " + spam + ")"
+
 	switch folder {
 	case FolderTrash:
-		return sqlInTrash
+		return trash
 	case FolderSpam:
-		return "(" + sqlInSpam + " AND NOT " + sqlInTrash + ")"
+		return "(" + spam + " AND NOT " + trash + ")"
 	case FolderStarred:
-		return "(" + sqlIsFlagged + " AND NOT " + sqlBinned + ")"
+		// Starred is a flag, as it is in IMAP and in Gmail's IMAP, not a label.
+		return "(" + col("flags") + ` LIKE '%\\Flagged%' AND NOT ` + binned + ")"
 	case FolderSent:
-		return "(" + hasLabelSQL(LabelSent) + " AND NOT " + sqlBinned + ")"
+		return "(" + label(LabelSent) + " AND NOT " + binned + ")"
 	case FolderImportant:
-		return "(" + hasLabelSQL(LabelImportant) + " AND NOT " + sqlBinned + ")"
+		return "(" + label(LabelImportant) + " AND NOT " + binned + ")"
 	case FolderAllMail:
-		return "(NOT " + sqlBinned + ")"
+		return "(NOT " + binned + ")"
 	case FolderArchive:
 		// Archived is the absence of Inbox, which is all it ever was in Gmail.
-		return "(NOT " + hasLabelSQL(LabelInbox) + " AND NOT " + sqlBinned + ")"
+		return "(NOT " + label(LabelInbox) + " AND NOT " + binned + ")"
 	case FolderInbox:
-		return "(" + hasLabelSQL(LabelInbox) + " AND NOT " + sqlBinned + ")"
+		return "(" + label(LabelInbox) + " AND NOT " + binned + ")"
 	default:
 		return ""
 	}

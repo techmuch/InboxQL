@@ -60,6 +60,11 @@ type Thread struct {
 	MessageCount int `json:"messageCount"`
 	TicketCount  int `json:"ticketCount"`
 	DraftCount   int `json:"draftCount"`
+	// InTrash and InSpam count the conversation's messages left out because
+	// the query that found it did not ask for them, so a row can say
+	// "1 in Trash" rather than show a reply you deleted.
+	InTrash int `json:"inTrash,omitempty"`
+	InSpam  int `json:"inSpam,omitempty"`
 
 	Start time.Time `json:"start"`
 	End   time.Time `json:"end"`
@@ -88,7 +93,7 @@ func scanThreads(ctx context.Context, plan *query.Plan) ([]*Thread, error) {
 	if len(keys) == 0 {
 		return []*Thread{}, nil
 	}
-	return LoadThreads(keys)
+	return LoadThreads(keys, plan.LeftOut)
 }
 
 func threadKeys(ctx context.Context, plan *query.Plan) ([]string, error) {
@@ -112,8 +117,9 @@ func threadKeys(ctx context.Context, plan *query.Plan) ([]string, error) {
 // LoadThreads assembles the named conversations, preserving the order given.
 //
 // The order is the caller's: the plan already sorted by recency, and re-sorting
-// here would quietly discard it.
-func LoadThreads(keys []string) ([]*Thread, error) {
+// here would quietly discard it. Messages in the bins named by leftOut are
+// counted on the thread rather than listed in it.
+func LoadThreads(keys []string, leftOut []string) ([]*Thread, error) {
 	if len(keys) == 0 {
 		return []*Thread{}, nil
 	}
@@ -129,7 +135,7 @@ func LoadThreads(keys []string) ([]*Thread, error) {
 		order = append(order, t)
 	}
 
-	if err := loadThreadMessages(threads, keys); err != nil {
+	if err := loadThreadMessages(threads, keys, leftOut); err != nil {
 		return nil, err
 	}
 	if err := loadThreadTickets(threads, keys); err != nil {
@@ -191,8 +197,8 @@ func threadKeyOf(key, id string) string {
 	return id
 }
 
-func loadThreadMessages(threads map[string]*Thread, keys []string) error {
-	rows, err := db.Query(`SELECT COALESCE(m.thread_key, ''), `+aliasedMessageColumns()+`
+func loadThreadMessages(threads map[string]*Thread, keys []string, leftOut []string) error {
+	rows, err := db.Query(`SELECT COALESCE(m.thread_key, ''), `+sqlInTrashM+`, `+sqlInSpamM+`, `+aliasedMessageColumns()+`
 		FROM messages m WHERE `+threadMatch("m", len(keys))+` ORDER BY m.date ASC`,
 		anySlice(keys)...)
 	if err != nil {
@@ -200,16 +206,32 @@ func loadThreadMessages(threads map[string]*Thread, keys []string) error {
 	}
 	defer rows.Close()
 
+	hideTrash, hideSpam := false, false
+	for _, b := range leftOut {
+		hideTrash = hideTrash || b == query.BinTrash
+		hideSpam = hideSpam || b == query.BinSpam
+	}
+
 	for rows.Next() {
 		var key string
+		var inTrash, inSpam bool
 		m, err := scanMessage(func(dest ...any) error {
-			return rows.Scan(append([]any{&key}, dest...)...)
+			return rows.Scan(append([]any{&key, &inTrash, &inSpam}, dest...)...)
 		})
 		if err != nil {
 			return err
 		}
 		t := threads[threadKeyOf(key, m.ID)]
 		if t == nil {
+			continue
+		}
+		// Trash first, as the folders read it: mail in both is in Trash.
+		if inTrash && hideTrash {
+			t.InTrash++
+			continue
+		}
+		if inSpam && !inTrash && hideSpam {
+			t.InSpam++
 			continue
 		}
 		t.MessageCount++

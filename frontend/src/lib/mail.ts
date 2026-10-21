@@ -139,3 +139,34 @@ export async function deleteLabel(name: string): Promise<void> {
   if (!res.ok) throw new Error(body?.error ?? 'could not delete the label');
   mailChanged();
 }
+
+/** What a bulk action did, and how to undo exactly that. */
+export interface BulkResult {
+  matched: number;
+  changed: number;
+  capped?: boolean;
+  undo: unknown;
+}
+
+/** How many messages a query reaches, for "Select all 1,234". */
+export async function bulkCount(query: string): Promise<number> {
+  const res = await fetch(`/api/messages/bulk/count?${new URLSearchParams({ q: query })}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${res.status}`);
+  return (await res.json()).count ?? 0;
+}
+
+export type BulkAction = Move | 'read' | 'unread' | 'star' | 'unstar' | 'label' | 'unlabel';
+
+/** Do an action to every message a query matches, on the server. */
+export async function bulkApply(query: string, action: BulkAction, label = ''): Promise<BulkResult> {
+  const body = await post('/api/messages/bulk', { query, action, label });
+  mailChanged();
+  return body as BulkResult;
+}
+
+/** Reverse a bulk action. */
+export async function bulkUndo(undo: unknown): Promise<number> {
+  const body = await post('/api/messages/bulk/undo', { undo });
+  mailChanged();
+  return body?.changed ?? 0;
+}

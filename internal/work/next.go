@@ -324,10 +324,26 @@ func Template(b *Batch, model string) []Submission {
 	if strings.TrimSpace(model) == "" {
 		model = "agent"
 	}
+	senderCache := map[string]store.SenderHistory{}
+	lookupSender := func(it *Item) store.SenderHistory {
+		snds := senders(it.Messages)
+		if len(snds) == 0 {
+			return store.SenderHistory{}
+		}
+		addr := snds[len(snds)-1]
+		if h, ok := senderCache[addr]; ok {
+			return h
+		}
+		h, _ := store.SenderDefaults(addr)
+		senderCache[addr] = h
+		return h
+	}
+
 	out := make([]Submission, 0, len(b.Items))
 	for _, it := range b.Items {
 		defQuote := defaultQuote(it.Messages)
 		allSystem := isSystemThread(it)
+		hist := lookupSender(it)
 		ans := map[string]json.RawMessage{}
 		for _, a := range it.Ask {
 			el := b.Elements[a.Element]
@@ -350,12 +366,18 @@ func Template(b *Batch, model string) []Submission {
 				case elements.ShapeRecords:
 					v = Answer{None: "none"}
 				case elements.ShapeTags:
-					v = Answer{Tags: []string{}}
+					tags := hist.Topics
+					if tags == nil {
+						tags = []string{}
+					}
+					v = Answer{Tags: tags}
 				case elements.ShapeLevels:
 					lvl := ""
 					switch {
 					case el.HasLevel("no-one"):
 						lvl = "no-one"
+					case hist.Importance != "" && el.HasLevel(hist.Importance):
+						lvl = hist.Importance
 					case allSystem && el.HasLevel("low"):
 						lvl = "low"
 					case el.HasLevel("normal"):
@@ -369,11 +391,15 @@ func Template(b *Batch, model string) []Submission {
 			raw, _ := json.Marshal(v)
 			ans[a.Element] = raw
 		}
+		lbls := hist.Labels
+		if lbls == nil {
+			lbls = []string{}
+		}
 		out = append(out, Submission{
 			Thread:  it.Thread,
 			Lease:   it.Lease,
 			Model:   model,
-			Labels:  []string{},
+			Labels:  lbls,
 			Answers: ans,
 		})
 	}

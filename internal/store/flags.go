@@ -36,24 +36,31 @@ var settableFlags = map[string]bool{
 // Returns how many messages actually changed, which is what lets a caller say
 // "4 marked read" rather than "done".
 func SetMessageFlag(ids []string, flag string, on bool) (int, error) {
+	changed, err := setMessageFlag(ids, flag, on)
+	return len(changed), err
+}
+
+// setMessageFlag is SetMessageFlag reporting which messages it changed, so a
+// bulk change can be undone on exactly those.
+func setMessageFlag(ids []string, flag string, on bool) ([]string, error) {
 	if !settableFlags[flag] {
-		return 0, fmt.Errorf("%q is not a flag you can set (try %s or %s)",
+		return nil, fmt.Errorf("%q is not a flag you can set (try %s or %s)",
 			flag, FlagSeen, FlagFlagged)
 	}
 	if len(ids) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 
 	tx, err := db.Begin()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer tx.Rollback()
 
 	rows, err := tx.Query("SELECT id, account_id, COALESCE(flags, '[]') FROM messages WHERE id IN ("+
 		placeholders(len(ids))+")", anySlice(ids)...)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	type update struct{ id, acct, flags string }
@@ -62,7 +69,7 @@ func SetMessageFlag(ids []string, flag string, on bool) (int, error) {
 		var id, acct, raw string
 		if err := rows.Scan(&id, &acct, &raw); err != nil {
 			rows.Close()
-			return 0, err
+			return nil, err
 		}
 		var current []string
 		json.Unmarshal([]byte(raw), &current)
@@ -74,13 +81,13 @@ func SetMessageFlag(ids []string, flag string, on bool) (int, error) {
 		encoded, err := json.Marshal(next)
 		if err != nil {
 			rows.Close()
-			return 0, err
+			return nil, err
 		}
 		updates = append(updates, update{id: id, acct: acct, flags: string(encoded)})
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	op := OpFlagAdd
@@ -91,18 +98,22 @@ func SetMessageFlag(ids []string, flag string, on bool) (int, error) {
 	accounts := map[string]bool{}
 	for _, u := range updates {
 		if _, err := tx.Exec("UPDATE messages SET flags = ? WHERE id = ?", u.flags, u.id); err != nil {
-			return 0, err
+			return nil, err
 		}
 		if err := enqueue(tx, u.acct, u.id, op, flag, now); err != nil {
-			return 0, err
+			return nil, err
 		}
 		accounts[u.acct] = true
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return nil, err
 	}
 	notifyPending(accounts)
-	return len(updates), nil
+	out := make([]string, len(updates))
+	for i, u := range updates {
+		out[i] = u.id
+	}
+	return out, nil
 }
 
 // withFlag returns the flag list with one flag added or removed, and whether

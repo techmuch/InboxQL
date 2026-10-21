@@ -93,6 +93,8 @@ A query is a **filter**, optionally followed by **pipeline stages** after `|`.
 | `after: before: on:` | `2026-08-15`, `2026-08`, `2026`, `today`, `7d` |
 | `larger: smaller:` | `5mb`, `500kb`, a byte count |
 | `label:` | a mail label (`inbox`, `trash`, `Receipts`) or an annotator's yes — see below |
+| `importance:` | `important normal low ignorable`: every message of a conversation the `importance` element judged so |
+| `sentby:` | `person organization system unknown`: the sender's kind, as the contact records it |
 | `unlabeled: conf>` | annotator results — see below |
 | `extract:name` `extract:name.field>10` | extracted structured data |
 | `thread:<message-id>` | every message in that conversation |
@@ -443,6 +445,18 @@ Each change is made here at once and queued for the account's server, which
 the running server applies within seconds — archive in InboxQL, and the
 message leaves the inbox in Gmail too. A label is created by using it. The
 response lists each message's labels afterwards.
+
+**Every message a query matches**, instead of ids: `--query`, with
+`--dry-run` to count first. The `--json` answer carries `undo`; pass it to
+`iql mail undo` on stdin to reverse exactly what changed.
+
+```
+iql --json mail archive --query "folder:inbox importance:low" --dry-run --origin agent
+iql --json mail archive --query "folder:inbox importance:low" --origin agent > done.json
+iql mail undo < done.json
+```
+
+Say how many before a bulk change, and only make one the user asked for.
 
 Pass `--origin agent`: it is recorded on the label. Archive and label when the
 user asks you to sort mail; **trash and spam only when asked**, and never

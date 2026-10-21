@@ -55,7 +55,23 @@ describe('Desk annotations rail', () => {
       } else if (url.startsWith('/api/rail/folders')) {
         body = { folders: [], hidden: [], icons: [] };
       } else if (url.startsWith('/api/query/terms')) {
-        body = { terms: [], stages: [] };
+        // Whitespace-split, which is enough for these queries: what matters
+        // here is which terms are on and which one is the folder.
+        const q = new URL(url, 'http://x').searchParams.get('q') ?? '';
+        let at = 0;
+        const terms = q.split(' ').filter(Boolean).map(text => {
+          const start = q.indexOf(text, at);
+          at = start + text.length;
+          return { text, field: text.includes(':') ? text.slice(0, text.indexOf(':')) : undefined,
+            negated: false, start, end: at };
+        });
+        body = { terms, stages: [] };
+      } else if (url.startsWith('/api/query/compose')) {
+        const p = new URL(url, 'http://x').searchParams;
+        const q = p.get('q') ?? '';
+        if (p.get('add')) body = { query: `${q} ${p.get('add')}`.trim() };
+        else if (p.get('remove')) body = { query: q.split(' ').filter(t => t !== p.get('remove')).join(' ') };
+        else body = { query: q };
       } else if (url.startsWith('/api/annotators')) {
         body = annotators;
       } else if (url.startsWith('/api/queries')) {
@@ -96,12 +112,18 @@ describe('Desk annotations rail', () => {
     render(<Desk />);
 
     // A label answers yes or no, so its mail is label:x. An extractor pulls
-    // records out, so its mail is extract:x. Two different questions.
+    // records out, so its mail is extract:x. Two different questions — and
+    // each is added to the folder rather than replacing it.
     fireEvent.click(await screen.findByText('money'));
-    await waitFor(() => expect(ran).toContain('label:money'));
+    await waitFor(() => expect(ran).toContain('folder:inbox label:money'));
 
     fireEvent.click(screen.getByText('receipts'));
-    await waitFor(() => expect(ran).toContain('extract:receipts'));
+    await waitFor(() => expect(ran).toContain('folder:inbox label:money extract:receipts'));
+
+    // Clicking one that is on takes it off again, and the folder stays.
+    await waitFor(() => expect(screen.getByText('money').closest('button')!.getAttribute('aria-pressed')).toBe('true'));
+    fireEvent.click(screen.getByText('money'));
+    await waitFor(() => expect(ran[ran.length - 1]).toBe('folder:inbox extract:receipts'));
   });
 
   it('shows a switched-off annotator, because its results are still there', async () => {

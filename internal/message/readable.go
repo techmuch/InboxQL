@@ -47,9 +47,24 @@ var (
 // Readable is the message's text as a person would read it.
 func Readable(m *Message) string {
 	if strings.TrimSpace(m.Body) != "" {
+		if looksLikeHTML(m.Body) {
+			return HTMLText(m.Body)
+		}
 		return cleanLines(m.Body)
 	}
 	return HTMLText(m.HTMLBody)
+}
+
+func looksLikeHTML(s string) bool {
+	head := strings.ToLower(strings.TrimSpace(s))
+	if len(head) > 512 {
+		head = head[:512]
+	}
+	if strings.HasPrefix(head, "<!doctype html") || strings.HasPrefix(head, "<html") {
+		return true
+	}
+	return (strings.Contains(head, "<html") || strings.Contains(head, "<head") || strings.Contains(head, "<style")) &&
+		strings.Contains(head, ">")
 }
 
 // HTMLText renders HTML as plain text.

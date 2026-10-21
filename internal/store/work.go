@@ -395,3 +395,80 @@ func AgentAnswerCounts() ([]AgentAnswerCount, error) {
 	}
 	return out, rows.Err()
 }
+
+// HasReceiptOrder reports whether an ok receipt annotation with the same
+// non-empty order number already exists on another message, preventing
+// Ordered + Shipped emails for the same order from double-counting totals.
+func HasReceiptOrder(annotatorID, order, excludeMessageID string) (bool, error) {
+	order = strings.TrimSpace(order)
+	if order == "" {
+		return false, nil
+	}
+	var n int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM annotations
+		WHERE annotator_id = ? AND message_id != ? AND status = ?
+		  AND LOWER(TRIM(COALESCE(json_extract(data_json, '$.order'), ''))) = LOWER(?)`,
+		annotatorID, excludeMessageID, StatusOK, order).Scan(&n)
+	return n > 0, err
+}
+
+// SenderHistory holds the most common topics, mail labels, and importance level
+// previously assigned to messages from a sender address.
+type SenderHistory struct {
+	Topics     []string
+	Labels     []string
+	Importance string
+}
+
+// SenderDefaults returns the most common topics, non-system mail labels, and
+// importance level from recent messages sent by address, so `work.Template`
+// can pre-fill recurring senders out of the box.
+func SenderDefaults(address string) (SenderHistory, error) {
+	var h SenderHistory
+	addr, _ := NormaliseAddress(address)
+	if addr == "" {
+		return h, nil
+	}
+	const recentFromSender = `(SELECT message_id FROM message_participants WHERE address = ? AND role = 'from' LIMIT 50)`
+
+	tRows, err := db.Query(`
+		SELECT topic FROM message_topics
+		WHERE message_id IN `+recentFromSender+`
+		GROUP BY topic ORDER BY COUNT(*) DESC, topic ASC LIMIT 3`, addr)
+	if err == nil {
+		for tRows.Next() {
+			var t string
+			if tRows.Scan(&t) == nil && t != "" {
+				h.Topics = append(h.Topics, t)
+			}
+		}
+		tRows.Close()
+	}
+
+	lRows, err := db.Query(`
+		SELECT label FROM message_labels
+		WHERE message_id IN `+recentFromSender+`
+		  AND label NOT IN ('inbox', 'sent', 'drafts', 'important', 'spam', 'trash', 'starred', 'unread')
+		GROUP BY label ORDER BY COUNT(*) DESC, label ASC LIMIT 3`, addr)
+	if err == nil {
+		for lRows.Next() {
+			var l string
+			if lRows.Scan(&l) == nil && l != "" {
+				h.Labels = append(h.Labels, l)
+			}
+		}
+		lRows.Close()
+	}
+
+	_ = db.QueryRow(`
+		SELECT COALESCE(json_extract(a.data_json, '$.level'), '')
+		FROM annotations a
+		JOIN annotators an ON an.id = a.annotator_id AND an.name = 'importance'
+		WHERE a.message_id IN `+recentFromSender+`
+		  AND a.status = ?
+		  AND COALESCE(json_extract(a.data_json, '$.level'), '') != ''
+		GROUP BY 1 ORDER BY COUNT(*) DESC LIMIT 1`, addr, StatusOK).Scan(&h.Importance)
+
+	return h, nil
+}

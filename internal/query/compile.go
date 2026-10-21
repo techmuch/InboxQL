@@ -995,6 +995,22 @@ func (c *compiler) dispatch(t *Term, negated bool) (string, error) {
 	case "similar":
 		return c.similarTerm(t, negated)
 
+	case "importance":
+		return wrap("COALESCE("+ConversationLevel(ImportanceAnnotator, "m")+", '') = "+c.arg(strings.ToLower(t.Value)),
+			negated), nil
+
+	case "sentby":
+		v := strings.ToLower(t.Value)
+		if v == "unknown" {
+			// A sender with no contact row is as unknown as one marked so.
+			return wrap("NOT EXISTS (SELECT 1 FROM message_participants sp JOIN contacts sc ON sc.address = sp.address"+
+				" WHERE sp.message_id = m.id AND sp.role = 'from' AND sc.kind <> 'unknown')", negated), nil
+		}
+		// Bound only on this branch: every argument bound must be used, or
+		// the statement's placeholders and its values no longer line up.
+		return wrap("EXISTS (SELECT 1 FROM message_participants sp JOIN contacts sc ON sc.address = sp.address"+
+			" WHERE sp.message_id = m.id AND sp.role = 'from' AND sc.kind = "+c.arg(v)+")", negated), nil
+
 	case "topic":
 		// An anti-join, like every other multi-valued field: -topic:x has to
 		// mean "no topic is x", not "some topic is not x".

@@ -64,6 +64,17 @@ interface RailProps {
   labels?: LabelCount[];
   labelQuery?: (name: string) => string;
   queryText: string;
+  /**
+   * The folder the query is inside: one is always selected. Absent, a folder
+   * row is active when the query is exactly its term, as it used to be.
+   */
+  activeFolder?: string;
+  /** Whether a label, annotation or saved row's query is part of the query now. */
+  isActive?: (q: string) => boolean;
+  /** All Items: one search across every kind, above the folders. */
+  onAllItems?: () => void;
+  /** A label or an annotator's row: added to the folder, or taken off it. */
+  onLabel?: (q: string) => void;
   onFolder: (id: string) => void;
   onQuery: (q: string) => void;
   annotationQuery: (a: Annotator) => string;
@@ -78,7 +89,7 @@ interface RailProps {
 
 export const Rail = ({
   folders, hiddenFolders, saved, annotated, labels = [], labelQuery = n => `label:${n}`, queryText,
-  onFolder, onQuery, annotationQuery,
+  activeFolder, isActive: isActiveProp, onAllItems, onLabel, onFolder, onQuery, annotationQuery,
   onMove, onRemove, onEdit, onToggleFolder, onResetFolders, onAddDefaults,
 }: RailProps) => {
   // Arranging is a mode rather than always-on controls. A rail with a delete
@@ -87,6 +98,10 @@ export const Rail = ({
   const [arranging, setArranging] = useState(false);
   const hidden = new Set(hiddenFolders);
   const shown = arranging ? folders : folders.filter(f => !hidden.has(f.id));
+
+  const isActive = isActiveProp ?? ((q: string) => queryText.trim() === q.trim());
+  const folderActive = (id: string) =>
+    activeFolder !== undefined ? activeFolder === id : queryText.trim() === `folder:${id}`;
 
   const rowClass = (active: boolean, extra = '') =>
     `w-full flex items-center gap-4 px-4 py-2 text-sm transition-colors ${
@@ -102,6 +117,15 @@ export const Rail = ({
       </div>
 
       <div className="flex-1 overflow-auto px-2 space-y-0.5">
+        {onAllItems && (
+          // Not a folder of mail: one search across mail, files, cards, people
+          // and events. Always shown, because it is how you look for anything.
+          <button onClick={onAllItems} title="Search everything: mail, files, cards, people and events"
+            className={rowClass(activeFolder === 'allitems')}>
+            <Search className={`w-4 h-4 ${activeFolder === 'allitems' ? 'text-primary' : 'text-muted-foreground'}`} />
+            <span className="flex-1 text-left">All Items</span>
+          </button>
+        )}
         {shown.map(item => {
           // Every rail entry is a query. The built-ins are folder:inbox and
           // friends; a saved query below is the same kind of thing.
@@ -113,9 +137,9 @@ export const Rail = ({
               <button
                 onClick={() => onFolder(item.id)}
                 title={entryQuery}
-                className={rowClass(queryText.trim() === entryQuery, isHidden ? 'opacity-40' : '')}
+                className={rowClass(folderActive(item.id), isHidden ? 'opacity-40' : '')}
               >
-                <Icon className={`w-4 h-4 ${queryText.trim() === entryQuery ? 'text-primary' : 'text-muted-foreground'}`} />
+                <Icon className={`w-4 h-4 ${folderActive(item.id) ? 'text-primary' : 'text-muted-foreground'}`} />
                 <span className="flex-1 text-left">{item.label}</span>
                 {item.badge ? <span className="text-[10px] font-bold tabular-nums">{item.badge}</span> : null}
               </button>
@@ -164,11 +188,11 @@ export const Rail = ({
           return (
             <div key={q.name ?? q.title} className="flex items-center">
               <button
-                // A saved query is a complete expression, not a facet, so it
-                // replaces rather than merges.
+                // A saved query runs inside the folder, unless it names its own
+                // folder or kind — the Desk decides which.
                 onClick={() => onQuery(q.query)}
                 title={q.query}
-                className={rowClass(queryText.trim() === q.query.trim())}
+                className={rowClass(isActive(q.query))}
               >
                 <Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                 <span className="flex-1 text-left truncate">{q.title}</span>
@@ -238,9 +262,10 @@ export const Rail = ({
               return (
                 <button
                   key={`mail:${l.name}`}
-                  onClick={() => onQuery(q)}
+                  onClick={() => (onLabel ?? onQuery)(q)}
                   title={q}
-                  className={rowClass(queryText.trim() === q)}
+                  aria-pressed={isActive(q)}
+                  className={rowClass(isActive(q))}
                 >
                   <Tag className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                   <span className={`flex-1 text-left truncate ${l.unread > 0 ? 'font-semibold' : ''}`}>
@@ -258,9 +283,10 @@ export const Rail = ({
               return (
                 <button
                   key={a.id}
-                  onClick={() => onQuery(q)}
+                  onClick={() => (onLabel ?? onQuery)(q)}
                   title={off ? `${q} — ${a.name} is switched off; these are what it already found` : q}
-                  className={rowClass(queryText.trim() === q, off ? 'opacity-50' : '')}
+                  aria-pressed={isActive(q)}
+                  className={rowClass(isActive(q), off ? 'opacity-50' : '')}
                 >
                   {/* Sparkles marks a label a model or rule put on, beside the
                       ones a person or the server did. */}

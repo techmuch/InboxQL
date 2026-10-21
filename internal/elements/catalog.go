@@ -18,8 +18,9 @@ var Catalog = []Element{
 			"Receipts often abbreviate or omit the brand (\"885911470902 FLEXVOLT 20-\" is a DeWalt " +
 			"FLEXVOLT battery; \"RYB\" is Ryobi): name the brand when you can tell it from the product " +
 			"code, the product line or your own knowledge, and leave it out rather than guess. Use the " +
-			"amounts as written. Not a purchase: shipping updates without prices, adverts, statements " +
-			"that only show a balance, price-drop alerts — answer none for those.",
+			"amounts as written. Not a purchase: shipping or delivery status updates (\"Shipped\", \"Delivered\") " +
+			"for an order already confirmed, adverts, statements that only show a balance, price-drop alerts — " +
+			"answer none for those.",
 		Fields: []Field{
 			{Name: "merchant", Type: TypeText, Required: true, Describe: "the shop or company sold by, e.g. Home Depot"},
 			{Name: "date", Type: TypeDate, Describe: "when it was bought"},

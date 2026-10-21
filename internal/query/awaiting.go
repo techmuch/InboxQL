@@ -115,3 +115,26 @@ func ContactAwaiting(dir, contact, selfs string) string {
 		" WHERE cp.address = " + contact + " AND " + Waiting(dir, "l") +
 		" AND " + Involves(dir, "l", contact, selfs) + ")"
 }
+
+// ImportanceAnnotator is the element that judges how much a conversation
+// matters.
+const ImportanceAnnotator = "importance"
+
+// ElementLevel is a message's level from a levelled element — a person's
+// ruling, then an answer at the element's current version — or NULL.
+func ElementLevel(element, msgID string) string {
+	return "(SELECT json_extract(an.data_json, '$.level') FROM annotations an JOIN annotators a ON a.id = an.annotator_id" +
+		" WHERE a.name = " + SQLString(element) + " AND an.message_id = " + msgID +
+		" AND an.status = 'ok'" +
+		" AND (an.source = 'human' OR an.annotator_version = a.version)" +
+		" ORDER BY CASE WHEN an.source = 'human' THEN 0 ELSE 1 END, an.seq LIMIT 1)"
+}
+
+// ConversationLevel is the level a conversation was last judged at by a
+// conversation element: the judgement on its newest judged message. Every
+// message of the conversation carries it, so "archive the low-importance
+// mail" archives whole conversations rather than their newest message only.
+func ConversationLevel(element, l string) string {
+	return "(SELECT lvl FROM (SELECT " + ElementLevel(element, "j.id") + " AS lvl, j.date AS d FROM messages j" +
+		" WHERE (j.thread_key = " + l + ".thread_key OR j.id = " + l + ".id)) WHERE lvl IS NOT NULL ORDER BY d DESC LIMIT 1)"
+}

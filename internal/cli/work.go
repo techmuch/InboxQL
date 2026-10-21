@@ -393,7 +393,30 @@ func workSubmit(ctx *Context, args []string, acceptTickets bool) error {
 		results = append(results, r)
 	}
 	if ctx.JSON {
-		if err := ctx.EmitJSON(map[string]any{"results": results, "stored": len(results) - failed, "refused": failed}); err != nil {
+		var labelsAdded, archived, contacts, tickets, events int
+		var ticketIDs, eventChangeIDs []string
+		for _, r := range results {
+			labelsAdded += r.Labels
+			archived += r.Archived
+			contacts += r.Contacts
+			tickets += r.Tickets
+			ticketIDs = append(ticketIDs, r.TicketIDs...)
+			events += r.Events
+			eventChangeIDs = append(eventChangeIDs, r.EventChangeIDs...)
+		}
+		out := map[string]any{
+			"stored":             len(results) - failed,
+			"refused":            failed,
+			"labelsAdded":        labelsAdded,
+			"archived":           archived,
+			"contactsClassified": contacts,
+			"ticketsProposed":    tickets,
+			"ticketIds":          ticketIDs,
+			"eventsProposed":     events,
+			"eventChangeIds":     eventChangeIDs,
+			"results":            results,
+		}
+		if err := ctx.EmitJSON(out); err != nil {
 			return err
 		}
 	} else {

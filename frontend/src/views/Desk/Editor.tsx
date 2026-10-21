@@ -11,6 +11,9 @@ interface EditorProps {
   /** Where the server gave up, if the last run was refused. */
   errorPosition?: number;
   errorMessage?: string;
+  /** Drawn in front of the box: the folder the query is inside. */
+  scope?: React.ReactNode;
+  placeholder?: string;
 }
 
 /**
@@ -27,6 +30,8 @@ export const Editor = ({
   running,
   errorPosition,
   errorMessage,
+  scope,
+  placeholder,
 }: EditorProps) => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [completion, setCompletion] = useState<Completion | null>(null);
@@ -131,9 +136,9 @@ export const Editor = ({
       onRun();
       return;
     }
-    // A bare Enter runs it too, since a query is one line far more often than
-    // it is several.
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Any Enter runs it: the box is one line, and a newline in it would only
+    // hide the rest of the query below the edge.
+    if (e.key === 'Enter') {
       e.preventDefault();
       onRun();
     }
@@ -143,8 +148,12 @@ export const Editor = ({
 
   return (
     <div className="relative">
-      <div className="flex items-start gap-2">
-        <div className="flex-1 relative">
+      {/* One line, no taller than the buttons under it: the query is one
+          line far more often than several, and the bar was taking the space
+          the mail should have. Long queries scroll sideways. */}
+      <div className="flex items-center gap-2">
+        {scope}
+        <div className="flex-1 relative min-w-0">
           <textarea
             ref={inputRef}
             value={value}
@@ -156,13 +165,15 @@ export const Editor = ({
               // Delayed so a click on a candidate lands before the list goes.
               window.setTimeout(() => setOpen(false), 120);
             }}
-            rows={2}
+            rows={1}
+            wrap="off"
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
-            placeholder="from:stripe after:2026-01-01   ·   is:unread -from:*@acme.com   ·   | count by week"
+            placeholder={placeholder ?? 'Search, or add to the folder — from:stripe, is:unread, label:banking, | count by week'}
             aria-label="Query"
-            className="w-full resize-y bg-background border border-border px-3 py-2 font-mono text-sm
+            className="block w-full resize-none overflow-x-auto overflow-y-hidden whitespace-pre bg-background
+                       border border-border px-2 py-1 font-mono text-xs leading-4
                        outline-none focus:border-primary focus:ring-1 focus:ring-primary/40"
           />
 
@@ -197,10 +208,10 @@ export const Editor = ({
           type="button"
           onClick={onRun}
           disabled={running}
-          className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground
-                     text-sm font-medium disabled:opacity-60"
+          className="flex items-center gap-1 px-2 py-1 border border-primary bg-primary text-primary-foreground
+                     text-xs leading-4 font-medium disabled:opacity-60"
         >
-          {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
           Run
         </button>
         <Help topic="query-bar" className="self-center" />

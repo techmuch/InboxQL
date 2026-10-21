@@ -252,6 +252,23 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 			if p.el.Unit == elements.UnitSender {
 				subject = fromOf[t]
 			}
+			if p.el.Name == "receipts" && len(ans.Records) > 0 {
+				var kept []map[string]any
+				for _, r := range ans.Records {
+					dup, err := store.HasReceiptOrder(p.ann.ID, str(r, "order"), subject)
+					if err != nil {
+						return nil, err
+					}
+					if !dup {
+						kept = append(kept, r)
+					}
+				}
+				if len(kept) == 0 {
+					ans = Answer{None: "order already recorded on another message"}
+				} else {
+					ans.Records = kept
+				}
+			}
 			anns := annotations(p.el, ans, sub.Model, t)
 			if err := store.SaveAnnotations(p.ann.ID, p.ann.Version, subject, anns); err != nil {
 				return nil, fmt.Errorf("%s: %w", p.el.Name, err)

@@ -485,8 +485,19 @@ type LabelChange struct {
 // ChangeLabels adds and removes labels on messages, and queues the change for
 // each message's server. Returns how many messages changed.
 func ChangeLabels(ids []string, ch LabelChange) (int, error) {
+	deltas, err := changeLabels(ids, ch)
+	return len(deltas), err
+}
+
+// labelDelta is what one change did to one message: exactly the labels added
+// and removed, which is what undoing it has to reverse — no more.
+type labelDelta struct {
+	added, removed []string
+}
+
+func changeLabels(ids []string, ch LabelChange) (map[string]*labelDelta, error) {
 	if len(ids) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 	var add, remove []string
 	for _, l := range ch.Add {
@@ -500,7 +511,7 @@ func ChangeLabels(ids []string, ch LabelChange) (int, error) {
 		}
 	}
 	if len(add) == 0 && len(remove) == 0 {
-		return 0, fmt.Errorf("no label to add or remove")
+		return nil, fmt.Errorf("no label to add or remove")
 	}
 	if ch.Source == "" {
 		ch.Source = LabelSourceHuman
@@ -508,14 +519,14 @@ func ChangeLabels(ids []string, ch LabelChange) (int, error) {
 
 	tx, err := db.Begin()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer tx.Rollback()
 	if err := ensureLabels(tx, add...); err != nil {
-		return 0, err
+		return nil, err
 	}
 	now := time.Now().UnixMilli()
-	changed := map[string]bool{}
+	changed := map[string]*labelDelta{}
 	accounts := map[string]bool{}
 	for _, id := range ids {
 		var acct string
@@ -523,18 +534,18 @@ func ChangeLabels(ids []string, ch LabelChange) (int, error) {
 			if err == sql.ErrNoRows {
 				continue
 			}
-			return 0, err
+			return nil, err
 		}
 		for _, l := range add {
 			res, err := tx.Exec(`INSERT OR IGNORE INTO message_labels (message_id, label, source, created_at) VALUES (?, ?, ?, ?)`,
 				id, l, ch.Source, now)
 			if err != nil {
-				return 0, err
+				return nil, err
 			}
 			if n, _ := res.RowsAffected(); n > 0 {
-				changed[id] = true
+				deltaFor(changed, id).added = append(deltaFor(changed, id).added, l)
 				if err := enqueue(tx, acct, id, OpLabelAdd, l, now); err != nil {
-					return 0, err
+					return nil, err
 				}
 				accounts[acct] = true
 			}
@@ -542,22 +553,29 @@ func ChangeLabels(ids []string, ch LabelChange) (int, error) {
 		for _, l := range remove {
 			res, err := tx.Exec(`DELETE FROM message_labels WHERE message_id = ? AND label = ?`, id, l)
 			if err != nil {
-				return 0, err
+				return nil, err
 			}
 			if n, _ := res.RowsAffected(); n > 0 {
-				changed[id] = true
+				deltaFor(changed, id).removed = append(deltaFor(changed, id).removed, l)
 				if err := enqueue(tx, acct, id, OpLabelRemove, l, now); err != nil {
-					return 0, err
+					return nil, err
 				}
 				accounts[acct] = true
 			}
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return nil, err
 	}
 	notifyPending(accounts)
-	return len(changed), nil
+	return changed, nil
+}
+
+func deltaFor(m map[string]*labelDelta, id string) *labelDelta {
+	if m[id] == nil {
+		m[id] = &labelDelta{}
+	}
+	return m[id]
 }
 
 // The moves a mail client offers, each a change of labels.

@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Mail, Mails, MoreVertical,
-  MessagesSquare, RefreshCw, Send, Sparkles, Star, Trash2,
+  MessagesSquare, RefreshCw, Search, Send, SlidersHorizontal, Sparkles, Star, Trash2, X,
 } from 'lucide-react';
 import {
-  labelQuery, listLabels, moveMessages, onMailChanged, setFlag, shownLabels,
-  type LabelCount, type Move,
+  bulkApply, bulkCount, bulkUndo, labelQuery, listLabels, moveMessages, onMailChanged, setFlag, shownLabels,
+  type BulkResult, type LabelCount, type Move,
 } from '../../lib/mail';
 import { openMessage, openTool, previewMessage, useViewerStore } from '../../lib/tabs';
 import { movedByKeyboard, navRow, useRovingFocus } from '../../lib/rovingFocus';
@@ -14,9 +14,13 @@ import { refKey, refOf, useSelectionStore } from '../../lib/selection';
 import { ariaCurrent } from '../../lib/rowState';
 import { HiddenNote } from './HiddenNote';
 import { SelectionBar } from './SelectionBar';
+import { BulkBar } from './BulkBar';
+import { GroupView, GROUPINGS } from './GroupView';
+import { AllItems } from './AllItems';
 import { Editor } from './Editor';
 import { Results } from './Results';
 import { Pills } from './Pills';
+import { QuickFilters } from './QuickFilters';
 import { Rail } from './Rail';
 import {
   explainQuery, listSaved, runQuery, saveQuery, QueryFailed,
@@ -24,7 +28,8 @@ import {
   type QueryResult, type SavedQuery,
 } from './api';
 import { listAnnotators, type Annotator } from '../ai/api';
-import { useQueryStore, compose, queryStages } from '../../lib/filters';
+import { useQueryStore, compose, queryStages, queryTerms, type QueryTerm } from '../../lib/filters';
+import { hasTerm, joinScope, namesItsFrame, splitScope, type Scope } from '../../lib/scope';
 import {
   canThread, isMailQuery, openingFolderQuery, THREAD_STAGE, useThreadingStore,
 } from '../../lib/threading';
@@ -100,21 +105,52 @@ const PAGED_ROWS: Record<string, string | undefined> = {
   events: 'events',
 };
 
+/**
+ * The folder in front of the query box: always there, never typed over, and
+ * not removable — a different folder is chosen in the rail.
+ */
+const ScopeChip = ({ label, icon: Icon }: { label: string; icon?: React.ComponentType<{ size?: number; className?: string }> }) => (
+  <span
+    className="shrink-0 flex items-center gap-1 px-2 py-1 text-xs leading-4 font-semibold border border-border bg-muted/50"
+    title="The folder this query is inside. Choose another in the rail."
+    aria-label={`Inside ${label}`}
+  >
+    {Icon && <Icon size={12} className="text-muted-foreground" />}
+    {label} <span aria-hidden className="text-muted-foreground font-normal">›</span>
+  </span>
+);
+
 export const Desk = () => {
   const [messages, setMessages] = useState<any[]>([]);
   const openMessageId = useViewerStore(s => s.messageId);
   const [loading, setLoading] = useState(true);
-  const [folder, setFolder] = useState('inbox');
   const query = useQueryStore(s => s.text);
   const setQuery = useQueryStore(s => s.set);
-  const clearAll = () => setQuery('');
 
-  // What is being typed. It is seeded from the shared query and commits back
-  // to it, so the bar and the results can never describe different things —
-  // which they did while a separate list of cross-filter terms was silently
-  // concatenated onto whatever the bar showed.
-  const [queryText, setQueryText] = useState(query);
-  useEffect(() => { setQueryText(query); }, [query]);
+  // The query's top-level terms, from the server's lexer: what the folder is,
+  // which labels are on, what the box should hold. Kept with the query they
+  // describe, so terms for an older query are never read as this one's.
+  const [termsFor, setTermsFor] = useState<{ q: string; terms: QueryTerm[] } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    queryTerms(query).then(terms => { if (!cancelled) setTermsFor({ q: query, terms }); })
+      .catch(() => { if (!cancelled) setTermsFor({ q: query, terms: [] }); });
+    return () => { cancelled = true; };
+  }, [query]);
+  const terms = termsFor?.q === query ? termsFor.terms : null;
+
+  // All Items is not a query about one kind of thing: it searches them all,
+  // so it is a mode of the Desk rather than a folder in the query.
+  const [allItems, setAllItems] = useState(false);
+  const [allItemsText, setAllItemsText] = useState('');
+  // What All Items last searched for, as distinct from what is being typed.
+  const [allItemsQuery, setAllItemsQuery] = useState('');
+
+  // What is being typed: the query without its folder. The folder is a chip in
+  // front of the box, so it is always there and never typed over; Run puts it
+  // back in front. Seeded from the shared query each time that changes, so the
+  // box and the results can never describe different things.
+  const [queryText, setQueryText] = useState('');
   // What actually ran, as distinct from what is being typed.
   //
   // Deriving the fetch from the live text meant a query per keystroke: typing
@@ -168,6 +204,44 @@ export const Desk = () => {
 
   const [result, setResult] = useState<QueryResult | null>(null);
   const [failure, setFailure] = useState<QueryFailed | null>(null);
+
+  // The folder, and the rest. The last known split stands while the terms for
+  // a new query are on their way, so the chip does not flicker to All Mail.
+  const lastSplit = useRef<{ scope: Scope; rest: string }>({
+    scope: { id: 'inbox', label: 'Inbox', term: 'folder:inbox', mail: true }, rest: '',
+  });
+  const split = useMemo(() => {
+    if (!terms) return lastSplit.current;
+    const next = splitScope(query, terms, result?.kind);
+    lastSplit.current = next;
+    return next;
+  }, [terms, query, result?.kind]);
+  const scope = split.scope;
+  const folder = scope.id;
+  useEffect(() => {
+    if (terms) setQueryText(splitScope(query, terms).rest);
+    // Only when a new query's terms arrive: typing must not be overwritten.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [termsFor]);
+
+  // Run: the folder in front of what was typed — unless what was typed names a
+  // folder or kind of its own, which then wins rather than being ANDed with
+  // the chip into nothing.
+  const runTyped = async () => {
+    const typed = queryText.trim();
+    const own = typed ? await queryTerms(typed).catch(() => [] as QueryTerm[]) : [];
+    setQuery(namesItsFrame(own) ? typed : joinScope(scope.term, typed));
+  };
+  const clearAll = () => setQuery(joinScope(scope.term, ''));
+
+  // The builder is for composing by hand; most of the time it is in the way.
+  const [builder, setBuilder] = useState(() => {
+    try { return localStorage.getItem('iql.desk.builder') === 'on'; } catch { return false; }
+  });
+  const toggleBuilder = () => setBuilder(b => {
+    try { localStorage.setItem('iql.desk.builder', b ? 'off' : 'on'); } catch { /* per viewer */ }
+    return !b;
+  });
   const [saved, setSaved] = useState<SavedQuery[]>([]);
   // The mailbox rows somebody has turned off. Hidden, never deleted: these are
   // the mailbox itself, and losing Inbox with no way back is a bad afternoon.
@@ -397,7 +471,62 @@ export const Desk = () => {
   const labelsOf = (ids: string[]) =>
     ids.map(id => messages.find(m => m.id === id)?.labels ?? []);
   const [labelOpen, setLabelOpen] = useState(false);
+
+  // Every match selected, not just the loaded page: the actions then go to
+  // the server as the query. Offered once the whole page is selected and
+  // there is more than the page; dropped when the query or the selection
+  // changes, because it describes this query and nothing else.
+  const [allMatching, setAllMatching] = useState<{ query: string; count: number } | null>(null);
+  const [offerCount, setOfferCount] = useState<number | null>(null);
+  // How many the query matches, for "1–50 of 1,234" and "Select all 1,234".
+  // The folder's own total is the wrong number once anything is added to it.
+  const [matchCount, setMatchCount] = useState<number | null>(null);
+  useEffect(() => {
+    setMatchCount(null);
+    if (result?.kind !== 'messages') return;
+    if (!hasMore) { setMatchCount(messages.length); return; }
+    let cancelled = false;
+    bulkCount(query).then(n => { if (!cancelled) setMatchCount(n); }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, result?.kind, hasMore && offset <= 50]);
+  const pageSelected = result?.kind === 'messages' && messages.length > 0 && messages.every(isSelected);
+  const offerAll = pageSelected && hasMore && !allMatching;
+  useEffect(() => { setAllMatching(null); setOfferCount(null); }, [query]);
+  useEffect(() => { if (selectedCount === 0) setAllMatching(null); }, [selectedCount]);
+  useEffect(() => {
+    if (!offerAll || offerCount !== null) return;
+    if (matchCount !== null) { setOfferCount(matchCount); return; }
+    bulkCount(query).then(setOfferCount).catch(() => setOfferCount(null));
+  }, [offerAll, offerCount, query, matchCount]);
+  const where = split.rest ? `${scope.label} › ${split.rest}` : scope.label;
+
+  // Grouping the folder — by sender, domain, importance — for processing a
+  // kind of mail at once. Only for mail; another kind has its own views.
+  const [groupBy, setGroupBy] = useState<string | null>(null);
+  const grouping = groupBy !== null && scope.mail && !allItems;
+
+  // The last bulk change, with its undo, until the next one or a while passes.
+  const [lastBulk, setLastBulk] = useState<{ said: string; undo: unknown } | null>(null);
+  useEffect(() => {
+    if (!lastBulk) return;
+    const t = window.setTimeout(() => setLastBulk(null), 20_000);
+    return () => window.clearTimeout(t);
+  }, [lastBulk]);
+  const bulkDone = (said: string, out: BulkResult) => {
+    setLastBulk({ said, undo: out.undo });
+    setAllMatching(null);
+    clearSelection();
+  };
+
   const move = async (to: Move, ids = targetIds()) => {
+    if (allMatching) {
+      const said = { archive: 'Archived', trash: 'Trashed', spam: 'Marked as spam', inbox: 'Moved to the inbox',
+        untrash: 'Restored', notspam: 'Restored' }[to];
+      const out = await bulkApply(allMatching.query, to);
+      bulkDone(`${said} ${out.changed.toLocaleString()} of ${out.matched.toLocaleString()}.`, out);
+      return;
+    }
     if (ids.length === 0) return;
     await moveMessages(ids, to);
     clearSelection();
@@ -453,8 +582,30 @@ export const Desk = () => {
   // are messages — a Set of message ids does not describe a conversation or an
   // aggregate bucket, and pretending it does would be a worse lie than not
   // supporting multi-select there.
+  // `*` then a letter, as in Gmail: `* a` selects the page, `* n` nothing.
+  const starPending = useRef<number | null>(null);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     const moving = ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key);
+    const typingHere = (e.target as HTMLElement).closest?.('input, textarea, [contenteditable="true"], [role="dialog"]');
+    if (!typingHere && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (starPending.current !== null) {
+        window.clearTimeout(starPending.current);
+        starPending.current = null;
+        if (e.key === 'a') { e.preventDefault(); selectReplaceAll(messages.map(messageRef)); return; }
+        if (e.key === 'n') { e.preventDefault(); setAllMatching(null); clearSelection(); return; }
+      }
+      if (e.key === '*') {
+        e.preventDefault();
+        starPending.current = window.setTimeout(() => { starPending.current = null; }, 1500);
+        return;
+      }
+      if (e.key === 'x') {
+        // Toggle the focused row in or out of the selection, without moving.
+        const ref = refOf(document.activeElement);
+        if (ref) { e.preventDefault(); selectToggle(ref); return; }
+      }
+    }
     // Read before the hook moves focus: extending a selection has to include
     // the row you extended *from*, and after the move there is no way to know
     // what that was.
@@ -477,6 +628,17 @@ export const Desk = () => {
         I: () => setFlag(ids, '\\Seen', true),
         U: () => setFlag(ids, '\\Seen', false),
       };
+      // Every match selected: the same keys act on all of them, on the server.
+      if (allMatching) {
+        const bulk = (action: 'read' | 'unread' | 'star', said: string) => async () => {
+          const out = await bulkApply(allMatching.query, action);
+          bulkDone(`${said} ${out.changed.toLocaleString()} of ${out.matched.toLocaleString()}.`, out);
+        };
+        shortcut.I = bulk('read', 'Marked read');
+        shortcut.U = bulk('unread', 'Marked unread');
+        shortcut.s = bulk('star', 'Starred');
+        delete shortcut.l;
+      }
       if (ids.length > 0 && shortcut[e.key]) {
         e.preventDefault();
         if (e.key === 'l' && selectedMessageIds.length === 0) selectOnly(refOf(document.activeElement)!);
@@ -534,8 +696,23 @@ export const Desk = () => {
         labels={mailLabels}
         labelQuery={labelQuery}
         queryText={queryText}
+        activeFolder={allItems ? 'allitems' : scope.id}
+        isActive={q => !allItems && Boolean(terms) && (hasTerm(terms!, q) || split.rest === q.trim())}
+        onAllItems={() => {
+          // Whatever was being searched for is searched for everywhere.
+          const words = split.rest.replace(/\|.*$/, '').trim();
+          setAllItems(true); setAllItemsText(words); setAllItemsQuery(words);
+        }}
+        onLabel={async q => {
+          setAllItems(false);
+          // A label is mail. Inside a folder it is added, or taken off if it is
+          // on; from cards or people it opens that label across all mail.
+          if (!scope.mail) { setQuery(q); return; }
+          if (terms && hasTerm(terms, q)) setQuery(await compose(query, { remove: q }));
+          else setQuery(await compose(query, { add: q }));
+        }}
         onFolder={async id => {
-          setFolder(id);
+          setAllItems(false);
           // Coming back from contacts, files or tickets, the query is about a
           // different kind of thing and adding a folder to it produces
           // `in:contacts kind:person folder:inbox` — still contacts, now with
@@ -546,7 +723,13 @@ export const Desk = () => {
           }
           setQuery(await compose(query, { field: 'folder', term: `folder:${id}` }));
         }}
-        onQuery={setQuery}
+        onQuery={async q => {
+          setAllItems(false);
+          // A saved query runs inside the folder, unless it names its own
+          // folder or kind — "People" is about contacts wherever you are.
+          const own = await queryTerms(q).catch(() => [] as QueryTerm[]);
+          setQuery(namesItsFrame(own) || !scope.mail ? q : joinScope(scope.term, q));
+        }}
         annotationQuery={annotationQuery}
         onMove={async (name, to) => {
           try {
@@ -597,19 +780,44 @@ export const Desk = () => {
       >
         <div className="border-b border-border p-2.5 flex flex-col gap-2">
           <Editor
-            value={queryText}
-            onChange={setQueryText}
-            onRun={() => setQuery(queryText)}
+            value={allItems ? allItemsText : queryText}
+            onChange={allItems ? setAllItemsText : setQueryText}
+            onRun={allItems ? () => setAllItemsQuery(allItemsText) : runTyped}
             running={loading}
-            errorPosition={failure?.position}
-            errorMessage={failure?.message}
+            errorPosition={allItems ? undefined : failure ? Math.max(0, (failure.position ?? 0) - (scope.term ? scope.term.length + 1 : 0)) : undefined}
+            errorMessage={allItems ? undefined : failure?.message}
+            scope={<ScopeChip label={allItems ? 'All Items' : scope.label} icon={allItems ? Search : undefined} />}
+            placeholder={allItems ? 'Search mail, files, cards, people and events' : undefined}
           />
-          {/* The same query, as pills. Not a second copy — every edit is
-              written back through the composer, so the box and the pills can
-              never describe different things. */}
-          <Pills query={query} onChange={setQuery} />
+          {/* The same query, as pills — the builder. Not a second copy: every
+              edit is written back through the composer. Off by default; most
+              work is done with the rail and the filters. */}
+          {builder && !allItems && <Pills query={query} onChange={setQuery} />}
+          {!allItems && (
+            <QuickFilters
+              scope={scope}
+              terms={terms}
+              onToggle={async (term, on, remove) => {
+                let next = query;
+                for (const r of remove) next = await compose(next, { remove: r });
+                next = await compose(next, on ? { add: term } : { remove: term });
+                setQuery(next);
+              }}
+            />
+          )}
 
-          <div className="flex items-center gap-2 text-xs">
+          {!allItems && <div className="flex items-center gap-2 text-xs">
+            <button
+              type="button"
+              aria-pressed={builder}
+              onClick={toggleBuilder}
+              title={builder ? 'Hide the query builder' : 'Show the query as pills you can edit'}
+              className={`flex items-center gap-1 px-2 py-1 border ${
+                builder ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-accent/40'
+              }`}
+            >
+              <SlidersHorizontal size={12} /> Builder
+            </button>
             <button
               type="button"
               onClick={async () => {
@@ -663,6 +871,17 @@ export const Desk = () => {
             >
               <MessagesSquare size={12} /> Threads
             </button>
+            {scope.mail && !allItems && (
+              <label className="flex items-center gap-1 text-muted-foreground">
+                Group by
+                <select aria-label="Group by" value={groupBy ?? ''}
+                  onChange={e => setGroupBy(e.target.value || null)}
+                  className={`bg-background border px-1 py-0.5 text-xs ${groupBy ? 'border-primary text-primary' : 'border-border text-foreground'}`}>
+                  <option value="">—</option>
+                  {GROUPINGS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+                </select>
+              </label>
+            )}
             {result && result.kind !== 'messages' && (
               <span className="ml-auto text-muted-foreground font-mono">
                 {result.kind === 'count'
@@ -670,7 +889,7 @@ export const Desk = () => {
                   : `${result.count} ${resultNoun(result.kind)}`}
               </span>
             )}
-          </div>
+          </div>}
           {explain !== null && (
             <pre className="text-xs font-mono bg-muted/40 border border-border p-2 overflow-x-auto whitespace-pre-wrap">{explain}</pre>
           )}
@@ -679,6 +898,16 @@ export const Desk = () => {
         {/* Above the results rather than inside the message list, because
             selection is a property of Desk and not of messages — it used to
             exist in exactly one of the five modes this pane can be in. */}
+        {allMatching ? (
+          <BulkBar
+            count={allMatching.count}
+            where={where}
+            query={allMatching.query}
+            labels={mailLabels.map(l => l.name)}
+            onDone={bulkDone}
+            onClear={() => { setAllMatching(null); clearSelection(); }}
+          />
+        ) : (
         <SelectionBar
           onNarrow={async (field, values) => setQuery(await compose(query, { field, values }))}
           // Offered only when everything selected is a message, because that
@@ -693,6 +922,32 @@ export const Desk = () => {
           labelOpen={labelOpen}
           onLabelOpenChange={setLabelOpen}
         />
+        )}
+        {offerAll && offerCount !== null && offerCount > messages.length && (
+          <div className="flex shrink-0 items-center justify-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs">
+            <span>All {messages.length} on this page are selected.</span>
+            <button type="button" onClick={() => setAllMatching({ query, count: offerCount })}
+              className="font-semibold text-primary hover:underline">
+              Select all {offerCount.toLocaleString()} in {where}
+            </button>
+          </div>
+        )}
+        {lastBulk && (
+          <div role="status" className="flex shrink-0 items-center gap-3 border-b border-border bg-green-600/10 px-3 py-1.5 text-xs">
+            <span className="flex-1">{lastBulk.said}</span>
+            <button type="button" className="font-semibold text-primary hover:underline"
+              onClick={async () => {
+                const undo = lastBulk.undo;
+                setLastBulk(null);
+                const n = await bulkUndo(undo);
+                setLastBulk({ said: `Undone: ${n.toLocaleString()} back as they were.`, undo: null });
+              }}
+              hidden={lastBulk.undo === null}>
+              Undo
+            </button>
+            <button type="button" aria-label="Dismiss" onClick={() => setLastBulk(null)} className="text-muted-foreground"><X size={12} /></button>
+          </div>
+        )}
 
         <HiddenNote
           result={result}
@@ -702,7 +957,20 @@ export const Desk = () => {
         {/* Anything that is not a list of messages renders through the shared
             result view: groups, counts, tickets, drafts. The message list below
             keeps its own rendering, and every affordance that came with it. */}
-        {result && result.kind !== 'messages' ? (
+        {allItems ? (
+          <AllItems
+            query={allItemsQuery}
+            onSeeAll={q => { setAllItems(false); setQuery(q); }}
+          />
+        ) : grouping ? (
+          <GroupView
+            query={query}
+            by={groupBy!}
+            labels={mailLabels.map(l => l.name)}
+            onShow={async term => { setGroupBy(null); setQuery(await compose(query, { add: term })); }}
+            onDone={(said, out) => setLastBulk({ said, undo: out.undo })}
+          />
+        ) : result && result.kind !== 'messages' ? (
           <div className="flex-1 min-h-0">
             <Results
               // Handed to the list rather than wrapped around it: each one owns
@@ -753,7 +1021,7 @@ export const Desk = () => {
           {/* The page shows at most 50; the total comes from the server so
               the two numbers are not the same number twice. */}
           <div className="text-xs text-muted-foreground font-medium tabular-nums px-4">
-            {messages.length === 0 ? '0' : `1-${messages.length}`} of {counts[folder]?.total ?? messages.length}
+            {messages.length === 0 ? '0' : `1-${messages.length}`} of {(matchCount ?? messages.length).toLocaleString()}
           </div>
         </div>
 
@@ -777,10 +1045,14 @@ export const Desk = () => {
             return (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground space-y-4 px-8 text-center">
                 <EmptyIcon className="w-12 h-12 opacity-10" />
-                <span className="italic">{meta?.empty ?? 'Nothing here.'}</span>
-                {query.trim() !== '' && (
+                {/* The folder's own empty message is about the folder; with
+                    something added to it, what is empty is the match. */}
+                <span className="italic">{split.rest
+                  ? `Nothing in ${scope.label} matches ${split.rest}.`
+                  : meta?.empty ?? 'Nothing here.'}</span>
+                {split.rest !== '' && (
                   <button onClick={clearAll} className="text-xs font-semibold text-primary hover:underline not-italic">
-                    <code className="font-mono">{query}</code> matched nothing — clear it
+                    Show all of {scope.label}
                   </button>
                 )}
               </div>

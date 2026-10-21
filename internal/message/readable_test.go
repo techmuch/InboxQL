@@ -42,3 +42,12 @@ func TestReadableCleansCRLFAndZeroWidthPadding(t *testing.T) {
 		t.Errorf("Readable = %q, want %q", got, want)
 	}
 }
+
+func TestReadableStripsHTMLStoredInPlainBody(t *testing.T) {
+	m := &Message{Body: `<!doctype html><html><head><style type="text/css">#outlook a { padding: 0; }</style></head><body><p>Account safety tips for you, Don</p><p>Enable two-factor authentication.</p></body></html>`}
+	got := Readable(m)
+	want := "Account safety tips for you, Don\nEnable two-factor authentication."
+	if got != want {
+		t.Errorf("Readable = %q, want %q", got, want)
+	}
+}

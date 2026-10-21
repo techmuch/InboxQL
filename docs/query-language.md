@@ -135,6 +135,8 @@ more.
 | `extract:receipts.items.brand=DeWalt` | …with any item of that brand — a path through a list matches if any element does |
 | `extract:importance.level=important` | a levelled label picked that level |
 | `awaiting:me`, `awaiting:them` | the newest message of a conversation the `waiting` element judged to wait on you, or on them |
+| `importance:` | `important` `normal` `low` `ignorable` — every message of a conversation the `importance` element judged so; nothing judged is none of them |
+| `sentby:` | `person` `organization` `system` `unknown` — what kind of sender wrote it, as the contact records it |
 
 `label:` answers for both kinds of label: the ones you, Gmail or your other
 mail client put on, and the ones an annotator decides. A label of yours is

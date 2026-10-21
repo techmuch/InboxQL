@@ -184,6 +184,21 @@ var Registry = []Field{
 		Summary: "what the entity carries", Example: "has:attachment",
 	},
 	{
+		// The importance element's judgement of the conversation, so every
+		// message in a conversation judged low is low: what a one-click
+		// "archive the low-importance mail" needs.
+		Name: "importance", Entity: EntityMessage, Type: TypeEnum,
+		Enum:    []string{"important", "normal", "low", "ignorable"},
+		Summary: "how much the conversation matters, as the importance element judged it", Example: "folder:inbox importance:low",
+	},
+	{
+		// What kind of sender wrote it: the contact's kind. `sender:` is
+		// already from:'s alias, so this is sentby:.
+		Name: "sentby", Entity: EntityMessage, Type: TypeEnum,
+		Enum:    []string{"person", "organization", "system", "unknown"},
+		Summary: "whether a person, an organization or a machine sent it", Example: "sentby:system",
+	},
+	{
 		Name: "awaiting", Entity: EntityMessage, Type: TypeEnum,
 		Enum:    []string{"me", "them"},
 		Summary: "the newest message of a conversation waiting on you, or on them", Example: "awaiting:me | timeline",
@@ -868,7 +883,7 @@ func unknownFieldError(name string) error {
 // GroupKeys are the fields an aggregate can group by.
 var GroupKeys = []string{
 	"from", "domain", "to", "cc", "bcc", "anyone",
-	"account", "mailbox", "label", "thread", "subject", "topic", "tag",
+	"account", "mailbox", "label", "thread", "subject", "topic", "tag", "importance", "sentby",
 	"hour", "day", "week", "month", "year",
 }
 

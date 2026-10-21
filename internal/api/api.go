@@ -197,7 +197,7 @@ func Router() (http.Handler, error) {
 		"/api/query/terms", "/api/query/compose",
 		"/api/queries", "/api/annotators", "/api/annotators/run",
 		"/api/annotators/review", "/api/annotators/score",
-		"/api/tickets", "/api/tickets/board",
+		"/api/tickets", "/api/tickets/board", "/api/search",
 	} {
 		mux.Handle(route, auth.Middleware(queryMux))
 	}

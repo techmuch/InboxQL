@@ -417,4 +417,73 @@ func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testin
 	if tk.Status != store.TicketTodo {
 		t.Errorf("expected ticket status %q with AcceptTickets=true, got %q", store.TicketTodo, tk.Status)
 	}
+
+	// 3. Add a follow-up thread from alice@acme.com ( after ask was labeled & tagged )
+	// and two order/shipped messages with the same order number ("114-1805601-7097067"):
+	// verify Template pre-fills topics/labels/importance from alice@acme.com's prior history
+	// so the template is submittable out-of-the-box, and duplicate receipt orders are not double-counted.
+	if _, err := store.ChangeLabels([]string{"ask"}, store.LabelChange{Add: []string{"contracts"}, Source: store.LabelSourceAgent}); err != nil {
+		t.Fatal(err)
+	}
+	for i, m := range []*message.Message{
+		{ID: "alice2", From: "Alice <alice@acme.com>", To: []string{"me@example.com"},
+			Subject: "Follow-up on contract", Body: "Thanks for sending the update."},
+		{ID: "amz-ord", From: "Amazon <auto-confirm@amazon.com>", To: []string{"me@example.com"},
+			Subject: "Ordered: Power Tool", Body: "Order # 114-1805601-7097067 Grand Total: 157.94 USD"},
+		{ID: "amz-shp", From: "Amazon <shipment-tracking@amazon.com>", To: []string{"me@example.com"},
+			Subject: "Shipped: Power Tool", Body: "Order # 114-1805601-7097067 Total 157.94 USD"},
+	} {
+		m.AccountID, m.ContentHash, m.MessageID = "acct", m.ID, "<"+m.ID+"@x>"
+		m.Header = []byte("Message-ID: <" + m.ID + "@x>\r\n")
+		m.Date = time.Now().Add(time.Duration(i) * time.Minute)
+		if err := store.SaveMessage(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	b2, err := Next(Options{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpls2 := Template(b2, "fast-agent")
+	for _, s := range tmpls2 {
+		switch s.Thread {
+		case "alice2@x":
+			if !has(s.Labels, "contracts") {
+				t.Errorf("expected Template for alice2 to inherit label 'contracts', got %v", s.Labels)
+			}
+			// Submitting the unmodified template for alice2 succeeds out of the box!
+			r, err := Submit(s, nil)
+			if err != nil || !r.OK() {
+				t.Fatalf("unmodified Template for known sender alice2 failed: err=%v problems=%+v", err, r.Problems)
+			}
+		case "amz-ord@x":
+			s.Answers["topics"], _ = json.Marshal(Answer{Tags: []string{"receipt"}})
+			s.Answers["receipts"], _ = json.Marshal(map[string]Answer{
+				"amz-ord": {Records: []map[string]any{
+					{"merchant": "Amazon", "order": "114-1805601-7097067", "total": 157.94, "quote": "Order # 114-1805601-7097067 Grand Total: 157.94 USD"},
+				}},
+			})
+			if r, err := Submit(s, nil); err != nil || !r.OK() {
+				t.Fatalf("amz-ord submit: err=%v problems=%+v", err, r.Problems)
+			}
+		case "amz-shp@x":
+			s.Answers["topics"], _ = json.Marshal(Answer{Tags: []string{"receipt"}})
+			s.Answers["receipts"], _ = json.Marshal(map[string]Answer{
+				"amz-shp": {Records: []map[string]any{
+					{"merchant": "Amazon", "order": "114-1805601-7097067", "total": 157.94, "quote": "Order # 114-1805601-7097067 Total 157.94 USD"},
+				}},
+			})
+			if r, err := Submit(s, nil); err != nil || !r.OK() {
+				t.Fatalf("amz-shp submit: err=%v problems=%+v", err, r.Problems)
+			}
+		}
+	}
+	qr, err := store.RunQuery("extract:receipts.order=114-1805601-7097067", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(qr.Messages) != 1 {
+		t.Errorf("expected duplicate order receipt on shipped email to be deduplicated to 1 message, got %d", len(qr.Messages))
+	}
 }

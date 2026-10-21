@@ -802,6 +802,15 @@ func groupKey(field string, opt Options) (group, error) {
 	case "subject":
 		return group{expr: "m.subject"}, nil
 
+	case "importance":
+		// The conversation's judgement, as importance: filters on, so a group
+		// and the filter its row opens agree.
+		return group{expr: "COALESCE(" + ConversationLevel(ImportanceAnnotator, "m") + ", '(not judged)')"}, nil
+
+	case "sentby":
+		return group{expr: "COALESCE((SELECT sc.kind FROM message_participants sp JOIN contacts sc ON sc.address = sp.address" +
+			" WHERE sp.message_id = m.id AND sp.role = 'from' LIMIT 1), 'unknown')"}, nil
+
 	case "topic":
 		// The first word of the subject line. This is a placeholder and always
 		// was — there is no topic modelling here — but it is the placeholder

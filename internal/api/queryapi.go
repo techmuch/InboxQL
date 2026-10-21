@@ -35,6 +35,15 @@ func registerQueryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/annotators/score", handleAnnotatorScore)
 	mux.HandleFunc("/api/tickets", handleTickets)
 	mux.HandleFunc("/api/tickets/board", handleBoard)
+	mux.HandleFunc("GET /api/search", handleSearchAll)
+}
+
+// handleSearchAll is All Items: the same words across every kind, each
+// kind's answer beside the others.
+func handleSearchAll(w http.ResponseWriter, r *http.Request) {
+	limit, _ := clampPaging(r, 5, 25)
+	q := r.URL.Query().Get("q")
+	writeJSON(w, http.StatusOK, map[string]any{"query": q, "groups": store.SearchAll(q, limit)})
 }
 
 // handleTickets is the ticket surface: list, raise, move, remove.

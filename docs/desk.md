@@ -1,10 +1,11 @@
 # The Desk
 
-The Desk is where mail is read, and it is built on one idea: **a folder is a
-query.** The Inbox is `folder:inbox`. A saved search is a query with a name.
-A label is `label:importance`. They all sit in the same rail, and clicking any
-of them puts its query in the bar at the top — so the Desk teaches the query
-language simply by being used.
+The Desk is where mail is read and dealt with. **A folder is always
+selected** — Inbox, to begin with — and everything else is added to it: a
+label, a filter, a few words. Underneath, it is all one query: the Inbox is
+`folder:inbox`, a label is `label:banking`, and what you add shows in the bar
+as the terms you could have typed, so the Desk teaches the query language
+simply by being used.
 
 Open it from **Go → Desk**, or press **g** then **d**.
 
@@ -15,9 +16,14 @@ differently.
 
 ![The Desk: the rail of folders and saved queries, the query bar, and the inbox](images/desk.webp)
 
+**All Items** at the top searches everything at once — see
+[All Items](#all-items).
+
 **Inbox, Starred, Sent, Drafts, All Mail, Spam and Trash** are the mailbox
-itself, with live unread counts. You can hide one you never use; you cannot
-delete it, because it *is* the mail. **Reset** brings hidden ones back.
+itself, with live unread counts. One of them is always the folder you are in:
+choosing another keeps what you had added, so *Inbox › banking* becomes
+*Archive › banking*. You can hide one you never use; you cannot delete it,
+because it *is* the mail. **Reset** brings hidden ones back.
 
 They are labels, not folders, as in Gmail: a message carries any number of
 labels, so your reply to a thread is in Sent and under Receipts at once.
@@ -28,6 +34,8 @@ other view. On Gmail these are Gmail's own labels, kept the same both ways.
 **Saved queries** are yours. Six arrive with a new mailbox — Tickets,
 Proposed, Files, People, Systems and Unclassified — and they are ordinary
 saved queries: rename them, change their icons, reorder them, or remove them.
+A saved query about mail runs inside the folder you are in; one that names
+its own folder or kind — Files, People — keeps it.
 **Arrange** (the button at the top of the rail) shows the controls for moving,
 editing and removing; editing a query never moves it.
 
@@ -38,18 +46,30 @@ query, this week" — so saved queries are building blocks, not just bookmarks.
 **Labels** lists your labels — the ones you made, and on Gmail the ones you
 made there — with their unread counts, and below them the labels and
 extractors an annotator has found something for, marked with a sparkle. Both
-kinds answer to `label:`. The section is derived, so it cannot be arranged:
-it would be out of date the next time one of them ran.
+kinds answer to `label:`. **Clicking a label adds it to the folder** —
+*Inbox › banking* — and clicking it again takes it off; two labels combine.
+The section is derived, so it cannot be arranged: it would be out of date the
+next time one of them ran.
 
 ## The query bar
 
-Type a query and press **Enter**. While you type, the bar suggests fields,
-values — real addresses from your mailbox, your labels, your folders — and
-says what a term means. **Tab** accepts a suggestion.
+In front of the bar is the folder — *Inbox ›* — and the bar holds what you add
+to it. Type and press **Enter**; the folder is put back in front when it runs.
+Typing a folder or a kind of your own (`folder:sent …`, `in:contacts …`) uses
+that instead. While you type, the bar suggests fields, values — real
+addresses from your mailbox, your labels, your folders — and says what a term
+means. **Tab** accepts a suggestion.
 
-A query in the bar can be shown as text or as **pills**, one per term, which
-you can remove with a click. Either way it is the same query. The
-[query language](query-language.md) guide covers what you can write.
+Under the bar are **quick filters**, one click each, for what the folder
+holds. For mail: **Unread**, **Starred**, **Attachments**, **Important** and
+**Low** (as the importance element judged the conversation), **From people**
+and **From systems**, and **Waiting on me**. Cards, files, people and events
+have their own. Each adds a term you could have typed — `importance:low`,
+`sentby:system` — and clicking it again takes it off.
+
+**Builder** shows the query as **pills**, one per term, to edit by hand; it is
+off unless you turn it on. The [query language](query-language.md) guide
+covers what you can write.
 
 What you get back depends on what you asked:
 
@@ -118,6 +138,32 @@ server; emptying the trash is the server's business.
 The chips an **annotator** puts on a message show beside the subject in the
 viewer. Right-click one (or press the menu key on it) to say whether the label
 is right; see [teaching an annotator](labels.md#teaching-it-rulings).
+
+## Dealing with a lot of mail at once
+
+**Select every match.** Tick the box at the top of the list to select the
+page; when there is more than the page, InboxQL offers **Select all 1,234 in
+Inbox › Low**. Then **Archive**, **Mark read**, **Star**, **Trash**, **Spam**
+or **Label…** act on all of them — on the server, not page by page — and say
+how many changed, with **Undo**, which puts back exactly what changed and
+nothing else.
+
+**Group by** (beside Threads) shows the folder in groups — by **Sender**,
+**Domain**, **Importance** or **Kind of sender** — each with its count and
+**Archive all**, **Mark read** and **Label…** for the whole group, and **Show**
+to open it. Clearing every newsletter from one shop is two clicks.
+
+So archiving all the low-importance mail in the inbox is: **Inbox**, **Low**,
+the box at the top, **Select all**, **Archive**.
+
+## All Items
+
+**All Items** searches mail, files, cards, people and events at once and
+shows each kind's matches side by side, with **See all** to open that kind on
+its own. Words find text anywhere; `from:acme` finds Acme's mail, the files
+they sent, the cards their mail raised, and them. A term one kind has no use
+for leaves that kind out, saying so. Acting on things — archiving, moving
+cards — happens inside one kind, where an action means one thing.
 
 ## Conversations
 
@@ -198,6 +244,8 @@ into a field are never taken, so none of these get in the way of writing.
 | l | label it |
 | s | star or unstar it |
 | Shift+I, Shift+U | mark it read, or unread |
+| x | select the row you are on, or take it out of the selection |
+| \* a, \* n | select the page, or nothing |
 | F1 | the documentation |
 | Ctrl+, | Settings |
 | Ctrl+I | the chat panel |
@@ -205,6 +253,9 @@ into a field are never taken, so none of these get in the way of writing.
 The older **Ctrl+Shift** shortcuts — M for the Desk, F for search and the rest
 — still work, but several of them are browser shortcuts on Windows and Linux,
 so they are no longer what the menus show.
+
+With every match selected, **e**, **#**, **!**, **s** and **Shift+I/U** act on
+all of them.
 
 In the query bar: **Enter** runs the query, **Tab** takes a suggestion, **↑ ↓**
 move through suggestions, **Escape** closes them.

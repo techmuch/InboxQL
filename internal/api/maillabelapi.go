@@ -24,6 +24,9 @@ func registerMailLabelRoutes(mux *http.ServeMux) {
 func registerMessageLabelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/messages/labels", handleChangeLabels)
 	mux.HandleFunc("POST /api/messages/move", handleMove)
+	mux.HandleFunc("GET /api/messages/bulk/count", handleBulkCount)
+	mux.HandleFunc("POST /api/messages/bulk", handleBulk)
+	mux.HandleFunc("POST /api/messages/bulk/undo", handleBulkUndo)
 }
 
 // maxBatch bounds one request, so it cannot rewrite the whole mailbox in one
@@ -134,4 +137,48 @@ func origin(o string) string {
 		return store.LabelSourceAgent
 	}
 	return store.LabelSourceHuman
+}
+
+// handleBulkCount is how many messages a bulk action on a query would reach.
+func handleBulkCount(w http.ResponseWriter, r *http.Request) {
+	n, err := store.QueryMessageCount(r.URL.Query().Get("q"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": n, "max": store.BulkMax})
+}
+
+// handleBulk does an action to every message a query matches — "archive all
+// 1,234 in Inbox › Low" — and answers with how to undo exactly that.
+func handleBulk(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Query  string `json:"query"`
+		Action string `json:"action"`
+		Label  string `json:"label"`
+	}
+	if decodeJSON(w, r, &req) != nil {
+		return
+	}
+	out, err := store.BulkApply(req.Query, strings.ToLower(req.Action), req.Label)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func handleBulkUndo(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Undo store.BulkUndo `json:"undo"`
+	}
+	if decodeJSON(w, r, &req) != nil {
+		return
+	}
+	n, err := store.BulkUndoApply(req.Undo)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"changed": n})
 }

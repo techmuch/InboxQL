@@ -97,6 +97,28 @@ iql --json outbox approve <draft-id> --yes     sends — only when the user aske
 `analyze` with `"mode": "context"` means no AI provider is set up: there is no
 `answer`, so read the messages it returns and answer yourself. That is normal.
 
+## Triaging and extracting: `iql work`
+
+To process, label, and extract structured records (`receipts`, `travel`,
+`events`, `tasks`, `waiting`, `importance`, `sender`, `topics`) from a batch of
+conversations in **two commands**:
+
+```
+iql elements install                                                (once)
+iql work next --limit 10 --template /tmp/answers.json --model <id>
+iql --json work submit /tmp/answers.json
+```
+
+- `work next --template <file>` prints a readable digest of all leased
+  conversations to stdout (with element schemas, message IDs, sender addresses,
+  and clean text) and writes a pre-scaffolded JSON array to `<file>` with all
+  IDs, leases, sender guesses, and default `"none"` entries pre-filled.
+- Edit `<file>` to fill in verbatim `quote` substrings, `tags`, optional mail
+  `"labels": ["receipts"]` (or `"archive": true`), and any extracted records,
+  then run `iql --json work submit <file>`.
+- `events` and `tasks` answers automatically create proposed calendar events and
+  proposed tickets.
+
 ## The calendar
 
 ```

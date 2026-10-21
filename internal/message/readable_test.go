@@ -33,3 +33,13 @@ func TestReadablePrefersThePlainPart(t *testing.T) {
 		t.Errorf("Readable = %q", got)
 	}
 }
+
+func TestReadableCleansCRLFAndZeroWidthPadding(t *testing.T) {
+	m := &Message{Body: "Save 15%\r\n\u200c \u200c \u200c \r\n\r\n\r\nReady to upgrade?\r\nGet 15% off."}
+	got := Readable(m)
+	want := "Save 15%\n\nReady to upgrade?\nGet 15% off."
+	if got != want {
+		t.Errorf("Readable = %q, want %q", got, want)
+	}
+}
+

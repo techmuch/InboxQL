@@ -11,6 +11,20 @@ InboxQL keeps your answers, checks them, and makes them searchable.
 
 ## The loop
 
+Fast path (two tool calls per batch):
+
+    iql work next --limit 10 --template /tmp/answers.json --model <id>
+    iql --json work submit /tmp/answers.json
+
+--template <file> prints a compact digest of all leased conversations to
+stdout (with element schemas, message IDs, sender addresses, and clean text)
+and writes a pre-scaffolded JSON array to <file> with all thread keys,
+leases, message IDs, sender guesses, and default "none" answers already
+filled in. Edit <file> to fill in quotes, tags, labels, and any extracted
+records, then pass it to work submit.
+
+For raw JSON:
+
     iql --json work next --limit 10        conversations to read, newest first
     iql --json work submit < answers.json  your answers, one per conversation
 
@@ -41,6 +55,7 @@ line.
 
     {
       "thread": "<thread>", "lease": "<lease>", "model": "<your model id>",
+      "labels": ["receipts"], "archive": false,
       "answers": {
         "waiting":    {"level": "on-me", "confidence": 0.85,
                        "why": "Alice asked for the contract by Friday",
@@ -57,6 +72,9 @@ line.
       }
     }
 
+  - Optional labels adds mail labels (with origin=agent) and archive: true
+    archives the conversation in the same step — no separate iql mail label
+    calls needed.
   - A conversation element (unit thread) takes one answer. A message element
     takes one answer per message id it was asked about; sender takes one per
     address.

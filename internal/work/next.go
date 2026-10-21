@@ -24,6 +24,7 @@ package work
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -313,3 +314,158 @@ func firstNonEmpty(xs ...string) string {
 	}
 	return ""
 }
+
+// Template builds a pre-scaffolded slice of Submissions for a Batch, with all
+// thread keys, lease tokens, message IDs, sender addresses, and default "none"
+// entries pre-filled so a harness only edits the fields that apply.
+func Template(b *Batch, model string) []Submission {
+	if strings.TrimSpace(model) == "" {
+		model = "agent"
+	}
+	out := make([]Submission, 0, len(b.Items))
+	for _, it := range b.Items {
+		ans := map[string]json.RawMessage{}
+		for _, a := range it.Ask {
+			el := b.Elements[a.Element]
+			var v any
+			switch el.Unit {
+			case elements.UnitMessage:
+				m := map[string]Answer{}
+				for _, mid := range a.Messages {
+					m[mid] = Answer{None: "none"}
+				}
+				v = m
+			case elements.UnitSender:
+				m := map[string]Answer{}
+				for _, s := range a.Senders {
+					m[s] = Answer{Level: guessSenderLevel(s)}
+				}
+				v = m
+			default: // UnitThread
+				switch el.Shape {
+				case elements.ShapeRecords:
+					v = Answer{None: "none"}
+				case elements.ShapeTags:
+					v = Answer{Tags: []string{}}
+				case elements.ShapeLevels:
+					lvl := ""
+					switch {
+					case el.HasLevel("no-one"):
+						lvl = "no-one"
+					case el.HasLevel("normal"):
+						lvl = "normal"
+					case len(el.Levels) > 0:
+						lvl = el.Levels[0].Label
+					}
+					v = Answer{Level: lvl, Quote: ""}
+				}
+			}
+			raw, _ := json.Marshal(v)
+			ans[a.Element] = raw
+		}
+		out = append(out, Submission{
+			Thread:  it.Thread,
+			Lease:   it.Lease,
+			Model:   model,
+			Labels:  []string{},
+			Answers: ans,
+		})
+	}
+	return out
+}
+
+func guessSenderLevel(addr string) string {
+	a := strings.ToLower(strings.TrimSpace(addr))
+	for _, kw := range []string{
+		"noreply", "no-reply", "do-not-reply", "donotreply",
+		"mailer-daemon", "postmaster", "notifications@", "notification@",
+		"alerts@", "alert@", "receipts@", "receipt@", "notice@",
+		"messenger@messaging.squareup.com", "bounce", " automated",
+	} {
+		if strings.Contains(a, kw) {
+			return "system"
+		}
+	}
+	return "person"
+}
+
+// Digest renders a Batch as a compact, LLM-ready text digest so an agent can
+// read every leased conversation, its IDs, and the element schemas in a single
+// tool call without writing inspection scripts.
+func Digest(b *Batch) string {
+	if len(b.Items) == 0 {
+		return "Nothing to read: every recent conversation is answered.\n"
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Leased %d conversations for 30 minutes.\n", len(b.Items))
+	fmt.Fprintf(&sb, "Submit: %s\n", b.Submit)
+
+	if len(b.Elements) > 0 {
+		sb.WriteString("\nElements in this batch:\n")
+		names := make([]string, 0, len(b.Elements))
+		for k := range b.Elements {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			el := b.Elements[k]
+			fmt.Fprintf(&sb, "  - %s (unit=%s, shape=%s)", el.Name, el.Unit, el.Shape)
+			if len(el.Levels) > 0 {
+				lvls := make([]string, len(el.Levels))
+				for i, l := range el.Levels {
+					lvls[i] = l.Label
+				}
+				fmt.Fprintf(&sb, " levels=[%s]", strings.Join(lvls, "|"))
+			}
+			if len(el.Fields) > 0 {
+				flds := make([]string, len(el.Fields))
+				for i, f := range el.Fields {
+					req := ""
+					if f.Required {
+						req = "*"
+					}
+					flds[i] = f.Name + req + ":" + f.Type
+				}
+				fmt.Fprintf(&sb, " fields={%s}", strings.Join(flds, ", "))
+			}
+			sb.WriteString("\n")
+		}
+	}
+	if len(b.Topics) > 0 {
+		fmt.Fprintf(&sb, "Existing topics: %s\n", strings.Join(b.Topics, ", "))
+	}
+
+	for i, it := range b.Items {
+		fmt.Fprintf(&sb, "\n============================================================\n")
+		fmt.Fprintf(&sb, "[%d/%d] Subject: %s\n", i+1, len(b.Items), it.Subject)
+		fmt.Fprintf(&sb, "Thread: %s\n", it.Thread)
+		fmt.Fprintf(&sb, "Lease:  %s\n", it.Lease)
+		var asks []string
+		for _, a := range it.Ask {
+			switch a.Unit {
+			case elements.UnitMessage:
+				asks = append(asks, fmt.Sprintf("%s(msgs:%s)", a.Element, strings.Join(a.Messages, ",")))
+			case elements.UnitSender:
+				asks = append(asks, fmt.Sprintf("%s(senders:%s)", a.Element, strings.Join(a.Senders, ",")))
+			default:
+				asks = append(asks, a.Element)
+			}
+		}
+		fmt.Fprintf(&sb, "Ask:    %s\n", strings.Join(asks, ", "))
+		for _, m := range it.Messages {
+			mine := ""
+			if m.Mine {
+				mine = " (mine)"
+			}
+			fmt.Fprintf(&sb, "--- Message %s | %s | From: %s%s ---\n",
+				m.ID, m.Date.Format(time.RFC3339), m.From, mine)
+			sb.WriteString(m.Text)
+			sb.WriteString("\n")
+			for _, att := range m.Attachments {
+				fmt.Fprintf(&sb, "[Attachment: %s (%s)]\n%s\n", att.Name, att.Type, att.Text)
+			}
+		}
+	}
+	return sb.String()
+}
+

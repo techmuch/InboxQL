@@ -452,6 +452,32 @@ deletes it there.
 Nothing here deletes a message from the server: Trash is a label (a folder on
 other servers), and InboxQL never empties it.
 
+### `work` — triage, label, and extract a batch in two calls
+
+When processing a batch of conversations (labeling, extracting receipts/travel,
+proposing calendar events, and raising task cards), use `iql work` in **two
+commands** rather than reading messages one by one:
+
+```
+iql elements install                                                # once
+iql work next --limit 10 --template /tmp/answers.json --model <id>  # 1: lease + digest + scaffold
+iql --json work submit /tmp/answers.json                            # 2: submit answers + labels
+```
+
+1. `work next --template <file>` leases the conversations, prints a compact
+   digest of all messages (with element schemas, message IDs, sender addresses,
+   and clean text) to stdout, and writes a pre-scaffolded JSON array to `<file>`
+   with all thread keys, leases, sender guesses, and default `"none"` answers
+   already filled in.
+2. Edit `<file>` to fill in verbatim `quote` substrings, `tags`, optional mail
+   `"labels": ["receipts"]` (or `"archive": true`), and any `receipts`,
+   `travel`, `events`, or `tasks` records, then pass `<file>` to `work submit`.
+3. `events` records automatically propose calendar events (`iql calendar changes`);
+   `tasks` records automatically propose tickets (`iql ticket list`, `iql ticket accept <id>`).
+   See [`work`](#work--read-conversations-and-record-what-is-worth-knowing),
+   [`calendar`](#calendar--inevents--the-calendar), and
+   [`ticket`](#ticket--work-derived-from-mail) below for full details.
+
 ---
 
 ## `import` — bring in mail from a desktop client
@@ -1183,8 +1209,9 @@ iql work guide                               the loop, the answer shape, the rul
 iql --json elements list                     the catalog and what is answered
 iql --json elements show receipts            one element in full
 iql elements install                         add the catalog (once)
-iql --json work next --limit 10 [--only receipts,travel] [--query "from:homedepot"]
-iql --json work submit < answers.json        one object, an array, or one per line
+iql work next --limit 10 --template /tmp/answers.json --model <id>
+iql --json work next --limit 10 [--only receipts,travel] [--query "from:homedepot"] [--out batch.json] [--digest]
+iql --json work submit /tmp/answers.json     one object, an array, or one per line
 iql --json work status                       answered, by element and model
 iql --json work clear --model <id> [--since 1d] [--only a,b]
 ```
@@ -1205,10 +1232,15 @@ instructions), `topics` (in use; prefer them), and `items`: each with `thread`
 and `lease` to echo back, `messages` oldest first (readable `text`, attachment
 text, `mine` for the user's own), `people`, and `ask` — the elements to answer
 and the message ids or sender addresses each is about. Each item is leased to
-you for 30 minutes.
+you for 30 minutes. Passing `--template <file>` writes a pre-scaffolded JSON
+array of submissions to `<file>` (with IDs, leases, sender guesses, and default
+`"none"` entries pre-filled) and prints a compact readable digest of all leased
+items to stdout.
 
 **`work submit`** takes, per conversation, `{"thread", "lease", "model",
-"answers"}`. A thread element's answer is one object; a message element's maps
+"labels", "archive", "answers"}`. Optional `labels` adds mail labels (with
+`origin=agent`) and `archive: true` archives the conversation in the same
+step. A thread element's answer is one object; a message element's maps
 message id to an answer; `sender` maps address to an answer. An answer is
 exactly one of `level`, `records`, `tags`, `none` (does not apply, why) or
 `skip` (cannot tell, why), with optional `confidence` (0–1, meant honestly),

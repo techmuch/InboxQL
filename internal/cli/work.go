@@ -46,6 +46,9 @@ with iql work; see iql work guide.
             --limit n          how many (default 10)
             --only a,b         just these elements
             --query <q>        just conversations with mail this matches
+            --template <file>  write a pre-scaffolded answers JSON file
+            --out <file>       write the full batch JSON to a file
+            --digest           print a compact readable digest of all leased items
   submit    answers, from a file or standard input: one JSON object, an
             array of them, or one per line
   status    what has been answered, by element and model
@@ -210,8 +213,11 @@ func runWork(ctx *Context, args []string) error {
 	limit := fs.Int("limit", 10, "conversations to take")
 	only := fs.String("only", "", "comma-separated element names")
 	query := fs.String("query", "", "only conversations with mail this matches")
-	model := fs.String("model", "", "for clear: only this model's answers")
+	model := fs.String("model", "", "model id (for template or clear)")
 	since := fs.String("since", "", "for clear: only answers since this (1d, 2h, or a date)")
+	templatePath := fs.String("template", "", "for next: write pre-scaffolded answers JSON to this file")
+	outPath := fs.String("out", "", "for next: write the full batch JSON to this file")
+	digest := fs.Bool("digest", false, "for next: print a compact readable digest of all leased items")
 	if err := parseArgs(fs, rest); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -227,6 +233,29 @@ func runWork(ctx *Context, args []string) error {
 		if err != nil {
 			return Fail(ExitUsage, "%v", err)
 		}
+		if *outPath != "" {
+			raw, err := json.MarshalIndent(b, "", "  ")
+			if err != nil {
+				return Fail(ExitError, "%v", err)
+			}
+			if err := os.WriteFile(*outPath, append(raw, '\n'), 0o644); err != nil {
+				return Fail(ExitError, "%v", err)
+			}
+		}
+		if *templatePath != "" {
+			tmpl := work.Template(b, *model)
+			raw, err := json.MarshalIndent(tmpl, "", "  ")
+			if err != nil {
+				return Fail(ExitError, "%v", err)
+			}
+			if err := os.WriteFile(*templatePath, append(raw, '\n'), 0o644); err != nil {
+				return Fail(ExitError, "%v", err)
+			}
+		}
+		if *digest || (*templatePath != "" && !ctx.JSON) {
+			ctx.Printf("%s", work.Digest(b))
+			return nil
+		}
 		if ctx.JSON {
 			return ctx.EmitJSON(b)
 		}
@@ -234,7 +263,7 @@ func runWork(ctx *Context, args []string) error {
 			ctx.Printf("Nothing to read: every recent conversation is answered.\n")
 			return nil
 		}
-		ctx.Printf("%d conversations leased for 30 minutes. Use --json to read them:\n", len(b.Items))
+		ctx.Printf("%d conversations leased for 30 minutes. Use --digest or --json to read them:\n", len(b.Items))
 		for _, it := range b.Items {
 			var asked []string
 			for _, a := range it.Ask {
@@ -373,6 +402,12 @@ func submitSummary(r *work.Result) string {
 	}
 	if r.Events > 0 {
 		parts = append(parts, fmt.Sprintf("%d events proposed", r.Events))
+	}
+	if r.Labels > 0 {
+		parts = append(parts, fmt.Sprintf("%d labeled", r.Labels))
+	}
+	if r.Archived > 0 {
+		parts = append(parts, fmt.Sprintf("%d archived", r.Archived))
 	}
 	return strings.Join(parts, ", ")
 }

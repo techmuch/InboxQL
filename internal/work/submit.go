@@ -22,6 +22,12 @@ type Submission struct {
 	// Model is who answered — "claude-opus-5-5" — kept with every answer, so
 	// a run can be scored and, if it was wrong, undone.
 	Model string `json:"model"`
+	// Labels optionally adds mail labels (with origin=agent) to the messages
+	// in this conversation as part of the same submission.
+	Labels []string `json:"labels,omitempty"`
+	// Archive optionally archives the conversation (removes the inbox label
+	// with origin=agent).
+	Archive bool `json:"archive,omitempty"`
 	// Answers holds one entry per element asked. A conversation element's
 	// entry is an Answer; a message element's maps message id to Answer; a
 	// sender element's maps address to Answer.
@@ -60,6 +66,8 @@ type Result struct {
 	Tickets  int            `json:"ticketsProposed,omitempty"`
 	Events   int            `json:"eventsProposed,omitempty"`
 	Contacts int            `json:"contactsClassified,omitempty"`
+	Labels   int            `json:"labelsAdded,omitempty"`
+	Archived int            `json:"archived,omitempty"`
 	Problems []Problem      `json:"problems,omitempty"`
 }
 
@@ -185,6 +193,18 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 			bad(name, "", "not asked about this conversation; answers are taken only for what `work next` asked")
 		}
 	}
+	var cleanLabels []string
+	for _, l := range sub.Labels {
+		n := store.NormalizeLabel(l)
+		if n == "" {
+			continue
+		}
+		if n == store.LabelTrash || n == store.LabelSpam {
+			bad("labels", l, "trash and spam are not added through work submit; use `iql mail trash` or `iql mail spam` when asked")
+			continue
+		}
+		cleanLabels = append(cleanLabels, n)
+	}
 	if !res.OK() {
 		return res, nil
 	}
@@ -233,6 +253,28 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 				}
 				res.Events += n
 			}
+		}
+	}
+	if len(cleanLabels) > 0 || sub.Archive {
+		msgIDs := make([]string, len(msgs))
+		for i, m := range msgs {
+			msgIDs[i] = m.ID
+		}
+		if len(cleanLabels) > 0 {
+			n, err := store.ChangeLabels(msgIDs, store.LabelChange{Add: cleanLabels, Source: store.LabelSourceAgent})
+			if err != nil {
+				return nil, err
+			}
+			res.Labels = n
+		}
+		if sub.Archive {
+			ch := store.Moves["archive"]
+			ch.Source = store.LabelSourceAgent
+			n, err := store.ChangeLabels(msgIDs, ch)
+			if err != nil {
+				return nil, err
+			}
+			res.Archived = n
 		}
 	}
 	return res, store.DropLease(sub.Thread)
@@ -481,7 +523,8 @@ func corpusOf(msgs []*store.ReadingMessage) string {
 }
 
 var quoteFold = strings.NewReplacer("‘", "'", "’", "'", "“", "\"", "”", "\"",
-	"–", "-", "—", "-", " ", " ")
+	"–", "-", "—", "-", " ", " ",
+	"\u200b", "", "\u200c", "", "\u200d", "", "\u2060", "", "\ufeff", "", "\u034f", "", "\u00ad", "")
 
 func normQuote(s string) string {
 	return strings.Join(strings.Fields(strings.ToLower(quoteFold.Replace(s))), " ")

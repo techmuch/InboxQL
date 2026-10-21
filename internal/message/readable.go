@@ -31,12 +31,23 @@ var (
 	anyTag         = regexp.MustCompile(`(?s)<[^>]*>`)
 	spaceRun       = regexp.MustCompile(`[ \t\x{00a0}]+`)
 	blankLines     = regexp.MustCompile(`\n\s*\n(\s*\n)+`)
+	zeroWidth      = strings.NewReplacer(
+		"\r\n", "\n",
+		"\r", "\n",
+		"\u200b", "", // zero-width space
+		"\u200c", "", // zero-width non-joiner (marketing preheader padding)
+		"\u200d", "", // zero-width joiner
+		"\u2060", "", // word joiner
+		"\ufeff", "", // BOM / zero-width no-break space
+		"\u034f", "", // combining grapheme joiner (preheader filler)
+		"\u00ad", "", // soft hyphen
+	)
 )
 
 // Readable is the message's text as a person would read it.
 func Readable(m *Message) string {
 	if strings.TrimSpace(m.Body) != "" {
-		return strings.TrimSpace(m.Body)
+		return cleanLines(m.Body)
 	}
 	return HTMLText(m.HTMLBody)
 }
@@ -53,7 +64,11 @@ func HTMLText(s string) string {
 	s = cellTag.ReplaceAllString(s, "  ")
 	s = anyTag.ReplaceAllString(s, " ")
 	s = html.UnescapeString(s)
+	return cleanLines(s)
+}
 
+func cleanLines(s string) string {
+	s = zeroWidth.Replace(s)
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
 		lines[i] = strings.TrimSpace(spaceRun.ReplaceAllString(l, " "))

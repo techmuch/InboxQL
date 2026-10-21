@@ -285,3 +285,54 @@ func TestChangedInstructionsRefuseAnswers(t *testing.T) {
 		t.Errorf("result %+v", res)
 	}
 }
+
+func TestTemplateDigestAndLabels(t *testing.T) {
+	openWorkFixture(t)
+	b, err := Next(Options{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := Digest(b)
+	if !strings.Contains(digest, "Your Electronic Receipt") || !strings.Contains(digest, "Contract") {
+		t.Errorf("digest missing subjects:\n%s", digest)
+	}
+
+	tmpls := Template(b, "fast-agent")
+	if len(tmpls) != 2 {
+		t.Fatalf("got %d templates, want 2", len(tmpls))
+	}
+
+	// Find the template for "ask" and fill in only the required quotes/tags,
+	// relying on the pre-scaffolded "none" entries for receipts/travel/events/tasks.
+	var askSub Submission
+	for _, s := range tmpls {
+		if s.Thread == itemFor(t, b, "ask").Thread {
+			askSub = s
+			break
+		}
+	}
+	askSub.Labels = []string{"contracts"}
+	askSub.Answers["waiting"], _ = json.Marshal(Answer{Level: "on-me", Quote: "by Friday"})
+	askSub.Answers["importance"], _ = json.Marshal(Answer{Level: "important", Quote: "signed contract"})
+	askSub.Answers["topics"], _ = json.Marshal(Answer{Tags: []string{"legal"}})
+
+	// Trash in Labels is refused.
+	badSub := askSub
+	badSub.Labels = []string{"trash"}
+	if res, _ := Submit(badSub, nil); res.OK() {
+		t.Error("trash label in work submit was accepted")
+	}
+
+	res, err := Submit(askSub, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK() || res.Labels != 1 {
+		t.Fatalf("Submit with template and label: %+v", res)
+	}
+	lbls, _ := store.MailLabels([]string{"ask"})
+	if !has(lbls["ask"], "contracts") {
+		t.Errorf("expected contracts label on ask, got %v", lbls["ask"])
+	}
+}
+

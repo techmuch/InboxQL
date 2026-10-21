@@ -314,13 +314,29 @@ The same lines are a query, which is where questions get asked:
 
 ### The Dashboard
 
-**Go → Dashboard** (**Ctrl+Shift+D**) is your mail at a glance: how much
-arrived each day over the year, who writes most, and the commonest subjects.
-Click a sender or a subject to narrow everything on the page to it; the
-filters are a query, shown above the charts, and **Open in Desk** takes it
-to the Desk to read the mail or save the query.
+**Go → Dashboard** (**Ctrl+Shift+D**) charts the folder you are in: how
+much arrived each day of a year, who writes most, what it is about, how much
+of it matters, and whether people or systems sent it. It charts the Desk's
+query, so the folder stands in front as a chip — *Inbox ›* — with a picker to
+chart another, such as All Mail, and the pills after it are what you added.
+**Clear** takes those off and keeps the folder; **Open in Desk** shows the
+same mail as a list, to read, archive or save.
 
 ![The Dashboard: a year of mail by day, the top senders and the commonest subjects](images/dashboard.webp)
 
-The subjects are the first word of each subject line, not real topics — an
-[annotator](labels.md) is the way to get those.
+**Clicking a chart adds exactly what it counted.** A sender adds `from:=`
+that address — not every address containing it — and a card's heading names
+what it is narrowed to. Click it again to take it off.
+
+- **The calendar** shows one year; the arrows step between years, and a query
+  on a day of another year opens on that year. Click a day for `on:` it.
+- **Topics** are the ones an [annotator](labels.md) extracted, which add
+  `topic:=`. Where nothing was extracted, a subject's first word stands in,
+  shown in *italic*; a click on one finds subjects containing that word.
+- **Importance** and **Kind of sender** count the conversation's importance
+  and who sent the mail; a click adds `importance:low` or `sentby:system`,
+  ready to open in the Desk and archive at once.
+
+The charts follow the mail: a move, a bulk action, Undo or new mail updates
+them. On Cards, Files or People the dashboard says it charts mail and offers
+**Chart All Mail**.

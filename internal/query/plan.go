@@ -626,6 +626,7 @@ func (p *pipeline) buildGroupCount(field string, limit int, desc bool) (*Plan, e
 		g.join + " WHERE " + p.effectiveWhere()
 	if g.having != "" {
 		sql += " AND " + g.having
+		args = append(args, g.havingArgs...)
 	}
 	dir := "DESC"
 	if !desc {
@@ -753,6 +754,10 @@ type group struct {
 	join    string
 	having  string
 	preArgs []any
+	// havingArgs bind the having clause's placeholders, which stand after
+	// the filter's in the statement, so they go after its arguments — not
+	// with preArgs, which bind the join in front of it.
+	havingArgs []any
 	// chronological orders the result by label rather than by count.
 	chronological bool
 }
@@ -839,7 +844,7 @@ func groupKey(field string, opt Options) (group, error) {
 			if words := opt.IgnoredTopicWords(); len(words) > 0 {
 				g.having += " AND " + expr + " NOT IN (" + placeholders(len(words)) + ")"
 				for _, w := range words {
-					g.preArgs = append(g.preArgs, strings.ToLower(strings.TrimSpace(w)))
+					g.havingArgs = append(g.havingArgs, strings.ToLower(strings.TrimSpace(w)))
 				}
 			}
 		}

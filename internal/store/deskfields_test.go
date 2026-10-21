@@ -125,3 +125,26 @@ func TestSearchAllKeepsKindsApart(t *testing.T) {
 		t.Error("an empty search did not return the kinds")
 	}
 }
+
+// A filtered topic chart: the ignored words are bound after the filter's
+// arguments, where their placeholders stand. Bound in front, `from:x | top
+// topic` matched nothing and `subject:x | top topic` failed outright.
+func TestTopTopicUnderAFilter(t *testing.T) {
+	openQueryFixture(t)
+	if err := UpdateSetting("ignore_words", "re:,the"); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"from:alice@acme.com | top topic 10", "subject:quarterly | top topic 10"} {
+		res, err := RunQuery(q, 0, 0)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		found := false
+		for _, g := range res.Groups {
+			found = found || g.Label == "quarterly"
+		}
+		if !found {
+			t.Errorf("%s = %+v, want quarterly among them", q, res.Groups)
+		}
+	}
+}

@@ -13,6 +13,12 @@ export function dayAfter(day: string): string {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
 }
 
+/** A YYYY-MM-DD day as local midnight. */
+const localDay = (day: string): Date => {
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
 /**
  * Mail per day as a heatmap: the dashboard's Communication Intensity and a
  * contact card's How often they write. One component so the two cannot drift
@@ -66,6 +72,11 @@ export const ActivityCalendar = ({ data, from, to, onDay }: {
   return (
     <ResponsiveCalendar
       {...common}
+      // Local dates, not the strings: nivo reads "2026-01-01" as UTC
+      // midnight, which west of Greenwich is still 31 December, and it drew
+      // a nearly empty row for the year before.
+      from={localDay(from)}
+      to={localDay(to)}
       margin={{ top: 20, right: 0, bottom: 0, left: 20 }}
       yearSpacing={40}
       monthBorderColor={dark ? '#18181b' : '#ffffff'}

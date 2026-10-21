@@ -666,10 +666,28 @@ var analyticsQueries = map[string]string{
 	// you should not be topped by you. me() is that exclusion, expressed once.
 	"senders": "-from:me() | top from 10",
 	"topics":  "| top topic 50",
+	// The conversation's judgement and the sender's kind: how much of the
+	// mail is low, or from systems — the two questions bulk archiving starts
+	// from.
+	"importance": "| count by importance",
+	"sentby":     "| count by sentby",
+}
+
+// analyticsGroup is a group with the term that is exactly it: what a click
+// adds, so the mail it opens is the mail the bar counted.
+type analyticsGroup struct {
+	Label string  `json:"label"`
+	Value float64 `json:"value"`
+	// Term is empty for a group no term can name, such as "(not judged)".
+	Term string `json:"term,omitempty"`
+	// Kind says what a topic is: "topic" when an annotator extracted it,
+	// "word" when it is the first word of subjects with nothing extracted.
+	Kind string `json:"kind,omitempty"`
 }
 
 func handleAnalytics(w http.ResponseWriter, r *http.Request) {
-	stage, ok := analyticsQueries[r.URL.Query().Get("type")]
+	kind := r.URL.Query().Get("type")
+	stage, ok := analyticsQueries[kind]
 	if !ok {
 		http.Error(w, "invalid analytics type", http.StatusBadRequest)
 		return
@@ -694,6 +712,16 @@ func handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The calendar draws one year, so it counts one: grouping the whole
+	// mailbox by day to draw 365 of them was most of what a load cost.
+	if y := r.URL.Query().Get("year"); kind == "volume" && y != "" {
+		if len(y) != 4 || strings.Trim(y, "0123456789") != "" {
+			http.Error(w, "year: four digits", http.StatusBadRequest)
+			return
+		}
+		filter = strings.TrimSpace(filter + " on:" + y)
+	}
+
 	expr := strings.TrimSpace(filter + " " + stage)
 
 	res, err := store.RunQuery(expr, 0, 0)
@@ -711,13 +739,65 @@ func handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groups := res.Groups
-	if r.URL.Query().Get("type") == "topics" {
+	if kind == "topics" {
 		groups = withoutIgnoredWords(groups)
 	}
 
-	// The dashboard reads {label, value}, which is what a group already is.
+	out := make([]analyticsGroup, len(groups))
+	labels := make([]string, len(groups))
+	for i, g := range groups {
+		out[i] = analyticsGroup{Label: g.Label, Value: g.Value}
+		labels[i] = g.Label
+	}
+	var extracted map[string]bool
+	if kind == "topics" {
+		if extracted, err = store.ExtractedTopics(labels); err != nil {
+			writeQueryError(w, err)
+			return
+		}
+	}
+	for i := range out {
+		out[i].Term, out[i].Kind = analyticsTerm(kind, out[i].Label, extracted)
+	}
+
+	// The dashboard reads {label, value}, which is what a group already is,
+	// and the term that opens it.
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(groups)
+	json.NewEncoder(w).Encode(out)
+}
+
+// analyticsTerm is the filter that is exactly one group of a widget.
+//
+// A sender is `from:=`, not `from:` — the bar counted alice@acme.com, and a
+// substring would add notalice@acme.com. A topic an annotator extracted is
+// `topic:=`; a topic that is only the first word of subjects has no field of
+// its own, and `subject:` is the nearest honest spelling, which the card says.
+func analyticsTerm(kind, label string, extracted map[string]bool) (term, topicKind string) {
+	if label == "" || strings.HasPrefix(label, "(") {
+		return "", ""
+	}
+	switch kind {
+	case "senders":
+		return "from:=" + quoteTerm(label), ""
+	case "topics":
+		if extracted[strings.ToLower(label)] {
+			return "topic:=" + quoteTerm(label), "topic"
+		}
+		return "subject:" + quoteTerm(label), "word"
+	case "importance":
+		return "importance:" + label, ""
+	case "sentby":
+		return "sentby:" + label, ""
+	}
+	return "", ""
+}
+
+// quoteTerm quotes a value that would not survive as one bare word.
+func quoteTerm(v string) string {
+	if v != "" && !strings.ContainsAny(v, " \t\"()|:") {
+		return v
+	}
+	return `"` + strings.ReplaceAll(v, `"`, `""`) + `"`
 }
 
 // withoutIgnoredWords drops the topic words the user asked not to see.

@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile, BUNDLED_THEMES } from 'nexus-shell';
-import { Layout, Search, Mail, BarChart2, Server, Shield, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, HardDrive, Wrench } from 'lucide-react';
-import { ActivityCalendar } from './views/ActivityCalendar';
+import { Search, Mail, Server, Shield, Cpu, Eye, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, HardDrive, Wrench } from 'lucide-react';
 import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
 import { BrowserStoragePanel } from './views/BrowserStoragePanel';
@@ -11,9 +10,10 @@ import { Annotators } from './views/Annotators';
 import { MessageViewer } from './views/MessageViewer';
 import { ErrorLog } from './views/ErrorLog';
 import { Desk } from './views/Desk';
+import { Dashboard } from './views/Dashboard';
 import { Board } from './views/Board';
 import { DataManagement } from './views/DataManagement';
-import { openTool, openErrorLog, openQuery, useViewerStore, type ViewerMode } from './lib/tabs';
+import { openTool, openErrorLog, useViewerStore, type ViewerMode } from './lib/tabs';
 import { useAttachmentTargetStore, type AttachmentTarget } from './lib/attachmentTarget';
 import { CalendarDays, Radio, RadioTower, ScrollText } from 'lucide-react';
 import { useThreadingStore, type Threading } from './lib/threading';
@@ -23,7 +23,7 @@ import { Windows } from './views/Windows';
 import { WindowNote } from './views/WindowNote';
 import { RailDefaults } from './views/RailDefaults';
 import { LogSettings } from './views/LogSettings';
-import { useQueryStore, queryTerms, compose, asTerm, type QueryTerm } from './lib/filters';
+import { useQueryStore } from './lib/filters';
 import { useDevReload } from './lib/devReload';
 import { requestSettingsSection, takeSettingsSection, SETTINGS_SECTION_EVENT } from './lib/settingsNav';
 import { settingAnchor, openSetting, SETTINGS, SECTION_LABEL, matchesSetting, matchesWords } from './lib/settingsIndex';
@@ -135,199 +135,6 @@ const LoginView = ({ onLogin }: { onLogin: (user: any) => void }) => {
             {loading ? 'Authenticating...' : 'Sign In'}
           </button>
         </form>
-      </div>
-    </div>
-  );
-};
-
-// --- Dashboard View ---
-const Dashboard = () => {
-  const [volume, setVolume] = useState<any[]>([]);
-  const [senders, setSenders] = useState<any[]>([]);
-  const [topics, setTopics] = useState<any[]>([]);
-  const query = useQueryStore(s => s.text);
-  const setQuery = useQueryStore(s => s.set);
-  const [terms, setTerms] = useState<QueryTerm[]>([]);
-
-  // The pills are the query's own terms, fetched rather than kept alongside it.
-  // A parallel list is how the bar and the results came to disagree.
-  useEffect(() => { queryTerms(query).then(setTerms).catch(() => setTerms([])); }, [query]);
-
-  // A facet click replaces that facet and leaves everything else alone.
-  const toggleTerm = async (term: string) => {
-    const already = terms.some(t => t.text === term);
-    setQuery(await compose(query, already ? { remove: term } : { add: term }));
-  };
-  const removeTerm = async (term: string) => setQuery(await compose(query, { remove: term }));
-  const clearAll = () => setQuery('');
-  const filter = query;
-  // Each widget highlights when a term for its own field is applied. The value
-  // is read back out of the term so the heading can name it.
-  const applied = (field: string) => terms.find(t => t.field === field);
-  const appliedValue = (field: string) => {
-    const term = applied(field);
-    if (!term) return null;
-    const value = term.text.slice(term.text.indexOf(':') + 1);
-    return value.replace(/^"|"$/g, '').replace(/""/g, '"');
-  };
-
-  // Why the failure is rendered rather than logged: every widget appending its
-  // own aggregate to a shared query used to 400 whenever Desk was aggregating,
-  // and because this only reached the console the dashboard simply showed
-  // yesterday's numbers. A chart that is quietly stale is worse than one that
-  // says it could not load.
-  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchData = async () => {
-      const qs = filter ? `&${new URLSearchParams({ q: filter })}` : '';
-      try {
-        const [vRes, sRes, tRes] = await Promise.all([
-          fetch(`/api/analytics?type=volume${qs}`),
-          fetch(`/api/analytics?type=senders${qs}`),
-          fetch(`/api/analytics?type=topics${qs}`)
-        ]);
-        if (cancelled) return;
-
-        const failed = [vRes, sRes, tRes].find(r => !r.ok);
-        if (failed) {
-          const body = await failed.json().catch(() => null);
-          setAnalyticsError(body?.error ?? `Analytics failed (${failed.status}).`);
-          // The old numbers are cleared with the error. Leaving them on screen
-          // beside a warning invites reading them as current.
-          setVolume([]); setSenders([]); setTopics([]);
-          return;
-        }
-
-        setAnalyticsError(null);
-        setVolume(await vRes.json());
-        setSenders(await sRes.json());
-        setTopics(await tRes.json());
-      } catch (e) {
-        if (cancelled) return;
-        setAnalyticsError(e instanceof Error ? e.message : String(e));
-      }
-    };
-    fetchData();
-    return () => { cancelled = true; };
-  }, [filter]);
-
-  const calendarData = useMemo(() => {
-    return (volume || []).map(d => ({
-      day: d.label,
-      value: d.value
-    }));
-  }, [volume]);
-
-  const year = new Date().getFullYear();
-  const fromDate = `${year}-01-01`;
-  const toDate = `${year}-12-31`;
-
-  return (
-    <div className="p-6 overflow-auto h-full bg-background text-foreground">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="flex items-center gap-2 text-2xl font-bold">Analytics Pulse <Help topic="dashboard" /></h2>
-        {terms.length > 0 && (
-          <button onClick={clearAll} className="flex items-center gap-1.5 text-[10px] font-semibold text-primary hover:bg-primary/20 bg-primary/10 px-2.5 py-1  transition-colors">
-            <X className="w-2.5 h-2.5" /> Clear Filters
-          </button>
-        )}
-      </div>
-
-      {terms.length > 0 && (
-        <div className="bg-primary/5 border border-primary/10  px-4 py-2 flex items-center gap-3 mb-6">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-primary/60">Query:</span>
-          <div className="flex flex-1 gap-2 overflow-auto no-scrollbar">
-            {terms.map(t => (
-              <span key={t.start} className="px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-mono flex items-center gap-1 shadow-sm whitespace-nowrap">
-                {t.text} <X onClick={() => removeTerm(t.text)} className="w-2.5 h-2.5 cursor-pointer" />
-              </span>
-            ))}
-          </div>
-          {/* The filters are a query, so they can go somewhere they can be
-              edited and saved rather than only cleared. */}
-          <button
-            onClick={() => openQuery(filter)}
-            className="text-[10px] font-semibold text-primary hover:bg-primary/20 bg-primary/10 px-2.5 py-1 whitespace-nowrap transition-colors"
-          >
-            Open in Desk
-          </button>
-        </div>
-      )}
-      
-      {analyticsError && (
-        <div className="mb-6 flex items-start gap-2 border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
-          <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
-          <span>{analyticsError}</span>
-        </div>
-      )}
-
-      <div className="space-y-6">
-        {/* Temporal Volume - Calendar Heatmap */}
-        <div className={`p-6 bg-card border  shadow-sm min-h-80 flex flex-col group transition-colors ${applied('on') ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
-          <div className="flex items-center gap-3 mb-4">
-            <BarChart2 className="w-5 h-5 text-primary" />
-            <span className="font-bold text-lg text-foreground">Communication Intensity {appliedValue('on') ? `on ${appliedValue('on')}` : ''}</span>
-          </div>
-          <div className="flex-1 h-64 min-h-64">
-            {calendarData.length > 0 ? (
-              <ActivityCalendar data={calendarData} from={fromDate} to={toDate} onDay={day => toggleTerm(`on:${day}`)} />
-            ) : (
-              <div className="h-full flex items-center justify-center text-xs text-muted-foreground italic">
-                No temporal data available for these filters
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className={`p-6 bg-card border  shadow-sm min-h-64 flex flex-col group transition-colors ${applied('from') ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
-            <div className="flex items-center gap-3 mb-4">
-              <Mail className="w-5 h-5 text-primary" />
-              <span className="font-bold text-lg text-foreground">Top Senders {applied('from') ? `(Filtered)` : ''}</span>
-            </div>
-            <div className="flex-1 space-y-3">
-              {(senders || []).slice(0, 5).map((d, i) => (
-                <button 
-                  key={i} 
-                  onClick={() => toggleTerm(asTerm('from', d.label))}
-                  className={`w-full flex items-center gap-2.5 p-1.5  transition-all ${appliedValue('from') === d.label ? 'bg-primary/10 ring-1 ring-primary' : 'hover:bg-accent'}`}
-                >
-                  <div className="w-7 h-7  bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary">
-                    {d.label[0]?.toUpperCase() || '?'}
-                  </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="text-xs font-semibold truncate leading-tight">{d.label}</div>
-                    <div className="text-[9px] text-muted-foreground uppercase tracking-tighter">{d.value} messages</div>
-                  </div>
-                  {appliedValue('from') === d.label && <Check className="w-2.5 h-2.5 text-primary" />}
-                </button>
-              ))}
-              {(!senders || senders.length === 0) && <span className="text-xs text-muted-foreground italic text-center pt-10 block">No senders found for these filters</span>}
-            </div>
-          </div>
-
-          <div className={`p-6 bg-card border  shadow-sm min-h-64 flex flex-col group transition-colors ${applied('subject') ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}>
-            <div className="flex items-center gap-3 mb-4">
-              <Layout className="w-5 h-5 text-primary" />
-              <span className="font-bold text-lg text-foreground">Topic Trends {applied('subject') ? `(Filtered)` : ''}</span>
-            </div>
-            <div className="flex-1 flex flex-wrap gap-1.5 content-start">
-              {(topics || []).map((d, i) => (
-                <button 
-                  key={i} 
-                  onClick={() => toggleTerm(asTerm('subject', d.label))}
-                  className={`px-2.5 py-1  text-[10px] font-semibold flex items-center gap-1.5 transition-all ${appliedValue('subject') === d.label ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted hover:bg-primary/10 hover:text-primary'}`}
-                >
-                  <span className="truncate max-w-[100px]">{d.label}</span>
-                  <span className={`text-[9px] ${appliedValue('subject') === d.label ? 'text-primary-foreground/70' : 'opacity-50 font-mono'}`}>{d.value}</span>
-                </button>
-              ))}
-              {(!topics || topics.length === 0) && <span className="text-xs text-muted-foreground italic text-center pt-10 w-full block">No topics found for these filters</span>}
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -368,3 +368,32 @@ func ContactsForTopic(topic string, limit int) ([]*Contact, error) {
 	}
 	return out, rows.Err()
 }
+
+// ExtractedTopics says which of these names an annotator has given a
+// message as its topic, lowered. The dashboard's topic chart mixes those
+// with the first words of subjects where nothing was extracted, and a click
+// has to know which it is to open the mail its bar counted.
+func ExtractedTopics(names []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(names) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(names))
+	for i, n := range names {
+		args[i] = strings.ToLower(n)
+	}
+	rows, err := db.Query(`SELECT DISTINCT LOWER(topic) FROM message_topics WHERE LOWER(topic) IN (`+
+		strings.TrimSuffix(strings.Repeat("?,", len(names)), ",")+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out[t] = true
+	}
+	return out, rows.Err()
+}

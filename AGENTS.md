@@ -1456,6 +1456,28 @@ the AI provider is remote. `POST /api/system/restart` and
 unasked**: both end the process serving the user's open windows, and an update
 replaces the binary. Suggest them, and let the person press the button.
 
+**Backups** — the same as Settings → Data Management:
+
+```
+iql --json backup list                   every backup, the room they take, the room left, the keep rules
+iql --json backup [--include-key] [--include-attachments]   make one; it is checked, then the keep rules prune
+iql --json backup check <name>           read one back: whole, and which schema
+iql --json backup prune [--dry-run]      remove what the keep rules do not keep
+iql --json backup delete <name>
+iql --json backup policy [--keep-update n] [--keep-scheduled n] [--keep-restore n] [--schedule off|daily|weekly]
+iql restore <name> --yes                 only with the server stopped
+```
+
+A backup is named by its file name or the start of one. Each is a full copy
+of the database — gigabytes on a real mailbox — so look at `freeBytes` and
+`needBytes` in `backup list` before making one; a backup with too little room
+removes what the keep rules allow and otherwise refuses before writing
+anything. The user's own backups are never pruned. `--include-key` makes a
+backup that can decrypt their passwords: only when asked. **Restore only when
+asked**, and say what it replaces: the mailbox becomes the backup (the current
+one is kept as a backup of its own). `iql restore` refuses while a server holds
+the mailbox; point the person at Data Management, which restarts to restore.
+
 **The user guides** are embedded in the binary and served at `/api/docs` — the
 same Markdown as `docs/*.md`, plus this file. When a user asks how something
 works, `GET /api/docs/index` is a searchable copy of everything they can read

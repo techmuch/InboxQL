@@ -168,6 +168,28 @@ func scanContact(scan func(...any) error) (*Contact, error) {
 	return c, nil
 }
 
+// GetContactSummary returns the stored (asserted) fields of a contact by
+// address without running the 5 derived participant-count subqueries. Use this
+// on hot paths like `work next` and `SaveContact` that only need Kind,
+// KindSource, or display names.
+func GetContactSummary(address string) (*Contact, error) {
+	addr, _ := NormaliseAddress(address)
+	if addr == "" {
+		addr = strings.ToLower(strings.TrimSpace(address))
+	}
+	c := &Contact{}
+	err := db.QueryRow("SELECT "+contactColumns+" FROM contacts c WHERE c.address = ?", addr).Scan(
+		&c.Address, &c.HeaderName, &c.DisplayName, &c.FirstName, &c.LastName,
+		&c.Phone, &c.Org, &c.Title, &c.Kind, &c.KindSource, &c.EnrichedBy, &c.Confidence, &c.Notes)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 // GetContact returns one contact by address, or (nil, nil) when unknown.
 func GetContact(address string) (*Contact, error) {
 	addr, _ := NormaliseAddress(address)
@@ -205,7 +227,7 @@ func SaveContact(c *Contact, source string) error {
 		return fmt.Errorf("a contact needs an address")
 	}
 
-	existing, err := GetContact(addr)
+	existing, err := GetContactSummary(addr)
 	if err != nil {
 		return err
 	}

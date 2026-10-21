@@ -140,6 +140,21 @@ type Options struct {
 	// open and watch it; this is how a click becomes something with progress
 	// and a stop button rather than a browser timing out.
 	Annotator string
+
+	// Backup is what a backup job makes, or which backup a check reads.
+	Backup BackupOptions
+}
+
+// BackupOptions are the backup jobs' knobs.
+type BackupOptions struct {
+	// Reason is manual or scheduled.
+	Reason string
+	// Version is the InboxQL making it, for the backup's record.
+	Version     string
+	Key         bool
+	Attachments bool
+	// Name is the backup a check reads.
+	Name string
 }
 
 // Start begins a job, unless one of that kind is already running.
@@ -357,6 +372,10 @@ func (m *Manager) workerFor(kind string) (worker, error) {
 		return runAnnotators, nil
 	case health.JobReindex:
 		return runReindex, nil
+	case health.JobBackup:
+		return runBackup, nil
+	case health.JobBackupCheck:
+		return runBackupCheck, nil
 	}
 	return nil, fmt.Errorf("unknown maintenance job %q", kind)
 }

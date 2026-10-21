@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile, BUNDLED_THEMES } from 'nexus-shell';
-import { Layout, Search, Mail, BarChart2, Server, Shield, Trash2, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, AlertTriangle, HardDrive, Wrench } from 'lucide-react';
+import { Layout, Search, Mail, BarChart2, Server, Shield, Cpu, Eye, X, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, HardDrive, Wrench } from 'lucide-react';
 import { ActivityCalendar } from './views/ActivityCalendar';
 import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
@@ -12,6 +12,7 @@ import { MessageViewer } from './views/MessageViewer';
 import { ErrorLog } from './views/ErrorLog';
 import { Desk } from './views/Desk';
 import { Board } from './views/Board';
+import { DataManagement } from './views/DataManagement';
 import { openTool, openErrorLog, openQuery, useViewerStore, type ViewerMode } from './lib/tabs';
 import { useAttachmentTargetStore, type AttachmentTarget } from './lib/attachmentTarget';
 import { CalendarDays, Radio, RadioTower, ScrollText } from 'lucide-react';
@@ -600,21 +601,6 @@ const SettingsView = () => {
     } catch (e) {}
   };
 
-  const handleEraseData = async () => {
-    if (!confirm('Are you sure you want to permanently erase all synchronized data from the local database? This cannot be undone.')) return;
-    try {
-      const res = await fetch('/api/data', { method: 'DELETE' });
-      if (res.ok) {
-        alert('All synchronized data has been erased from the local database.');
-        window.location.reload();
-      } else {
-        alert('Failed to erase data. Check logs for details.');
-      }
-    } catch (e) {
-      alert('Network error while erasing data.');
-    }
-  };
-
   // The importer asks which account imported mail belongs to.
   const [accounts, setAccounts] = useState<any[]>([]);
   useEffect(() => {
@@ -894,36 +880,7 @@ const SettingsView = () => {
 
           {activeCategory === 'maintenance' && <MaintenancePanel />}
 
-          {activeCategory === 'data' && (
-            <div className="animate-in fade-in duration-300">
-              <h2 className="text-2xl font-bold text-foreground mb-2 flex items-center gap-2">
-                <Database className="w-6 h-6 text-destructive" />
-                Data Management
-              </h2>
-              <p className="text-muted-foreground text-sm mb-8">Manage the data stored in your local InboxQL database.</p>
-              
-              <div className="border border-destructive/20 bg-destructive/5 p-6 space-y-4" {...settingAnchor('erase-data')}>
-                <div className="flex items-start gap-4">
-                  <AlertTriangle className="w-6 h-6 text-destructive shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="text-sm font-bold text-destructive mb-1">Delete All Stored Messages</h3>
-                    <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
-                      This will permanently erase all synchronized messages and attachments from your local database. 
-                      It will not affect mail on your remote IMAP server, but it cannot be undone locally. 
-                      You will need to re-sync or re-import your accounts to populate the inbox again.
-                    </p>
-                    <button 
-                      onClick={handleEraseData}
-                      className="bg-destructive hover:bg-destructive/90 text-destructive-foreground px-4 py-2 text-sm font-semibold transition-colors flex items-center gap-2"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Erase All Local Data
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {activeCategory === 'data' && <DataManagement />}
 
           {activeCategory === 'storage' && (
             <BrowserStoragePanel />

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
+	"github.com/user/inboxql/internal/backups"
 	"github.com/user/inboxql/internal/service"
 	"github.com/user/inboxql/internal/store"
 	"github.com/user/inboxql/internal/update"
@@ -134,20 +134,28 @@ func runUpdate(ctx *Context, args []string) error {
 	step("checksum verified")
 
 	// 2. Back up the mailbox, if there is one, while the old server still
-	// runs: the online backup API copies a live database consistently.
+	// runs: the online backup API copies a live database consistently. Room
+	// first — a backup half-written onto a full disk is worse than none —
+	// then read back, then the keep rules, so updates stop piling copies up.
 	backup := ""
 	if _, err := os.Stat(ctx.dbPath()); err == nil {
 		if err := ctx.OpenStore(); err != nil {
 			return err
 		}
-		backup = filepath.Join(ctx.DataDir, "backups",
-			fmt.Sprintf("inboxql-pre-%s-%s.db", rel.Version(), time.Now().Format("20060102-150405")))
-		err := store.BackupTo(backup)
+		made, err := backups.Make(backups.Options{DataDir: ctx.DataDir, Reason: backups.ReasonUpdate,
+			Version: rel.Version()})
 		store.CloseDB()
 		if err != nil {
 			return Fail(ExitError, "backing up before the update: %v — nothing was changed", err)
 		}
-		step("mailbox backed up to " + backup)
+		for _, b := range made.MadeRoom {
+			step("removed " + b.Name + " to make room")
+		}
+		backup = made.Backup.Path
+		step("mailbox backed up to " + backup + " and checked")
+		for _, b := range made.Pruned {
+			step("removed " + b.Name + " (keep rules)")
+		}
 	}
 
 	// 3. Stop the service, so nothing runs the old binary against a database

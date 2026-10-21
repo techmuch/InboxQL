@@ -199,9 +199,60 @@ says so before it starts.
 
 ## Data Management
 
+Backups first, and erasing the mailbox last.
+
+### Backups
+
+[**Backups**](#setting/backups) lists every backup of this mailbox: when it was made, why
+(before an update, by you, on the schedule, or the mailbox a restore set
+aside), its size, what came with it, and whether it was checked. Beside the
+list is how much room backups take and how much the disk has left.
+
+- **Back up now** makes a full copy of the database while InboxQL keeps
+  running, then reads it back to check it is whole. Tick **Include the vault
+  key** to copy the key that decrypts your account passwords beside it — a
+  backup with its key is as sensitive as the passwords — and **Include
+  attachments** to archive the attachment files too; they live outside the
+  database.
+- **Check it** reads an older backup back, for one made before backups were
+  checked.
+- **Restore…** replaces the mailbox with a backup. Type *restore* to go on;
+  the server restarts, swaps the backup in before it opens the mailbox, and
+  the page reloads. What was there is kept as a backup of its own, so the way
+  back is one more restore. A backup made by a newer InboxQL is refused; an
+  older one is upgraded when opened. Mail that arrived since syncs back from
+  your server; anything imported since is not in the backup.
+- **Delete** removes one, with its key and attachments beside it.
+
+A backup needs about as much free space as the database. When the disk has
+less, InboxQL first removes the backups the keep rules would remove anyway
+once the new one exists; if that is still not enough, it stops before writing
+anything and says how much it needed. Updates follow the same rule, so an
+update never fills the disk with a half-written backup.
+
+### Which to keep, and how often
+
+[**Keep rules**](#setting/backup-keep): how many backups taken before updates to keep (2), how many
+scheduled ones (2), and how many mailboxes set aside by restores (2). After
+every new backup, older ones beyond these are removed — never the newest
+backup, and never one you made yourself; yours stay until you delete them.
+
+**Back up automatically** every day or every week, off to begin with: each is
+a full copy, and that is a decision about disk space. Scheduled backups are
+made while InboxQL is running, and on battery they wait for mains power like
+other heavy work.
+
+### Erase
+
 [**Erase All Local Data**](#setting/erase-data) deletes every stored message and attachment from this
 mailbox. Your mail on the server is untouched and will sync again; imported
-mail will not come back. There is no undo.
+mail will not come back. There is no undo, so the section says when the last
+backup was, offers **Back up first** when there is none from the last day,
+and asks you to type *erase*.
+
+From a terminal: `iql backup`, `iql backup list`, `iql backup check`,
+`iql backup prune`, `iql backup policy` and `iql restore` — see
+`iql help backup`.
 
 ## Browser Storage
 

@@ -217,6 +217,7 @@ func runWork(ctx *Context, args []string) error {
 	model := fs.String("model", "", "model id (for template or clear)")
 	since := fs.String("since", "", "for clear: only answers since this (1d, 2h, or a date)")
 	templatePath := fs.String("template", "", "for next: write pre-scaffolded answers JSON to this file")
+	digestOut := fs.String("digest-out", "", "for next: write the readable digest to this file (defaults to <template>.digest.txt)")
 	outPath := fs.String("out", "", "for next: write the full batch JSON to this file")
 	digest := fs.Bool("digest", false, "for next: print a compact readable digest of all leased items")
 	acceptTickets := fs.Bool("accept-tickets", false, "for submit/template: put created task tickets directly in todo status")
@@ -259,8 +260,24 @@ func runWork(ctx *Context, args []string) error {
 				return Fail(ExitError, "%v", err)
 			}
 		}
+		dPath := *digestOut
+		if dPath == "" && *templatePath != "" {
+			dPath = *templatePath + ".digest.txt"
+		}
+		var dText string
+		if dPath != "" || *digest || (*templatePath != "" && !ctx.JSON) {
+			dText = work.Digest(b)
+		}
+		if dPath != "" {
+			if err := os.WriteFile(dPath, []byte(dText), 0o644); err != nil {
+				return Fail(ExitError, "%v", err)
+			}
+		}
 		if *digest || (*templatePath != "" && !ctx.JSON) {
-			ctx.Printf("%s", work.Digest(b))
+			ctx.Printf("%s", dText)
+			if dPath != "" && *templatePath != "" {
+				ctx.Printf("Digest saved to %s (read with view_file if stdout is truncated); template saved to %s.\n", dPath, *templatePath)
+			}
 			return nil
 		}
 		if ctx.JSON {

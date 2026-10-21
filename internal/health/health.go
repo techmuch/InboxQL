@@ -41,10 +41,15 @@ const (
 	JobReindex     = "reindex"
 	JobGLiNER      = "gliner-install"
 	JobAnnotators  = "annotators"
+	// JobBackup copies the mailbox; JobBackupCheck reads a backup back.
+	// Minutes each on a large mailbox, so jobs, with progress.
+	JobBackup      = "backup"
+	JobBackupCheck = "backup-check"
 )
 
 // Jobs lists every kind, for validating a request.
-var Jobs = []string{JobAttachments, JobText, JobOCR, JobEmbed, JobReindex, JobGLiNER, JobAnnotators}
+var Jobs = []string{JobAttachments, JobText, JobOCR, JobEmbed, JobReindex, JobGLiNER, JobAnnotators,
+	JobBackup, JobBackupCheck}
 
 // Status is the outcome of a single check.
 type Status string

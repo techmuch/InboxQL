@@ -83,6 +83,11 @@ func Router() (http.Handler, error) {
 	// Google's redirect back after sign-in; see RegisterOAuthRoutes.
 	RegisterOAuthRoutes(mux)
 
+	backupMux := http.NewServeMux()
+	registerBackupRoutes(backupMux)
+	mux.Handle("/api/backups", auth.Middleware(backupMux))
+	mux.Handle("/api/backups/", auth.Middleware(backupMux))
+
 	boardMux := http.NewServeMux()
 	registerBoardRoutes(boardMux)
 	mux.Handle("/api/board/", auth.Middleware(boardMux))

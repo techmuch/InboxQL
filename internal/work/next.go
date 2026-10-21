@@ -208,7 +208,7 @@ func pending(key string, els []elements.Element, byName map[string]*store.Annota
 			}
 		case elements.UnitSender:
 			for _, s := range senders(msgs) {
-				c, err := store.GetContact(s)
+				c, err := store.GetContactSummary(s)
 				if err != nil {
 					return nil, err
 				}
@@ -265,7 +265,7 @@ func people(msgs []*store.ReadingMessage) ([]Person, error) {
 		}
 		seen[a] = true
 		p := Person{Address: a, Kind: store.KindUnknown, Me: mine}
-		c, err := store.GetContact(a)
+		c, err := store.GetContactSummary(a)
 		if err != nil {
 			return err
 		}
@@ -317,14 +317,17 @@ func firstNonEmpty(xs ...string) string {
 }
 
 // Template builds a pre-scaffolded slice of Submissions for a Batch, with all
-// thread keys, lease tokens, message IDs, sender addresses, and default "none"
-// entries pre-filled so a harness only edits the fields that apply.
+// thread keys, lease tokens, message IDs, sender addresses, default quotes from
+// the conversation subject/text, and default "none" entries pre-filled so a
+// harness only edits the fields that apply.
 func Template(b *Batch, model string) []Submission {
 	if strings.TrimSpace(model) == "" {
 		model = "agent"
 	}
 	out := make([]Submission, 0, len(b.Items))
 	for _, it := range b.Items {
+		defQuote := defaultQuote(it.Messages)
+		allSystem := isSystemThread(it)
 		ans := map[string]json.RawMessage{}
 		for _, a := range it.Ask {
 			el := b.Elements[a.Element]
@@ -353,12 +356,14 @@ func Template(b *Batch, model string) []Submission {
 					switch {
 					case el.HasLevel("no-one"):
 						lvl = "no-one"
+					case allSystem && el.HasLevel("low"):
+						lvl = "low"
 					case el.HasLevel("normal"):
 						lvl = "normal"
 					case len(el.Levels) > 0:
 						lvl = el.Levels[0].Label
 					}
-					v = Answer{Level: lvl, Quote: ""}
+					v = Answer{Level: lvl, Quote: defQuote}
 				}
 			}
 			raw, _ := json.Marshal(v)
@@ -375,19 +380,105 @@ func Template(b *Batch, model string) []Submission {
 	return out
 }
 
+// defaultQuote picks a clean, verified substring from the newest message's
+// subject (or first readable line of text) so routine level answers in
+// Template already carry a valid quote from the conversation corpus.
+func defaultQuote(msgs []*store.ReadingMessage) string {
+	if len(msgs) == 0 {
+		return ""
+	}
+	corpus := corpusOf(msgs)
+	newest := msgs[len(msgs)-1]
+	if s := strings.TrimSpace(newest.Subject); len(s) >= 4 && quoted(s, corpus) == "" {
+		return s
+	}
+	for _, line := range strings.Split(newest.Text, "\n") {
+		line = strings.TrimSpace(line)
+		if len(line) >= 6 && !strings.HasPrefix(line, "http") {
+			if len(line) > 60 {
+				line = strings.TrimSpace(line[:60])
+			}
+			if quoted(line, corpus) == "" {
+				return line
+			}
+		}
+	}
+	return ""
+}
+
+func isSystemThread(it *Item) bool {
+	snds := senders(it.Messages)
+	if len(snds) == 0 {
+		return false
+	}
+	kindByAddr := map[string]string{}
+	for _, p := range it.People {
+		kindByAddr[p.Address] = p.Kind
+	}
+	for _, s := range snds {
+		k := kindByAddr[s]
+		if k == "" || k == store.KindUnknown {
+			k = guessSenderLevel(s)
+		}
+		if k != "system" {
+			return false
+		}
+	}
+	return true
+}
+
 func guessSenderLevel(addr string) string {
 	a := strings.ToLower(strings.TrimSpace(addr))
 	for _, kw := range []string{
 		"noreply", "no-reply", "do-not-reply", "donotreply",
 		"mailer-daemon", "postmaster", "notifications@", "notification@",
 		"alerts@", "alert@", "receipts@", "receipt@", "notice@",
-		"messenger@messaging.squareup.com", "bounce", " automated",
+		"updates@", "friendupdates@", "order-update@", "shipment-tracking@",
+		"auto-confirm@", "newsletter@", "news@", "digest@", "billing@",
+		"info@", "service@", "automated", "bounce",
+		"messenger@messaging.squareup.com",
+		"@facebookmail.com", "@email.amazonses.com", "@us-west-2.amazonses.com",
+		"@notifications.google.com",
 	} {
 		if strings.Contains(a, kw) {
 			return "system"
 		}
 	}
 	return "person"
+}
+
+func writeElementsSummary(sb *strings.Builder, elementsMap map[string]elements.Element) {
+	if len(elementsMap) == 0 {
+		return
+	}
+	names := make([]string, 0, len(elementsMap))
+	for k := range elementsMap {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		el := elementsMap[k]
+		fmt.Fprintf(sb, "  - %s (unit=%s, shape=%s)", el.Name, el.Unit, el.Shape)
+		if len(el.Levels) > 0 {
+			lvls := make([]string, len(el.Levels))
+			for i, l := range el.Levels {
+				lvls[i] = l.Label
+			}
+			fmt.Fprintf(sb, " levels=[%s]", strings.Join(lvls, "|"))
+		}
+		if len(el.Fields) > 0 {
+			flds := make([]string, len(el.Fields))
+			for i, f := range el.Fields {
+				req := ""
+				if f.Required {
+					req = "*"
+				}
+				flds[i] = f.Name + req + ":" + f.Type
+			}
+			fmt.Fprintf(sb, " fields={%s}", strings.Join(flds, ", "))
+		}
+		sb.WriteString("\n")
+	}
 }
 
 // Digest renders a Batch as a compact, LLM-ready text digest so an agent can
@@ -403,34 +494,7 @@ func Digest(b *Batch) string {
 
 	if len(b.Elements) > 0 {
 		sb.WriteString("\nElements in this batch:\n")
-		names := make([]string, 0, len(b.Elements))
-		for k := range b.Elements {
-			names = append(names, k)
-		}
-		sort.Strings(names)
-		for _, k := range names {
-			el := b.Elements[k]
-			fmt.Fprintf(&sb, "  - %s (unit=%s, shape=%s)", el.Name, el.Unit, el.Shape)
-			if len(el.Levels) > 0 {
-				lvls := make([]string, len(el.Levels))
-				for i, l := range el.Levels {
-					lvls[i] = l.Label
-				}
-				fmt.Fprintf(&sb, " levels=[%s]", strings.Join(lvls, "|"))
-			}
-			if len(el.Fields) > 0 {
-				flds := make([]string, len(el.Fields))
-				for i, f := range el.Fields {
-					req := ""
-					if f.Required {
-						req = "*"
-					}
-					flds[i] = f.Name + req + ":" + f.Type
-				}
-				fmt.Fprintf(&sb, " fields={%s}", strings.Join(flds, ", "))
-			}
-			sb.WriteString("\n")
-		}
+		writeElementsSummary(&sb, b.Elements)
 	}
 	if len(b.Topics) > 0 {
 		fmt.Fprintf(&sb, "Existing topics: %s\n", strings.Join(b.Topics, ", "))
@@ -466,6 +530,11 @@ func Digest(b *Batch) string {
 				fmt.Fprintf(&sb, "[Attachment: %s (%s)]\n%s\n", att.Name, att.Type, compactDigestText(att.Text))
 			}
 		}
+	}
+	if len(b.Elements) > 0 {
+		sb.WriteString("\n============================================================\n")
+		sb.WriteString("Schema reminder (valid levels & fields):\n")
+		writeElementsSummary(&sb, b.Elements)
 	}
 	return sb.String()
 }

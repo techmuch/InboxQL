@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/user/inboxql/internal/api"
 	"github.com/user/inboxql/internal/auth"
+	"github.com/user/inboxql/internal/backups"
 	"github.com/user/inboxql/internal/calsync"
 	"github.com/user/inboxql/internal/llm"
 	"github.com/user/inboxql/internal/machine"
@@ -29,7 +31,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.99"
+var Version = "0.0.100"
 
 func init() {
 	register(&Command{
@@ -309,6 +311,16 @@ func runStart(ctx *Context, args []string) error {
 	}
 	defer lock.Release()
 
+	// A restore asked for from the page is carried out here: the lock is
+	// held and the database not yet open, the one moment nothing has it.
+	if out, err := backups.ApplyStaged(ctx.DataDir, Version); err != nil {
+		log.Printf("[backups] the restore asked for did not happen: %v", err)
+		ctx.Printf("%s %v\n", ctx.Printer().Yellow("Restore failed:"), err)
+	} else if out != nil {
+		log.Printf("[backups] restored from %s; the database it replaced is %s", out.From, out.SetAside)
+		ctx.Printf("Restored from %s.\n", filepath.Base(out.From))
+	}
+
 	if err := ctx.OpenStore(); err != nil {
 		return err
 	}
@@ -330,6 +342,7 @@ func runStart(ctx *Context, args []string) error {
 	calCtx, stopCalendar := context.WithCancel(context.Background())
 	defer stopCalendar()
 	go calEngine.Run(calCtx)
+	go api.RunBackupSchedule(calCtx)
 	go calsync.RunReminders(calCtx, api.DeliverReminder)
 
 	// The API needs the data directory for the attachment blob store and LLM logs.

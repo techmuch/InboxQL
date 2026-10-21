@@ -372,6 +372,17 @@ func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testin
 
 	tmpls := Template(b, "fast-agent")
 	sub := tmpls[0]
+	var preWaiting Answer
+	if err := json.Unmarshal(sub.Answers["waiting"], &preWaiting); err != nil {
+		t.Fatal(err)
+	}
+	if preWaiting.Quote != "Contract" || preWaiting.Level != "no-one" {
+		t.Errorf("expected Template to pre-fill waiting with Quote=%q Level=no-one, got %+v", "Contract", preWaiting)
+	}
+	if d := Digest(b); !strings.Contains(d, "Schema reminder (valid levels & fields):") {
+		t.Errorf("expected Digest to end with schema reminder footer")
+	}
+
 	sub.AcceptTickets = true
 	sub.Answers["waiting"], _ = json.Marshal(Answer{Level: "on-me", Quote: "by Friday"})
 	sub.Answers["importance"], _ = json.Marshal(Answer{Level: "important", Quote: "signed contract"})

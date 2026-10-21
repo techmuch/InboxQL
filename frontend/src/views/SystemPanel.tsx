@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { settingAnchor } from '../lib/settingsIndex';
+import { requestSettingsSection } from '../lib/settingsNav';
 import {
   AlertTriangle, BatteryCharging, Bot, Check, Copy, Cpu, Download, FolderOpen, Globe, Loader2,
   Power, RefreshCw, RotateCw, Server, Settings2,
@@ -260,6 +261,9 @@ export const SystemPanel = () => {
             {state.mailbox.lastBackup
               ? <>{new Date(state.mailbox.lastBackup.at).toLocaleString()} <span className="text-muted-foreground">· {formatBytes(state.mailbox.lastBackup.bytes)}</span></>
               : <span className="text-muted-foreground">none in the backups folder</span>}
+            {' '}
+            <button type="button" onClick={() => requestSettingsSection('data')}
+              className="text-primary hover:underline">Manage backups</button>
           </Row>
           {state.mailbox.source === 'local' && (
             <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">

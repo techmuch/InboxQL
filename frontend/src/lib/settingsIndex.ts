@@ -87,6 +87,8 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'log-query-text', label: 'Record the text of queries', section: 'logging', keywords: 'privacy query log' },
 
   { id: 'health-checks', label: 'Health checks and maintenance', section: 'maintenance', keywords: 'doctor reindex attachments text extraction repair' },
+  { id: 'backups', label: 'Backups', section: 'data', keywords: 'backup back up restore copy safety disk space' },
+  { id: 'backup-keep', label: 'Which backups to keep, and how often', section: 'data', keywords: 'schedule daily weekly prune retention keep rules', within: 'backups' },
   { id: 'erase-data', label: 'Delete all stored messages', section: 'data', keywords: 'erase wipe reset database' },
   { id: 'browser-storage', label: 'Browser storage', section: 'storage', keywords: 'local storage cache clear' },
 ];

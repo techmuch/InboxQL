@@ -155,6 +155,30 @@ export async function bulkCount(query: string): Promise<number> {
   return (await res.json()).count ?? 0;
 }
 
+/** One rail row's count inside what you are looking at. */
+export interface FacetCount { name: string; term?: string; total: number; unread: number }
+
+/**
+ * How what you are looking at breaks down: each label and annotator within the
+ * query, and — when something is added to the folder — each folder with the
+ * additions inside it. Every number is what clicking that row would show.
+ */
+export interface Facets {
+  total: number;
+  unread: number;
+  labels: FacetCount[];
+  annotators: FacetCount[];
+  folders?: FacetCount[];
+}
+
+/** The rail's counts inside a query; null for a query not about mail. */
+export async function messageFacets(query: string, rest: string): Promise<Facets | null> {
+  const res = await fetch(`/api/messages/facets?${new URLSearchParams({ q: query, rest })}`);
+  if (!res.ok) return null;
+  const body = await res.json().catch(() => null);
+  return body && typeof body.total === 'number' && Array.isArray(body.labels) ? body : null;
+}
+
 export type BulkAction = Move | 'read' | 'unread' | 'star' | 'unstar' | 'label' | 'unlabel';
 
 /** Do an action to every message a query matches, on the server. */

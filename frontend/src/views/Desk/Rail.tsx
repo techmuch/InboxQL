@@ -4,7 +4,7 @@ import {
   Archive, Clock, File, Folder, HelpCircle, Inbox, Layout, Mails, Paperclip, Pencil, Plus,
   Search, Send, Settings2, Sparkles, Star, Tag, Ticket, Trash2, Users, X,
 } from 'lucide-react';
-import type { LabelCount } from '../../lib/mail';
+import type { FacetCount, Facets, LabelCount } from '../../lib/mail';
 import type { SavedQuery } from './api';
 import { openCompose } from '../../lib/appUi';
 import type { Annotator } from '../ai/api';
@@ -29,6 +29,16 @@ import { Help } from '../Help';
  *     — one section, because `label:` answers for both. Derived, already
  *     filtered to what found something, so not arrangeable: a manual order
  *     would be stale the next time an annotator runs.
+ *
+ * # The numbers preview the click
+ *
+ * Given facets, every count is what clicking that row would leave you with.
+ * A label adds to what is on screen, so its number is the frame with it —
+ * *banking 12* on Starred is twelve starred messages. A folder swaps the
+ * frame and keeps what was added, so with something added its number is that
+ * inside the folder. A zero dims the row rather than hiding it, so the rail
+ * does not reshuffle as the query changes, and a line over each section says
+ * what the numbers are inside of — otherwise "banking 12" reads as a total.
  *
  * # Why the Other block is gone
  *
@@ -71,6 +81,13 @@ interface RailProps {
   activeFolder?: string;
   /** Whether a label, annotation or saved row's query is part of the query now. */
   isActive?: (q: string) => boolean;
+  /**
+   * The counts inside what is on screen, and what that is called. Absent for
+   * a query not about mail: the rail then shows its plain totals.
+   */
+  facets?: (Facets & { within: string; rest: string }) | null;
+  /** A new query's counts are on their way; the old ones show dimmed. */
+  facetsStale?: boolean;
   /** All Items: one search across every kind, above the folders. */
   onAllItems?: () => void;
   /** A label or an annotator's row: added to the folder, or taken off it. */
@@ -88,7 +105,7 @@ interface RailProps {
 }
 
 export const Rail = ({
-  folders, hiddenFolders, saved, annotated, labels = [], labelQuery = n => `label:${n}`, queryText,
+  folders, hiddenFolders, saved, annotated, labels = [], labelQuery = n => `label:${n}`, queryText, facets, facetsStale,
   activeFolder, isActive: isActiveProp, onAllItems, onLabel, onFolder, onQuery, annotationQuery,
   onMove, onRemove, onEdit, onToggleFolder, onResetFolders, onAddDefaults,
 }: RailProps) => {
@@ -102,6 +119,12 @@ export const Rail = ({
   const isActive = isActiveProp ?? ((q: string) => queryText.trim() === q.trim());
   const folderActive = (id: string) =>
     activeFolder !== undefined ? activeFolder === id : queryText.trim() === `folder:${id}`;
+
+  // What the numbers are inside of, said once per section.
+  const within = facets?.within ?? '';
+  const find = (rows: FacetCount[] | undefined, name: string) => rows?.find(r => r.name === name);
+  const scopedFolders = facets?.folders && facets.folders.length > 0 ? facets.folders : null;
+  const countClass = `text-[10px] font-bold tabular-nums transition-opacity ${facetsStale ? 'opacity-40' : ''}`;
 
   const rowClass = (active: boolean, extra = '') =>
     `w-full flex items-center gap-4 px-4 py-2 text-sm transition-colors ${
@@ -126,22 +149,30 @@ export const Rail = ({
             <span className="flex-1 text-left">All Items</span>
           </button>
         )}
+        {scopedFolders && (
+          <Scoped text={`With ${facets!.rest}`} title={`Each folder counts ${facets!.rest} inside it: what clicking it would show.`} />
+        )}
         {shown.map(item => {
           // Every rail entry is a query. The built-ins are folder:inbox and
           // friends; a saved query below is the same kind of thing.
           const entryQuery = `folder:${item.id}`;
           const isHidden = hidden.has(item.id);
           const Icon = FOLDER_ICONS[item.id] ?? Folder;
+          // With something added, the folder's number is that inside it.
+          // Drafts are not counted that way and keep their own.
+          const scoped = find(scopedFolders ?? undefined, item.id);
+          const badge = scoped ? scoped.total : item.badge;
+          const zero = scoped !== undefined && scoped.total === 0;
           return (
             <div key={item.id} className="flex items-center">
               <button
                 onClick={() => onFolder(item.id)}
-                title={entryQuery}
-                className={rowClass(folderActive(item.id), isHidden ? 'opacity-40' : '')}
+                title={scoped ? `${scoped.total.toLocaleString()} with ${facets!.rest} in ${item.label}` : entryQuery}
+                className={rowClass(folderActive(item.id), isHidden || zero ? 'opacity-40' : '')}
               >
                 <Icon className={`w-4 h-4 ${folderActive(item.id) ? 'text-primary' : 'text-muted-foreground'}`} />
                 <span className="flex-1 text-left">{item.label}</span>
-                {item.badge ? <span className="text-[10px] font-bold tabular-nums">{item.badge}</span> : null}
+                {badge ? <span className={scoped ? countClass : 'text-[10px] font-bold tabular-nums'}>{badge.toLocaleString()}</span> : null}
               </button>
               {arranging && onToggleFolder && (
                 // Hidden, never deleted. These are the mailbox; the question is
@@ -257,21 +288,26 @@ export const Rail = ({
         {(annotated.length > 0 || labels.length > 0) && (
           <>
             <Heading label="Labels" />
+            {facets && <Scoped text={`In ${within}`} title={`Each label counts the ${facets.total.toLocaleString()} in ${within} that carry it: what clicking it would show.`} />}
             {labels.map(l => {
               const q = labelQuery(l.name);
+              const c = facets ? find(facets.labels, l.name) ?? { name: l.name, total: 0, unread: 0 } : null;
+              const unread = c ? c.unread : l.unread;
               return (
                 <button
                   key={`mail:${l.name}`}
                   onClick={() => (onLabel ?? onQuery)(q)}
-                  title={q}
+                  title={c ? `${c.total.toLocaleString()} of ${facets!.total.toLocaleString()} in ${within}` : q}
                   aria-pressed={isActive(q)}
-                  className={rowClass(isActive(q))}
+                  className={rowClass(isActive(q), c && c.total === 0 ? 'opacity-40' : '')}
                 >
                   <Tag className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                  <span className={`flex-1 text-left truncate ${l.unread > 0 ? 'font-semibold' : ''}`}>
+                  <span className={`flex-1 text-left truncate ${unread > 0 ? 'font-semibold' : ''}`}>
                     {l.name === 'important' ? 'Important' : l.name}
                   </span>
-                  {l.unread > 0 && (
+                  {c ? (
+                    c.total > 0 && <span className={countClass}>{c.total.toLocaleString()}</span>
+                  ) : l.unread > 0 && (
                     <span className="text-[10px] font-bold tabular-nums">{l.unread.toLocaleString()}</span>
                   )}
                 </button>
@@ -280,13 +316,17 @@ export const Rail = ({
             {annotated.map(a => {
               const q = annotationQuery(a);
               const off = a.enabled === false;
+              const c = facets ? find(facets.annotators, a.name) ?? { name: a.name, total: 0, unread: 0 } : null;
               return (
                 <button
                   key={a.id}
                   onClick={() => (onLabel ?? onQuery)(q)}
-                  title={off ? `${q} — ${a.name} is switched off; these are what it already found` : q}
+                  title={[
+                    c ? `${c.total.toLocaleString()} of ${facets!.total.toLocaleString()} in ${within}` : q,
+                    off ? `${a.name} is switched off; these are what it already found` : '',
+                  ].filter(Boolean).join(' — ')}
                   aria-pressed={isActive(q)}
-                  className={rowClass(isActive(q), off ? 'opacity-50' : '')}
+                  className={rowClass(isActive(q), off || (c && c.total === 0) ? 'opacity-40' : '')}
                 >
                   {/* Sparkles marks a label a model or rule put on, beside the
                       ones a person or the server did. */}
@@ -296,8 +336,8 @@ export const Rail = ({
                       there and still queryable. Hiding it would contradict what
                       the switch means. */}
                   {off && <span className="text-[9px] font-mono text-muted-foreground">off</span>}
-                  <span className="text-[10px] font-bold tabular-nums text-muted-foreground">
-                    {a.progress!.matched.toLocaleString()}
+                  <span className={c ? `${countClass} text-muted-foreground` : 'text-[10px] font-bold tabular-nums text-muted-foreground'}>
+                    {(c ? c.total : a.progress!.matched).toLocaleString()}
                   </span>
                 </button>
               );
@@ -317,6 +357,11 @@ const Heading = ({ label, action, help }: { label: string; action?: React.ReactN
     {action}
     {help && <Help topic={help} />}
   </div>
+);
+
+/** The line that says what a section's numbers are counted inside. */
+const Scoped = ({ text, title }: { text: string; title: string }) => (
+  <p className="px-4 pb-1 text-[10px] text-muted-foreground truncate" title={title}>{text}</p>
 );
 
 // Kept so the unused-import check does not hide a row that still wants one.

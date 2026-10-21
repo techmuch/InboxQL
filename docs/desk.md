@@ -20,9 +20,8 @@ differently.
 [All Items](#all-items).
 
 **Inbox, Starred, Sent, Drafts, All Mail, Spam and Trash** are the mailbox
-itself, with live unread counts. One of them is always the folder you are in:
-choosing another keeps what you had added, so *Inbox › banking* becomes
-*Archive › banking*. You can hide one you never use; you cannot delete it,
+itself. One of them is always the folder you are in: choosing another keeps
+what you had added, so *Inbox › banking* becomes *All Mail › banking*. You can hide one you never use; you cannot delete it,
 because it *is* the mail. **Reset** brings hidden ones back.
 
 They are labels, not folders, as in Gmail: a message carries any number of
@@ -44,12 +43,33 @@ name. A saved query is also a term — `saved:clients after:7d` is "the clients
 query, this week" — so saved queries are building blocks, not just bookmarks.
 
 **Labels** lists your labels — the ones you made, and on Gmail the ones you
-made there — with their unread counts, and below them the labels and
-extractors an annotator has found something for, marked with a sparkle. Both
-kinds answer to `label:`. **Clicking a label adds it to the folder** —
-*Inbox › banking* — and clicking it again takes it off; two labels combine.
-The section is derived, so it cannot be arranged: it would be out of date the
-next time one of them ran.
+made there — and below them the labels and extractors an annotator has found
+something for, marked with a sparkle. Both kinds answer to `label:`.
+**Clicking a label adds it to the folder** — *Inbox › banking* — and clicking
+it again takes it off; two labels combine. The section is derived, so it
+cannot be arranged: it would be out of date the next time one of them ran.
+
+### The counts preview the click
+
+Every number in the rail is what clicking that row would show you.
+
+- **Labels** count inside what you are looking at. On Starred, *banking 12*
+  means twelve starred messages carry banking; a line over the section says
+  so — *In Starred* — and each count's tooltip reads "12 of 40 in Starred".
+  A label you have already added shows the list's own total.
+- **Folders**, once something is added, count it inside each folder: on
+  *Inbox › banking*, *All Mail 31* is all your banking mail, under a line
+  reading *With label:banking*. With nothing added they show their usual
+  numbers — unread in Inbox and Spam, totals elsewhere. Drafts always count
+  your drafts, and open on their own: a draft has no labels to add.
+- **A row at zero is dimmed**, not hidden, so the rail keeps its shape as the
+  query changes.
+- **In All Items**, the words you searched are what is counted: each folder
+  and label shows the mail matching them.
+
+The counts arrive just after the list; until they do, the previous numbers
+stay, dimmed. On a query about something other than mail — Cards, Files,
+People — the rail shows its plain totals.
 
 ## The query bar
 

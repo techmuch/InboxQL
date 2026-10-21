@@ -4,8 +4,8 @@ import {
   MessagesSquare, RefreshCw, Search, Send, SlidersHorizontal, Sparkles, Star, Trash2, X,
 } from 'lucide-react';
 import {
-  bulkApply, bulkCount, bulkUndo, labelQuery, listLabels, moveMessages, onMailChanged, setFlag, shownLabels,
-  type BulkResult, type LabelCount, type Move,
+  bulkApply, bulkCount, bulkUndo, labelQuery, listLabels, messageFacets, moveMessages, onMailChanged, setFlag, shownLabels,
+  type BulkResult, type Facets, type LabelCount, type Move,
 } from '../../lib/mail';
 import { openMessage, openTool, previewMessage, useViewerStore } from '../../lib/tabs';
 import { movedByKeyboard, navRow, useRovingFocus } from '../../lib/rovingFocus';
@@ -433,6 +433,45 @@ export const Desk = () => {
     fetchCounts();
   }, [effectiveQuery]);
 
+  // The rail's counts inside what is on screen: each label within it, each
+  // folder with what was added. One request, after the list's own — the
+  // previous numbers stand, dimmed, until it answers, so a broad frame on a
+  // large mailbox never holds up the list.
+  const [facets, setFacets] = useState<{ within: string; rest: string; counts: Facets } | null>(null);
+  const [facetsStale, setFacetsStale] = useState(false);
+  const facetSeq = useRef(0);
+  const facetsFor = (): { q: string; rest: string; within: string } | null => {
+    if (allItems) {
+      // The words searched everywhere are the additions; with none, the
+      // rail shows the mailbox's own numbers.
+      const words = allItemsQuery.trim();
+      return words ? { q: words, rest: words, within: `mail matching “${words}”` } : null;
+    }
+    if (!terms || !split.scope.mail) return null;
+    const rest = split.rest.replace(/\|.*$/, '').trim();
+    return { q: query, rest, within: rest ? `${split.scope.label} › ${rest}` : split.scope.label };
+  };
+  const fetchFacets = async () => {
+    const want = facetsFor();
+    const seq = ++facetSeq.current;
+    if (!want) { setFacets(null); setFacetsStale(false); return; }
+    setFacetsStale(true);
+    try {
+      const counts = await messageFacets(want.q, want.rest);
+      if (seq !== facetSeq.current) return;
+      setFacets(counts ? { within: want.within, rest: want.rest, counts } : null);
+    } catch {
+      // The rail keeps what it had.
+    } finally {
+      if (seq === facetSeq.current) setFacetsStale(false);
+    }
+  };
+  useEffect(() => {
+    void fetchFacets();
+    // A new frame is known once its terms are; All Items once it is run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [termsFor, allItems, allItemsQuery]);
+
   // Mail changed — a move made here or in the viewer, or new mail the server
   // reported. The list, the counts and the rail's labels all follow.
   //
@@ -447,14 +486,14 @@ export const Desk = () => {
   const serverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   refreshRef.current = (source) => {
     if (source === 'local') {
-      fetchMessages(0); fetchCounts(); fetchLabels();
+      fetchMessages(0); fetchCounts(); fetchLabels(); void fetchFacets();
       return;
     }
     if (serverTimer.current) return;
     serverTimer.current = setTimeout(() => {
       serverTimer.current = null;
       if (offset <= 50) fetchMessages(0);
-      fetchCounts(); fetchLabels();
+      fetchCounts(); fetchLabels(); void fetchFacets();
     }, 1500);
   };
   useEffect(() => {
@@ -695,6 +734,8 @@ export const Desk = () => {
         annotated={annotated}
         labels={mailLabels}
         labelQuery={labelQuery}
+        facets={facets && { ...facets.counts, within: facets.within, rest: facets.rest }}
+        facetsStale={facetsStale}
         queryText={queryText}
         activeFolder={allItems ? 'allitems' : scope.id}
         isActive={q => !allItems && Boolean(terms) && (hasTerm(terms!, q) || split.rest === q.trim())}
@@ -717,7 +758,11 @@ export const Desk = () => {
           // different kind of thing and adding a folder to it produces
           // `in:contacts kind:person folder:inbox` — still contacts, now with
           // a term that means nothing there.
-          if (!isMailQuery(query)) {
+          //
+          // Drafts likewise: a draft is not a message, and `label:banking`
+          // means nothing to one, so Drafts opens on its own rather than as
+          // an error about what was added.
+          if (!isMailQuery(query) || id === 'drafts') {
             setQuery(openingFolderQuery(`folder:${id}`));
             return;
           }

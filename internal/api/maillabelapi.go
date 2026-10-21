@@ -27,6 +27,7 @@ func registerMessageLabelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/messages/bulk/count", handleBulkCount)
 	mux.HandleFunc("POST /api/messages/bulk", handleBulk)
 	mux.HandleFunc("POST /api/messages/bulk/undo", handleBulkUndo)
+	mux.HandleFunc("GET /api/messages/facets", handleFacets)
 }
 
 // maxBatch bounds one request, so it cannot rewrite the whole mailbox in one
@@ -147,6 +148,18 @@ func handleBulkCount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": n, "max": store.BulkMax})
+}
+
+// handleFacets counts the rail inside a query: each label within it, and,
+// given the additions as rest, each folder with them inside it. A query about
+// something other than mail is a 400, and the rail keeps its plain totals.
+func handleFacets(w http.ResponseWriter, r *http.Request) {
+	f, err := store.MessageFacets(r.URL.Query().Get("q"), r.URL.Query().Get("rest"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, f)
 }
 
 // handleBulk does an action to every message a query matches — "archive all

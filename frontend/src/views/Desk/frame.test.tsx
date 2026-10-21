@@ -84,6 +84,15 @@ describe('Desk folder frame', () => {
     await waitFor(() => expect(ran).toContain('folder:inbox from:bob'));
   });
 
+  it('opens Drafts on its own, without the mail terms that were added', async () => {
+    useQueryStore.getState().set('folder:inbox label:banking');
+    render(<Desk />);
+    await screen.findByText('Message 0');
+    fireEvent.click(screen.getByText('Drafts'));
+    await waitFor(() => expect(useQueryStore.getState().text.startsWith('folder:drafts')).toBe(true));
+    expect(useQueryStore.getState().text).not.toContain('label:banking');
+  });
+
   it('adds a quick filter, and the other in its group comes off', async () => {
     render(<Desk />);
     const filters = await screen.findByRole('group', { name: 'Quick filters' });

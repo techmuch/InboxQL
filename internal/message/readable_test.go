@@ -42,4 +42,3 @@ func TestReadableCleansCRLFAndZeroWidthPadding(t *testing.T) {
 		t.Errorf("Readable = %q, want %q", got, want)
 	}
 }
-

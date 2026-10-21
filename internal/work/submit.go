@@ -28,6 +28,9 @@ type Submission struct {
 	// Archive optionally archives the conversation (removes the inbox label
 	// with origin=agent).
 	Archive bool `json:"archive,omitempty"`
+	// AcceptTickets creates task tickets directly in "todo" status on the
+	// board instead of "proposed", avoiding a separate `ticket accept` call.
+	AcceptTickets bool `json:"acceptTickets,omitempty"`
 	// Answers holds one entry per element asked. A conversation element's
 	// entry is an Answer; a message element's maps message id to Answer; a
 	// sender element's maps address to Answer.
@@ -61,14 +64,16 @@ type Problem struct {
 
 // Result says what a submission did.
 type Result struct {
-	Thread   string         `json:"thread"`
-	Stored   map[string]int `json:"stored,omitempty"`
-	Tickets  int            `json:"ticketsProposed,omitempty"`
-	Events   int            `json:"eventsProposed,omitempty"`
-	Contacts int            `json:"contactsClassified,omitempty"`
-	Labels   int            `json:"labelsAdded,omitempty"`
-	Archived int            `json:"archived,omitempty"`
-	Problems []Problem      `json:"problems,omitempty"`
+	Thread         string         `json:"thread"`
+	Stored         map[string]int `json:"stored,omitempty"`
+	Tickets        int            `json:"ticketsProposed,omitempty"`
+	TicketIDs      []string       `json:"ticketIds,omitempty"`
+	Events         int            `json:"eventsProposed,omitempty"`
+	EventChangeIDs []string       `json:"eventChangeIds,omitempty"`
+	Contacts       int            `json:"contactsClassified,omitempty"`
+	Labels         int            `json:"labelsAdded,omitempty"`
+	Archived       int            `json:"archived,omitempty"`
+	Problems       []Problem      `json:"problems,omitempty"`
 }
 
 // OK reports whether the submission was stored.
@@ -171,7 +176,7 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 				answers[k] = v
 			}
 			for k := range answers {
-				if !has(targets, k) {
+				if !has(targets, k) && !(el.Unit == elements.UnitSender && fromOf[k] != "") {
 					bad(ask.Element, k, "this %s was not asked about", targetNoun(el.Unit))
 				}
 			}
@@ -188,10 +193,35 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 		}
 		plan = append(plan, planned{ask: ask, el: el, ann: a, answers: answers})
 	}
-	for name := range sub.Answers {
-		if !askedNames[name] {
-			bad(name, "", "not asked about this conversation; answers are taken only for what `work next` asked")
+	for name, raw := range sub.Answers {
+		if askedNames[name] {
+			continue
 		}
+		if name == "sender" && byName["sender"] != nil {
+			a := byName["sender"]
+			el, _ := elements.FromAnnotator(a)
+			var m map[string]Answer
+			if err := strictDecode(raw, &m); err != nil {
+				bad(name, "", "should map each %s to an answer: %v", targetNoun(el.Unit), err)
+				continue
+			}
+			answers := map[string]Answer{}
+			for k, v := range m {
+				k = strings.ToLower(strings.TrimSpace(k))
+				answers[k] = v
+				if fromOf[k] == "" {
+					bad(name, k, "this %s was not asked about", targetNoun(el.Unit))
+				}
+			}
+			for t, ans := range answers {
+				for _, p := range check(el, ans, corpus) {
+					bad(name, t, "%s", p)
+				}
+			}
+			plan = append(plan, planned{ask: Ask{Element: name, Version: a.Version}, el: el, ann: a, answers: answers})
+			continue
+		}
+		bad(name, "", "not asked about this conversation; answers are taken only for what `work next` asked")
 	}
 	var cleanLabels []string
 	for _, l := range sub.Labels {
@@ -241,17 +271,19 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 					return nil, err
 				}
 			case elements.TargetTickets:
-				n, err := proposeTickets(sub.Thread, subject, ans, anns)
+				ids, err := proposeTickets(sub.Thread, subject, ans, anns, sub.AcceptTickets)
 				if err != nil {
 					return nil, err
 				}
-				res.Tickets += n
+				res.Tickets += len(ids)
+				res.TicketIDs = append(res.TicketIDs, ids...)
 			case elements.TargetCalendar:
-				n, err := proposeEvents(cal, sub.Thread, subject, ans)
+				ids, err := proposeEvents(cal, sub.Thread, subject, ans)
 				if err != nil {
 					return nil, err
 				}
-				res.Events += n
+				res.Events += len(ids)
+				res.EventChangeIDs = append(res.EventChangeIDs, ids...)
 			}
 		}
 	}
@@ -611,13 +643,17 @@ func str(r map[string]any, k string) string {
 	return strings.TrimSpace(s)
 }
 
-func proposeTickets(thread, messageID string, a Answer, anns []*store.Annotation) (int, error) {
-	n := 0
+func proposeTickets(thread, messageID string, a Answer, anns []*store.Annotation, accept bool) ([]string, error) {
+	var ids []string
+	status := store.TicketProposed
+	if accept {
+		status = store.TicketTodo
+	}
 	for i, r := range a.Records {
 		title := str(r, "what")
 		dup, err := store.AgentTicketInThread(thread, title)
 		if err != nil {
-			return n, err
+			return ids, err
 		}
 		if dup {
 			continue
@@ -629,7 +665,7 @@ func proposeTickets(thread, messageID string, a Answer, anns []*store.Annotation
 		if w := str(r, "why"); w != "" {
 			body += "\n\n" + w
 		}
-		t := &store.Ticket{ThreadKey: thread, Title: title, Body: body, Status: store.TicketProposed,
+		t := &store.Ticket{ThreadKey: thread, Title: title, Body: body, Status: status,
 			Origin: store.OriginAgentTicket, Confidence: a.Confidence}
 		if d := str(r, "due"); d != "" {
 			if due, err := parseWhen(d); err == nil {
@@ -637,24 +673,24 @@ func proposeTickets(thread, messageID string, a Answer, anns []*store.Annotation
 			}
 		}
 		if err := store.SaveTicket(t); err != nil {
-			return n, err
+			return ids, err
 		}
 		if err := store.AttachSource(t.ID, messageID, anns[i].ID); err != nil {
-			return n, err
+			return ids, err
 		}
-		n++
+		ids = append(ids, t.ID)
 	}
-	return n, nil
+	return ids, nil
 }
 
-func proposeEvents(cal *calsync.Engine, thread, messageID string, a Answer) (int, error) {
+func proposeEvents(cal *calsync.Engine, thread, messageID string, a Answer) ([]string, error) {
 	if cal == nil {
 		cal = calsync.New()
 	}
 	if err := store.EnsureDefaultCalendars(); err != nil {
-		return 0, err
+		return nil, err
 	}
-	n := 0
+	var ids []string
 	for _, r := range a.Records {
 		start, err := parseWhen(str(r, "start"))
 		if err != nil {
@@ -681,15 +717,18 @@ func proposeEvents(cal *calsync.Engine, thread, messageID string, a Answer) (int
 		ev.Description = notes
 		dup, err := store.EventFromMessage(messageID, ev.Summary, ev.Start)
 		if err != nil {
-			return n, err
+			return ids, err
 		}
 		if dup {
 			continue
 		}
-		if _, err := cal.CreateFrom(store.LocalCalendarID, ev, calsync.OriginAgent, messageID, thread); err != nil {
-			return n, err
+		chg, err := cal.CreateFrom(store.LocalCalendarID, ev, calsync.OriginAgent, messageID, thread)
+		if err != nil {
+			return ids, err
 		}
-		n++
+		if chg != nil && chg.ChangeID != "" {
+			ids = append(ids, chg.ChangeID)
+		}
 	}
-	return n, nil
+	return ids, nil
 }

@@ -24,6 +24,7 @@ package work
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -459,13 +460,68 @@ func Digest(b *Batch) string {
 			}
 			fmt.Fprintf(&sb, "--- Message %s | %s | From: %s%s ---\n",
 				m.ID, m.Date.Format(time.RFC3339), m.From, mine)
-			sb.WriteString(m.Text)
+			sb.WriteString(compactDigestText(m.Text))
 			sb.WriteString("\n")
 			for _, att := range m.Attachments {
-				fmt.Fprintf(&sb, "[Attachment: %s (%s)]\n%s\n", att.Name, att.Type, att.Text)
+				fmt.Fprintf(&sb, "[Attachment: %s (%s)]\n%s\n", att.Name, att.Type, compactDigestText(att.Text))
 			}
 		}
 	}
 	return sb.String()
 }
 
+var (
+	standaloneURL = regexp.MustCompile(`^[\s(<\[|]*https?://\S{50,}[\s)>\]|]*$`)
+	longURL       = regexp.MustCompile(`https?://[^\s)>\]"]+`)
+)
+
+const (
+	digestMaxLines = 45
+	digestMaxChars = 2500
+)
+
+func compactDigestText(s string) string {
+	rawLines := strings.Split(s, "\n")
+	var kept []string
+	omitted := 0
+	chars := 0
+	for _, line := range rawLines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			if len(kept) > 0 && kept[len(kept)-1] != "" {
+				kept = append(kept, "")
+			}
+			continue
+		}
+		if standaloneURL.MatchString(trimmed) {
+			continue
+		}
+		cleaned := longURL.ReplaceAllStringFunc(trimmed, func(u string) string {
+			if len(u) <= 65 {
+				return u
+			}
+			// Keep scheme + host + "…" so quote checking (which splits on "…") stays valid.
+			if idx := strings.Index(u, "://"); idx != -1 {
+				rest := u[idx+3:]
+				if slash := strings.IndexByte(rest, '/'); slash != -1 {
+					return u[:idx+3+slash+1] + "…"
+				}
+			}
+			return u[:40] + "…"
+		})
+		if len(kept) >= digestMaxLines || chars+len(cleaned) > digestMaxChars {
+			omitted++
+			continue
+		}
+		kept = append(kept, cleaned)
+		chars += len(cleaned) + 1
+	}
+	for len(kept) > 0 && kept[len(kept)-1] == "" {
+		kept = kept[:len(kept)-1]
+	}
+	out := strings.Join(kept, "\n")
+	if omitted > 0 {
+		out += fmt.Sprintf("\n… [%d more lines]", omitted)
+	}
+	return out
+}

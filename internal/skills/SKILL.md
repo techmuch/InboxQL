@@ -115,9 +115,10 @@ iql --json work submit /tmp/answers.json
   IDs, leases, sender guesses, and default `"none"` entries pre-filled.
 - Edit `<file>` to fill in verbatim `quote` substrings, `tags`, optional mail
   `"labels": ["receipts"]` (or `"archive": true`), and any extracted records,
-  then run `iql --json work submit <file>`.
+  then run `iql --json work submit <file>` (pass `--accept-tickets` or set
+  `"acceptTickets": true` when the user asked to create task cards on the board).
 - `events` and `tasks` answers automatically create proposed calendar events and
-  proposed tickets.
+  tickets (returning `eventChangeIds` and `ticketIds` in the submit result).
 
 ## The calendar
 

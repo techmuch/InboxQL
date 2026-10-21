@@ -336,3 +336,74 @@ func TestTemplateDigestAndLabels(t *testing.T) {
 	}
 }
 
+func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testing.T) {
+	openWorkFixture(t)
+
+	// 1. Verify compactDigestText strips standalone tracking URLs and shortens inline URLs with "…"
+	longTrack := "https://u123456.ct.sendgrid.net/ls/click?upn=u001.veryLongTrackingTokenThatBlowsUpStdout12345678901234567890"
+	raw := "Hello world\n" + longTrack + "\nClick here (" + longTrack + ") to confirm."
+	got := compactDigestText(raw)
+	if strings.Contains(got, "veryLongTrackingToken") {
+		t.Errorf("expected long tracking token to be stripped/shortened, got:\n%s", got)
+	}
+	if !strings.Contains(got, "https://u123456.ct.sendgrid.net/…") {
+		t.Errorf("expected inline URL to be shortened with …, got:\n%s", got)
+	}
+	if prob := quoted("Click here (https://u123456.ct.sendgrid.net/…) to confirm.", normQuote(raw)); prob != "" {
+		t.Errorf("shortened inline URL quote did not pass quoted() check against corpus: %s", prob)
+	}
+
+	// 2. Classify alice@acme.com once, then add a second conversation from alice@acme.com
+	// where sender is no longer asked, and verify submitting "sender" again is idempotent
+	// and AcceptTickets creates a "todo" ticket and returns TicketIDs + EventChangeIDs.
+	if err := store.SetContactKind("alice@acme.com", "person", store.ContactFromAgent); err != nil {
+		t.Fatal(err)
+	}
+	b, err := Next(Options{Limit: 10, Query: "from:alice@acme.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ask := itemFor(t, b, "ask")
+	for _, a := range ask.Ask {
+		if a.Element == "sender" {
+			t.Fatalf("expected sender to be omitted from Ask once already classified")
+		}
+	}
+
+	tmpls := Template(b, "fast-agent")
+	sub := tmpls[0]
+	sub.AcceptTickets = true
+	sub.Answers["waiting"], _ = json.Marshal(Answer{Level: "on-me", Quote: "by Friday"})
+	sub.Answers["importance"], _ = json.Marshal(Answer{Level: "important", Quote: "signed contract"})
+	sub.Answers["topics"], _ = json.Marshal(Answer{Tags: []string{"legal"}})
+	sub.Answers["tasks"], _ = json.Marshal(Answer{Records: []map[string]any{
+		{"what": "Send signed contract", "owner": "me", "due": "2026-10-24", "quote": "Can you send the signed contract back by Friday?"},
+	}})
+	sub.Answers["events"], _ = json.Marshal(map[string]Answer{
+		"ask": {Records: []map[string]any{
+			{"title": "Lunch at Pino's", "start": "2026-10-30T12:00", "quote": "lunch on Oct 30 at noon at Pino's"},
+		}},
+	})
+	// Even though "sender" was not in Ask, supplying it for a conversation sender is accepted idempotently.
+	sub.Answers["sender"], _ = json.Marshal(map[string]Answer{
+		"alice@acme.com": {Level: "person", Why: "human colleague"},
+	})
+
+	res, err := Submit(sub, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK() {
+		t.Fatalf("Submit refused idempotent sender or acceptTickets: %+v", res.Problems)
+	}
+	if len(res.TicketIDs) != 1 || len(res.EventChangeIDs) != 1 {
+		t.Fatalf("expected 1 TicketID and 1 EventChangeID, got tickets=%v events=%v", res.TicketIDs, res.EventChangeIDs)
+	}
+	tk, err := store.GetTicket(res.TicketIDs[0])
+	if err != nil || tk == nil {
+		t.Fatalf("GetTicket(%s): %v", res.TicketIDs[0], err)
+	}
+	if tk.Status != store.TicketTodo {
+		t.Errorf("expected ticket status %q with AcceptTickets=true, got %q", store.TicketTodo, tk.Status)
+	}
+}

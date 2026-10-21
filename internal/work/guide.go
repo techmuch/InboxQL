@@ -13,8 +13,8 @@ InboxQL keeps your answers, checks them, and makes them searchable.
 
 Fast path (two tool calls per batch):
 
-    iql work next --limit 10 --template /tmp/answers.json --model <id>
-    iql --json work submit /tmp/answers.json
+    iql work next --limit 10 --template /tmp/answers.json --model <id> [--accept-tickets]
+    iql --json work submit /tmp/answers.json [--accept-tickets]
 
 --template <file> prints a compact digest of all leased conversations to
 stdout (with element schemas, message IDs, sender addresses, and clean text)
@@ -55,7 +55,7 @@ line.
 
     {
       "thread": "<thread>", "lease": "<lease>", "model": "<your model id>",
-      "labels": ["receipts"], "archive": false,
+      "labels": ["receipts"], "archive": false, "acceptTickets": true,
       "answers": {
         "waiting":    {"level": "on-me", "confidence": 0.85,
                        "why": "Alice asked for the contract by Friday",
@@ -72,9 +72,10 @@ line.
       }
     }
 
-  - Optional labels adds mail labels (with origin=agent) and archive: true
-    archives the conversation in the same step — no separate iql mail label
-    calls needed.
+  - Optional labels adds mail labels (with origin=agent), archive: true
+    archives the conversation, and acceptTickets: true (or --accept-tickets)
+    places created task tickets directly on the board (status: todo) in the
+    same step — no separate iql mail label or iql ticket accept calls needed.
   - A conversation element (unit thread) takes one answer. A message element
     takes one answer per message id it was asked about; sender takes one per
     address.

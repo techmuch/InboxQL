@@ -471,9 +471,12 @@ iql --json work submit /tmp/answers.json                            # 2: submit 
    already filled in.
 2. Edit `<file>` to fill in verbatim `quote` substrings, `tags`, optional mail
    `"labels": ["receipts"]` (or `"archive": true`), and any `receipts`,
-   `travel`, `events`, or `tasks` records, then pass `<file>` to `work submit`.
-3. `events` records automatically propose calendar events (`iql calendar changes`);
-   `tasks` records automatically propose tickets (`iql ticket list`, `iql ticket accept <id>`).
+   `travel`, `events`, or `tasks` records, then pass `<file>` to `work submit`
+   (pass `--accept-tickets` or `"acceptTickets": true` when the user asked to
+   create task cards directly on the board).
+3. `events` records automatically propose calendar events (`eventChangeIds` in
+   the result); `tasks` records automatically propose or create tickets
+   (`ticketIds` in the result).
    See [`work`](#work--read-conversations-and-record-what-is-worth-knowing),
    [`calendar`](#calendar--inevents--the-calendar), and
    [`ticket`](#ticket--work-derived-from-mail) below for full details.

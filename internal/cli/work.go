@@ -51,6 +51,7 @@ with iql work; see iql work guide.
             --digest           print a compact readable digest of all leased items
   submit    answers, from a file or standard input: one JSON object, an
             array of them, or one per line
+            --accept-tickets   put created task tickets straight on the board (status: todo)
   status    what has been answered, by element and model
   clear     undo answers given through work: --model <id>, --since 1d|2h|date,
             --only a,b
@@ -218,6 +219,7 @@ func runWork(ctx *Context, args []string) error {
 	templatePath := fs.String("template", "", "for next: write pre-scaffolded answers JSON to this file")
 	outPath := fs.String("out", "", "for next: write the full batch JSON to this file")
 	digest := fs.Bool("digest", false, "for next: print a compact readable digest of all leased items")
+	acceptTickets := fs.Bool("accept-tickets", false, "for submit/template: put created task tickets directly in todo status")
 	if err := parseArgs(fs, rest); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -244,6 +246,11 @@ func runWork(ctx *Context, args []string) error {
 		}
 		if *templatePath != "" {
 			tmpl := work.Template(b, *model)
+			if *acceptTickets {
+				for i := range tmpl {
+					tmpl[i].AcceptTickets = true
+				}
+			}
 			raw, err := json.MarshalIndent(tmpl, "", "  ")
 			if err != nil {
 				return Fail(ExitError, "%v", err)
@@ -274,7 +281,7 @@ func runWork(ctx *Context, args []string) error {
 		return nil
 
 	case "submit":
-		return workSubmit(ctx, fs.Args())
+		return workSubmit(ctx, fs.Args(), *acceptTickets)
 
 	case "status":
 		counts, err := store.AgentAnswerCounts()
@@ -330,7 +337,7 @@ func runWork(ctx *Context, args []string) error {
 }
 
 // workSubmit reads one submission, an array of them, or one per line.
-func workSubmit(ctx *Context, args []string) error {
+func workSubmit(ctx *Context, args []string, acceptTickets bool) error {
 	var in io.Reader = ctx.Stdin
 	if len(args) == 1 && args[0] != "-" {
 		f, err := os.Open(args[0])
@@ -356,6 +363,9 @@ func workSubmit(ctx *Context, args []string) error {
 	var results []*work.Result
 	failed := 0
 	for _, s := range subs {
+		if acceptTickets {
+			s.AcceptTickets = true
+		}
 		r, err := work.Submit(s, cal)
 		if err != nil {
 			return Fail(ExitError, "%s: %v", s.Thread, err)

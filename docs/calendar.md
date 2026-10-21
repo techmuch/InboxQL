@@ -30,6 +30,10 @@ events look different on purpose:
 | faded and struck through | you declined it |
 | no colour block in the month view | an all-day event |
 
+**Cards due** is the board's due dates, drawn as all-day entries: click one to
+open the card, drag it to another day to change when it is due, and hide them
+like any calendar. See [Your board](tickets.md#on-the-calendar).
+
 ## An event's card
 
 When and where, how it repeats, the **Join** button for a Meet, Teams, Zoom or

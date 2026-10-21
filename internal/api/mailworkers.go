@@ -62,6 +62,14 @@ func mailChanged(acc *account.Account, r sync.Report) {
 // lost by waiting — what is pending stays pending.
 func afterNewMail() {
 	engine().Kick()
+	// Mail rules are a few queries, not minutes of extraction, so they run
+	// now and on battery too: a card for the landlord's invoice should be on
+	// the board when the invoice is in the inbox.
+	if out, err := store.RunMailRules("", false); err != nil {
+		log.Printf("[board] mail rules: %v", err)
+	} else if out.Created > 0 {
+		log.Printf("[board] mail rules made %d card(s)", out.Created)
+	}
 	if deferHeavyWork() {
 		log.Printf("[annotate] after-sync sweep deferred: on battery (heavyWorkOnBattery is off in %s)", machine.Path())
 		return

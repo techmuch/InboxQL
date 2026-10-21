@@ -58,7 +58,7 @@ describe('AppDialogs', () => {
     expect(posted[0].send).toBeUndefined();
   });
 
-  it('adds a task to the board as To do', async () => {
+  it('adds a task to the board, in whichever list is first open', async () => {
     const posted: any[] = [];
     vi.spyOn(window, 'fetch').mockImplementation(async (_input, init) => {
       posted.push(JSON.parse(String(init?.body)));
@@ -70,7 +70,9 @@ describe('AppDialogs', () => {
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Send the contract' } });
     fireEvent.click(screen.getByText('Add to board'));
     await waitFor(() => expect(run).toHaveBeenCalledWith('iql.open-board'));
-    expect(posted[0]).toMatchObject({ title: 'Send the contract', status: 'todo', origin: 'human' });
+    expect(posted[0]).toMatchObject({ title: 'Send the contract', origin: 'human' });
+    // The list is the server's to choose: To do may have been renamed or deleted.
+    expect(posted[0].status).toBeUndefined();
     expect(useAppUi.getState().task).toBe(false);
   });
 

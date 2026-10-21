@@ -75,7 +75,7 @@ var Guides = []Guide{
 	{Slug: "files", Group: "Using it", file: "docs/files.md",
 		Summary: "Attachments as files: one document, every time it was sent."},
 	{Slug: "tickets", Group: "Using it", file: "docs/tickets.md",
-		Summary: "Work proposed from your mail, and the board you run it on."},
+		Summary: "Your to-dos and projects: lists, cards, checklists, labels, boards and rules — and the mail behind them."},
 	{Slug: "settings", Group: "Running it", file: "docs/settings.md",
 		Summary: "Every setting, and the System section: where your mail is and how the server runs."},
 	{Slug: "privacy", Group: "Running it", file: "docs/privacy.md",

@@ -479,7 +479,7 @@ iql --json work submit /tmp/answers.json                            # 2: submit 
    (`ticketIds` in the result).
    See [`work`](#work--read-conversations-and-record-what-is-worth-knowing),
    [`calendar`](#calendar--inevents--the-calendar), and
-   [`ticket`](#ticket--work-derived-from-mail) below for full details.
+   [`ticket`](#ticket--the-board) below for full details.
 
 ---
 
@@ -1327,53 +1327,108 @@ supported**: EWS is being switched off there; only Exchange Server on-premises.
 **Time tracking is not built yet.** `charge:` and `| sum hours by charge` exist
 in the language and return nothing charged until it is.
 
-## `ticket` — work derived from mail
+## `ticket` — the board
 
-A ticket is an **entity with state that changes**; a message is an **immutable
-event**. That distinction is the design, and it matters to you:
+A ticket — a card — is an **entity with state that changes**; a message is an
+**immutable event**. That distinction is the design, and it matters to you:
 
-- Tickets are *seeded* by extractors and *owned* by the user. A re-run attaches
-  more evidence; it never rewrites a status, title or due date someone set.
+- Cards are *seeded* by extractors, the `tasks` element and mail rules, and
+  *owned* by the user. A re-run attaches more evidence; it never rewrites a
+  list, title or date someone set.
 - Editing an extractor's instructions bumps its version and invalidates every
   annotation — and changes nothing on the board.
 
+The board is the user's personal to-dos and projects, at Trello's level for
+one person: lists of their own, cards in an order they choose, labels,
+checklists, comments, several boards, due dates on the calendar, and rules.
+Everything the page does, the CLI does:
+
 ```
-iql --json ticket list [--query "status:todo due:7d"]
-iql --json ticket show <id>
-iql --json ticket board [--query <filter>]
+iql --json ticket list [--query "state:open due:7d"]
+iql --json ticket show <id>                    description, checklist, comments, history, mail
+iql --json ticket board [--board <board>] [--query <filter>]
+iql --json ticket new "<title>" [--list <list>] [--label a,b] [--due 3d] [--start …] [--priority …]
+                          [--body -|--body-file f] [--message <id>] [--board <board>]
+iql --json ticket edit <id> [--title …] [--body -] [--priority …|none] [--due …|none] [--start …|none]
+iql --json ticket move <id> <list> [--after <card> | --top]
+iql --json ticket archive|restore <id>
+iql --json ticket label|unlabel <id> <label>[,<label>]
+iql --json ticket checklist <id> [add "text" [--checklist name] | done|undo|remove <item> | edit <item> "text"]
+iql --json ticket comment <id> "text" --origin agent
+iql --json ticket accept|reject <id>
 iql --json ticket propose <extractor> [--auto-accept 0.9] [--dry-run]
-iql ticket move <id> <status>
-iql ticket accept <id> | reject <id>
+iql --json ticket lists [add <title> [--closed] [--after <list>] | rename | move | open | close | archive | restore | delete [--move-to <list>]]
+iql --json ticket boards [add <title> --filter "<query>" | edit | move | delete]
+iql --json ticket labels [color <label> <colour>]
+iql --json ticket rules [add --when enters:<list>|mail [--query …] [--list …] --do <action>[=value]… | on|off|delete <rule> | run [<rule>] [--backfill]]
 ```
 
-**Ticket fields are query terms**, so the same language filters both:
+An id is the full id or the first eight characters `ticket list` prints; a
+checklist item is its text or an id prefix; a list or board is its id or its
+title. Every command answers with what the card (or list, board, rule) now is.
+
+**Lists.** A card's `status` is its list's id. The user starts with
+`proposed`, `todo`, `doing` and `done`, and can add, rename, reorder, archive
+and delete lists; renaming changes the title, never the id. Each list is
+`open`, `closed` (finished — entering it stamps the card complete) or the one
+`proposed` queue. `ticket lists` says which. Do not assume `todo` exists:
+`ticket new` without `--list` uses the first open list, and `accept` moves a
+proposal there.
+
+**Order** is the user's: `move --after <card>` or `--top`; a new card goes to
+the bottom.
+
+**Labels are topics.** A card's labels share one vocabulary with the topics on
+mail, and a card raised from mail starts with its conversation's topics.
+Prefer a label already in use (`ticket labels`) to a near-synonym.
+
+**Archived** cards are off the board and left out of every ticket query unless
+it says `archived:` (`archived:yes`, or `archived:*` for both).
+
+**Comments** you write: pass `--origin agent`, so the user can tell yours from
+theirs.
+
+**Rules** do things the user asked for, so make one only when asked. A rule is
+a trigger — `enters:<list>` or `mail` with a query — and actions: `check-all`,
+`add-label=<l>`, `remove-label=<l>`, `set-due=<3d|date>`, `clear-due`,
+`set-priority=<p>`, `archive`. No rule moves a card between lists, so rules
+cannot chain. A mail rule makes one card per conversation, from mail that
+arrives after it was made (`rules run --backfill` covers older mail), and runs
+after every sync while the server is up. A rule's changes are credited to
+`rule` in the card's history.
+
+**Card fields are query terms**, so the same language filters both:
 
 | Term | Matches |
 |---|---|
-| `status:` | `proposed todo doing done rejected`; `status:*` means every ticket |
-| `priority:` | a ticket's priority |
-| `due:` | on or before this date — **forward-looking**, so `due:7d` is the next week |
-| `ticket:` | words in the title |
-| `raised:` | `human` or `annotator` |
+| `status:` / `list:` | the list, by id; `status:*` means every card. An unknown list is an error naming the real ones |
+| `state:` | `open`, `closed`, `proposed`, `rejected` — whichever list |
+| `label:` / `topic:` | a label on the card, a whole word — needs a card query (`in:tickets` or another card field) |
+| `due:` / `start:` | on or before this date — **forward-looking**, so `due:7d` is the next week |
+| `priority:` `ticket:` `comment:` `checklist:` | priority; words in the title, comments, checklist |
+| `archived:` | `yes`, `no`, `*` |
+| `raised:` | `human`, `annotator`, `agent` or `rule` |
+| a bare word | the card's title, description, comments and checklist — or its mail |
 
 A query naming any of these is answered from the tickets table. A **message**
-field inside such a query asks about the ticket's *evidence*:
-`status:todo from:*@acme.com` is "tickets whose mail came from Acme", not
-"tickets that are from Acme". Negation asks whether *any* source matches.
+field inside such a query asks about the card's *evidence*:
+`status:todo from:*@acme.com` is "cards whose mail came from Acme", not
+"cards that are from Acme". Negation asks whether *any* source matches.
+`label:` and `topic:` alone still mean mail.
 
 **Extraction proposes; it does not create.** `ticket propose` puts results below
-`--auto-accept` into `status:proposed` for a person to accept or reject. Do not
+`--auto-accept` into the proposed list for a person to accept or reject. Do not
 accept on the user's behalf — surface the queue and let them rule. A rejection
 is kept rather than deleted, because it is the evidence that the extractor was
 wrong.
 
-Identity is **one ticket per conversation per annotator**, keyed on the thread.
-Re-running is therefore idempotent. Threads that should be one ticket, or
-tickets that should be several, are `ticket merge` — an explicit human action,
-never inferred.
+Identity is **one card per conversation per annotator** (and per mail rule),
+keyed on the thread. Re-running is therefore idempotent. Threads that should be
+one card, or cards that should be several, are `ticket merge` — an explicit
+human action, never inferred.
 
-Every ticket carries the messages it came from; `ticket show` prints them with
-the `iql read` command for each. If you cannot trace a ticket to its mail,
+Every card carries the messages it came from; `ticket show` prints them with
+the `iql read` command for each. If you cannot trace a card to its mail,
 something is wrong.
 
 ## Administrative commands

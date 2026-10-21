@@ -136,13 +136,19 @@ invitation that came by mail queues mail, sent with `iql outbox approve`.
 ## Contacts, files, tickets
 
 - `iql --json contact show <address>` — who they are, turnaround, open loops.
-  Open-loop lists built on who-sent-last alone count newsletters as "waiting on
-  you"; `loopsJudged` says whether the `loops` label refined them.
+  Open loops are the `waiting` element's judgements only; a conversation nobody
+  has judged is in neither list (`unlabeled:waiting`), so an empty list is not
+  "nobody is waiting".
 - `in:attachments` lists each file once however many times it was sent;
   `attached:<name|hash>` finds the mail that carried one. A file not yet read
   (`is:unread`) answers nothing to `content:` — that is not "no file says so".
-- Tickets are proposed, not created: surface `status:proposed`, let the user
-  accept or reject. Never accept for them.
+- The board is the user's to-dos and projects: `iql --json ticket board`,
+  `ticket show <id>`, and `ticket new|edit|move|label|checklist|comment|archive`
+  — everything the page does. Lists are the user's own (`ticket lists`); do
+  not assume `todo` exists. Labels are topics: reuse ones in use. Comment with
+  `--origin agent`. Make rules (`ticket rules`) only when asked.
+- Proposals wait in `state:proposed`: surface them, let the user accept or
+  reject. Never accept for them.
 
 ## Showing the user something
 

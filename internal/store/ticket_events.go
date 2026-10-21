@@ -28,6 +28,15 @@ const (
 	EventEvidence = "evidence"
 	// EventMerged records that another ticket was folded into this one.
 	EventMerged = "merged"
+	// EventStart is the start date, the other date a person sets.
+	EventStart = "start"
+	// EventArchived and EventRestored take a card off the board and back.
+	EventArchived = "archived"
+	EventRestored = "restored"
+	// EventLabel is a label added (To) or removed (From).
+	EventLabel = "label"
+	// EventChecked is a checklist item finished: the moment, not the edit.
+	EventChecked = "checked"
 )
 
 // TicketEvent is one moment in a ticket's history.
@@ -127,15 +136,13 @@ func ticketEventsForThreads(keys []string) (map[string][]TicketEvent, error) {
 
 // recordTicketDiff writes the events implied by a change to a ticket.
 //
-// # Why the actor defaults to a person
+// # Who did it
 //
-// The store has no request context, so it cannot be told who is calling. It
-// does not have to guess, because the system already guarantees the answer: a
-// re-run attaches evidence and never rewrites status, priority or due (see
-// ProposeTickets). So a field that moved was moved by a person. If that
-// invariant is ever relaxed, this attribution has to become an argument rather
-// than an assumption — it is the one thing here that is inferred.
-func recordTicketDiff(before, after *Ticket, at time.Time) error {
+// A re-run attaches evidence and never rewrites status, priority or due (see
+// ProposeTickets), so a field that moved was moved by a person — unless an
+// automation rule moved it, which is why the actor is an argument: rules say
+// so, and everything else is a person.
+func recordTicketDiff(before, after *Ticket, at time.Time, actor string) error {
 	if before == nil {
 		if err := recordTicketEvent(after.ID, EventCreated, "", after.Status, after.Origin, at); err != nil {
 			return err
@@ -152,26 +159,26 @@ func recordTicketDiff(before, after *Ticket, at time.Time) error {
 			}
 		}
 		if due := formatDue(after.DueAt); due != "" {
-			return recordTicketEvent(after.ID, EventDue, "", due, after.Origin, at)
+			if err := recordTicketEvent(after.ID, EventDue, "", due, after.Origin, at); err != nil {
+				return err
+			}
+		}
+		if start := formatDue(after.StartAt); start != "" {
+			return recordTicketEvent(after.ID, EventStart, "", start, after.Origin, at)
 		}
 		return nil
 	}
 
-	if before.Status != after.Status {
-		if err := recordTicketEvent(after.ID, EventStatus, before.Status, after.Status,
-			OriginHumanTicket, at); err != nil {
-			return err
+	for _, ch := range []struct{ kind, from, to string }{
+		{EventStatus, before.Status, after.Status},
+		{EventPriority, before.Priority, after.Priority},
+		{EventDue, formatDue(before.DueAt), formatDue(after.DueAt)},
+		{EventStart, formatDue(before.StartAt), formatDue(after.StartAt)},
+	} {
+		if ch.from == ch.to {
+			continue
 		}
-	}
-	if before.Priority != after.Priority {
-		if err := recordTicketEvent(after.ID, EventPriority, before.Priority, after.Priority,
-			OriginHumanTicket, at); err != nil {
-			return err
-		}
-	}
-	if formatDue(before.DueAt) != formatDue(after.DueAt) {
-		if err := recordTicketEvent(after.ID, EventDue, formatDue(before.DueAt), formatDue(after.DueAt),
-			OriginHumanTicket, at); err != nil {
+		if err := recordTicketEvent(after.ID, ch.kind, ch.from, ch.to, actor, at); err != nil {
 			return err
 		}
 	}

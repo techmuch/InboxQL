@@ -287,6 +287,13 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 			}
 		}
 	}
+	// A card starts with its conversation's topics, and topics are answered
+	// after tasks, so the cards made here are given them now that both are in.
+	for _, id := range res.TicketIDs {
+		if err := store.SeedTicketLabels(id); err != nil {
+			return nil, err
+		}
+	}
 	if len(cleanLabels) > 0 || sub.Archive {
 		msgIDs := make([]string, len(msgs))
 		for i, m := range msgs {
@@ -645,9 +652,12 @@ func str(r map[string]any, k string) string {
 
 func proposeTickets(thread, messageID string, a Answer, anns []*store.Annotation, accept bool) ([]string, error) {
 	var ids []string
-	status := store.TicketProposed
+	status := store.ProposedList()
 	if accept {
-		status = store.TicketTodo
+		var err error
+		if status, err = store.FirstOpenList(); err != nil {
+			return nil, err
+		}
 	}
 	for i, r := range a.Records {
 		title := str(r, "what")

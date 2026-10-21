@@ -46,7 +46,7 @@ func handleTickets(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if id := r.URL.Query().Get("id"); id != "" {
-			t, err := store.GetTicket(id)
+			t, err := store.GetTicketDetail(id)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -62,7 +62,7 @@ func handleTickets(w http.ResponseWriter, r *http.Request) {
 
 		q := r.URL.Query().Get("q")
 		if strings.TrimSpace(q) == "" {
-			q = "-status:done -status:rejected"
+			q = "-state:closed -state:rejected"
 		}
 		limit, offset := clampPaging(r, 100, 500)
 		res, err := store.RunQuery(q, limit, offset)
@@ -79,17 +79,45 @@ func handleTickets(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(res.Tickets)
 
 	case http.MethodPost:
+		// Labels ride along on a new card: a card added on a board whose
+		// filter asks for a label has to carry it, or it vanishes from the
+		// board it was added on.
 		var t store.Ticket
 		if err := decodeJSON(w, r, &t); err != nil {
 			return
 		}
+		labels := t.Labels
 		if err := store.SaveTicket(&t); err != nil {
 			writeQueryError(w, err)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(t)
+		if err := store.AddTicketLabels(t.ID, labels); err != nil {
+			writeQueryError(w, err)
+			return
+		}
+		d, err := store.GetTicketDetail(t.ID)
+		if err != nil {
+			writeQueryError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, d)
+
+	case http.MethodPatch:
+		id := r.URL.Query().Get("id")
+		var patch cardPatch
+		if err := decodeJSON(w, r, &patch); err != nil {
+			return
+		}
+		t, err := store.GetTicket(id)
+		if err != nil || t == nil {
+			writeError(w, http.StatusNotFound, "no ticket %q", id)
+			return
+		}
+		if err := patch.apply(t); err != nil {
+			writeError(w, http.StatusBadRequest, "%v", err)
+			return
+		}
+		card(w, t.ID, store.SaveTicket(t))
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
@@ -115,7 +143,17 @@ func handleBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit, _ := clampPaging(r, 50, 200)
-	columns, err := store.BoardColumns(r.URL.Query().Get("q"), limit)
+	// A board is a named filter; the box above it narrows further.
+	filter := r.URL.Query().Get("q")
+	if id := r.URL.Query().Get("board"); id != "" {
+		b, err := store.GetTicketBoard(id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "%v", err)
+			return
+		}
+		filter = strings.TrimSpace(b.Filter + " " + filter)
+	}
+	columns, err := store.BoardColumns(filter, limit)
 	if err != nil {
 		writeQueryError(w, err)
 		return

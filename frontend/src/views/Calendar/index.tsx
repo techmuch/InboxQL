@@ -14,6 +14,17 @@ import { useCalendarNav, type CalendarView } from '../../lib/calendarNav';
 import { requestSettingsSection } from '../../lib/settingsNav';
 import { openTool } from '../../lib/tabs';
 import { Help } from '../Help';
+import { fetchDue, fromDay, patchCard, toDay } from '../Board/api';
+import { openCardOnBoard } from '../Board/labels';
+
+/** The calendar the board's due dates are drawn on. Not stored: drawn. */
+const CARDS_CALENDAR = 'cards';
+const CARDS_COLOUR = '#0d9488';
+const CARDS_KEY = 'iql.calendar.cards';
+
+const cardsShownAtFirst = (): boolean => {
+  try { return localStorage.getItem(CARDS_KEY) !== 'off'; } catch { return true; }
+};
 
 /**
  * The Calendar tab.
@@ -90,6 +101,8 @@ export const Calendar = () => {
   const [editor, setEditor] = useState<EditorSeed | null>(null);
   const [selectedOcc, setSelectedOcc] = useState<Occurrence | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [cardsShown, setCardsShown] = useState(cardsShownAtFirst);
+  const [dueCards, setDueCards] = useState<Occurrence[]>([]);
 
   const [from, to] = useMemo(() => rangeFor(view, anchor), [view, anchor]);
 
@@ -104,7 +117,22 @@ export const Calendar = () => {
       .then(r => { setOccurrences(r.occurrences); setError(null); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [from, to]);
+    // Cards with a due date, as all-day entries on a calendar of their own.
+    // Drawn from the board each time rather than copied into the calendar,
+    // so a card moved on the board is moved here too.
+    if (!cardsShown) { setDueCards([]); return; }
+    fetchDue(from, to)
+      .then(cards => setDueCards(cards.map(c => {
+        const start = startOfDay(new Date(c.dueAt!));
+        return {
+          eventId: `card:${c.id}`, calendarId: CARDS_CALENDAR, uid: c.id,
+          start: start.toISOString(), end: addDays(start, 1).toISOString(), allDay: true,
+          summary: c.title, status: 'confirmed', showAs: 'free', recurring: false, proposed: false,
+          attendees: 0, color: CARDS_COLOUR,
+        };
+      })))
+      .catch(() => setDueCards([]));
+  }, [from, to, cardsShown]);
 
   useEffect(loadCalendars, [loadCalendars]);
   useEffect(loadEvents, [loadEvents]);
@@ -129,7 +157,11 @@ export const Calendar = () => {
 
   const refresh = () => { loadCalendars(); loadEvents(); };
 
-  const calMap = useMemo(() => new Map(calendars.map(c => [c.id, { color: c.color, writable: c.writable }])), [calendars]);
+  const calMap = useMemo(() => new Map([
+    ...calendars.map(c => [c.id, { color: c.color, writable: c.writable }] as const),
+    [CARDS_CALENDAR, { color: CARDS_COLOUR, writable: true }] as const,
+  ]), [calendars]);
+  const shown = useMemo(() => [...occurrences, ...dueCards], [occurrences, dueCards]);
   const colourOf = useCallback((o: Occurrence) => o.color || calMap.get(o.calendarId)?.color || '#2563eb', [calMap]);
   const defaultCalendar = calendars.find(c => c.writable && c.primary) ?? calendars.find(c => c.writable);
 
@@ -144,7 +176,10 @@ export const Calendar = () => {
     setNotice(r.note ?? (r.state === 'queued' ? 'Saved. It goes to the provider on the next sync.' : null));
   };
 
-  const openSelect = (o: Occurrence) => { select(o.eventId); setSelectedOcc(o); };
+  const openSelect = (o: Occurrence) => {
+    if (o.calendarId === CARDS_CALENDAR) { openCardOnBoard(o.uid); return; }
+    select(o.eventId); setSelectedOcc(o);
+  };
 
   const onCreate = (start: Date, end: Date, allDay: boolean) => {
     if (!defaultCalendar) { setError('There is no calendar you can add to.'); return; }
@@ -209,6 +244,13 @@ export const Calendar = () => {
     refresh();
   };
   const onMove = (o: Occurrence, start: Date, end: Date) => {
+    if (o.calendarId === CARDS_CALENDAR) {
+      // Dragging a card's day is changing its due date.
+      patchCard(o.uid, { dueAt: fromDay(toDay(start.toISOString())) })
+        .catch(e => setError(e.message))
+        .finally(refresh);
+      return;
+    }
     if (o.recurring) setPendingMove({ o, start, end });
     else void applyMove(o, start, end, 'all');
   };
@@ -285,6 +327,18 @@ export const Calendar = () => {
                 </span>
               </li>
             ))}
+            <li className="group flex items-center gap-2">
+              <label className="flex flex-1 cursor-pointer items-center gap-2 py-0.5" title="Cards on the board with a due date">
+                <input type="checkbox" className="sr-only" checked={cardsShown}
+                  onChange={() => {
+                    const on = !cardsShown;
+                    setCardsShown(on);
+                    try { localStorage.setItem(CARDS_KEY, on ? 'on' : 'off'); } catch { /* per-viewer */ }
+                  }} />
+                <span className="h-3 w-3 shrink-0 border" style={{ background: cardsShown ? CARDS_COLOUR : 'transparent', borderColor: CARDS_COLOUR }} />
+                <span className={`truncate ${cardsShown ? '' : 'text-muted-foreground'}`}>Cards due</span>
+              </label>
+            </li>
           </ul>
           <button onClick={() => { requestSettingsSection('calendars'); openTool('settings', 'Settings'); }}
             className="mt-2 flex items-center gap-1.5 text-[11px] text-primary hover:underline">
@@ -363,15 +417,15 @@ export const Calendar = () => {
         <div className="flex min-h-0 flex-1">
           <div className="min-w-0 flex-1">
             {(view === 'day' || view === 'week') && (
-              <TimeGrid days={days} occurrences={occurrences} calendars={calMap} selected={selected}
+              <TimeGrid days={days} occurrences={shown} calendars={calMap} selected={selected}
                 onSelect={openSelect} onCreate={onCreate} onMove={onMove} />
             )}
             {view === 'month' && (
-              <MonthGrid anchor={anchor} occurrences={occurrences} colourOf={colourOf} selected={selected} onSelect={openSelect}
+              <MonthGrid anchor={anchor} occurrences={shown} colourOf={colourOf} selected={selected} onSelect={openSelect}
                 onCreate={d => onCreate(new Date(d.getTime() + 9 * 3600_000), new Date(d.getTime() + 10 * 3600_000), false)}
                 onOpenDay={d => { setAnchor(d); setView('day'); }} />
             )}
-            {view === 'agenda' && <Agenda occurrences={occurrences} colourOf={colourOf} selected={selected} onSelect={openSelect} />}
+            {view === 'agenda' && <Agenda occurrences={shown} colourOf={colourOf} selected={selected} onSelect={openSelect} />}
           </div>
           {selectedOcc && (
             <EventPanel key={selectedOcc.eventId + selectedOcc.start} occurrence={selectedOcc}

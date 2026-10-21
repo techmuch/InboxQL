@@ -112,6 +112,10 @@ const (
 	ValuesFolders    = "folders"
 	ValuesLabels     = "labels"
 	ValuesFileTypes  = "filetypes"
+	// ValuesTicketLists offers the board's lists; ValuesCardLabels the
+	// labels on cards and the topics on mail, which are one vocabulary.
+	ValuesTicketLists = "ticketlists"
+	ValuesCardLabels  = "cardlabels"
 	// ValuesExtractPaths offers `<annotator>.<field>` — the one spelling for
 	// naming an extracted value, used by the filter term and by every stage
 	// that reads one.
@@ -272,10 +276,54 @@ var Registry = []Field{
 	// is what "traceable to the mail that created it" means when it is a query
 	// rather than a claim.
 	{
+		// The values are the lists, which are the person's own, so there is
+		// no fixed enum to check against: an unknown list matches nothing,
+		// and completion offers the real ones.
 		Name: "status", Entity: EntityTicket, Type: TypeEnum, Primary: true,
 		Ops:     []Op{OpMatch, OpGlob},
-		Enum:    []string{"proposed", "todo", "doing", "done", "rejected"},
-		Summary: "where a ticket sits", Example: "status:todo",
+		Aliases: []string{"list"},
+		Values:  ValuesTicketLists,
+		Summary: "the list a card is in (or rejected)", Example: "status:todo",
+	},
+	{
+		Name: "state", Entity: EntityTicket, Type: TypeEnum,
+		Enum:    []string{"open", "closed", "proposed", "rejected"},
+		Summary: "whether a card is open or finished, whichever list it is in", Example: "state:open",
+	},
+	{
+		Name: "archived", Entity: EntityTicket, Type: TypeEnum,
+		Ops:     []Op{OpMatch, OpGlob},
+		Enum:    []string{"yes", "no"},
+		Summary: "archived cards — left out unless a query mentions archived:", Example: "archived:yes",
+	},
+	{
+		// A card's labels and the topics on mail are one vocabulary, so in a
+		// ticket query both names mean the card's own labels.
+		Name: "label", Entity: EntityTicket, Type: TypeText,
+		Ops:     matchOps,
+		Values:  ValuesCardLabels,
+		Summary: "a label on the card", Example: "in:tickets label:home",
+	},
+	{
+		Name: "topic", Entity: EntityTicket, Type: TypeText,
+		Ops:     matchOps,
+		Values:  ValuesCardLabels,
+		Summary: "a label on the card — labels are topics", Example: "status:todo topic:garden",
+	},
+	{
+		Name: "comment", Entity: EntityTicket, Type: TypeText,
+		Ops:     matchOps,
+		Aliases: []string{"comments"},
+		Summary: "words in a card's comments", Example: "in:tickets comment:quote",
+	},
+	{
+		Name: "checklist", Entity: EntityTicket, Type: TypeText,
+		Ops:     matchOps,
+		Summary: "words in a card's checklist items", Example: "in:tickets checklist:paint",
+	},
+	{
+		Name: "start", Entity: EntityTicket, Type: TypeDate,
+		Summary: "starting on or before this date", Example: "start:7d",
 	},
 	{
 		Name: "priority", Entity: EntityTicket, Type: TypeText,
@@ -294,7 +342,7 @@ var Registry = []Field{
 	{
 		Name: "raised", Entity: EntityTicket, Type: TypeEnum,
 		Ops:     []Op{OpMatch, OpGlob},
-		Enum:    []string{"human", "annotator"},
+		Enum:    []string{"human", "annotator", "agent", "rule"},
 		Summary: "who raised the ticket", Example: "raised:annotator",
 	},
 	{

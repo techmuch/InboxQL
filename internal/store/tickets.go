@@ -56,6 +56,19 @@ type Ticket struct {
 	CreatedAt   time.Time  `json:"createdAt"`
 	UpdatedAt   time.Time  `json:"updatedAt"`
 	ClosedAt    *time.Time `json:"closedAt,omitempty"`
+	// Position orders a card within its list; lower is higher up.
+	Position   float64    `json:"position"`
+	StartAt    *time.Time `json:"startAt,omitempty"`
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	// RuleID names the automation rule that made it, if one did.
+	RuleID string `json:"ruleId,omitempty"`
+
+	// Labels share one vocabulary with the topics on mail.
+	Labels []string `json:"labels,omitempty"`
+	// Checklist and Comments are counts, for the front of a card.
+	ChecklistDone  int `json:"checklistDone,omitempty"`
+	ChecklistTotal int `json:"checklistTotal,omitempty"`
+	Comments       int `json:"comments,omitempty"`
 	// Sources are the messages this ticket came from. Provenance is the whole
 	// differentiator: a ticket that cannot be traced back to the mail that
 	// created it is just a task in a worse task manager.
@@ -79,16 +92,20 @@ type TicketSource struct {
 
 const ticketColumns = `id, COALESCE(thread_key, ''), title, COALESCE(body, ''), status,
 	COALESCE(priority, ''), due_at, origin, COALESCE(annotator_id, ''), confidence,
-	created_at, updated_at, closed_at`
+	created_at, updated_at, closed_at, COALESCE(position, 0), start_at, archived_at,
+	COALESCE(rule_id, '')`
 
 func scanTicket(scan func(...any) error) (*Ticket, error) {
 	t := &Ticket{}
-	var due, closed sql.NullInt64
+	var due, closed, start, archived sql.NullInt64
 	var created, updated int64
 	if err := scan(&t.ID, &t.ThreadKey, &t.Title, &t.Body, &t.Status, &t.Priority,
-		&due, &t.Origin, &t.AnnotatorID, &t.Confidence, &created, &updated, &closed); err != nil {
+		&due, &t.Origin, &t.AnnotatorID, &t.Confidence, &created, &updated, &closed,
+		&t.Position, &start, &archived, &t.RuleID); err != nil {
 		return nil, err
 	}
+	t.StartAt = optionalTime(start)
+	t.ArchivedAt = optionalTime(archived)
 	t.CreatedAt = time.UnixMilli(created)
 	t.UpdatedAt = time.UnixMilli(updated)
 	if due.Valid {
@@ -102,9 +119,26 @@ func scanTicket(scan func(...any) error) (*Ticket, error) {
 	return t, nil
 }
 
-// SaveTicket creates or updates a ticket.
-func SaveTicket(t *Ticket) error {
-	if strings.TrimSpace(t.Title) == "" {
+// optionalTime reads a nullable epoch-millisecond column.
+func optionalTime(v sql.NullInt64) *time.Time {
+	if !v.Valid {
+		return nil
+	}
+	t := time.UnixMilli(v.Int64)
+	return &t
+}
+
+// SaveTicket creates or updates a ticket, as a person.
+//
+// Position, archive and labels are not written here: each has its own
+// operation (MoveTicket, ArchiveTicket, SetTicketLabels), so saving a card
+// someone had open while it was moved does not move it back.
+func SaveTicket(t *Ticket) error { return saveTicket(t, OriginHumanTicket) }
+
+// saveTicket is SaveTicket with the actor named, for automation.
+func saveTicket(t *Ticket, actor string) error {
+	t.Title = strings.TrimSpace(t.Title)
+	if t.Title == "" {
 		return fmt.Errorf("a ticket needs a title")
 	}
 	now := time.Now()
@@ -126,45 +160,94 @@ func SaveTicket(t *Ticket) error {
 		t.CreatedAt = now
 	}
 	if t.Status == "" {
-		t.Status = TicketTodo
+		first, err := FirstOpenList()
+		if err != nil {
+			return err
+		}
+		t.Status = first
+	}
+	if err := validStatus(t.Status); err != nil {
+		return err
 	}
 	if t.Origin == "" {
 		t.Origin = OriginHumanTicket
 	}
 	t.UpdatedAt = now
 
+	// A new card, or one that changed list, goes to the bottom of its list,
+	// as in Trello. Otherwise it keeps its place: the position a caller sent
+	// is ignored, because only MoveTicket says where a card goes.
+	switch {
+	case before == nil || before.Status != t.Status:
+		pos, err := bottomOf(t.Status)
+		if err != nil {
+			return err
+		}
+		t.Position = pos
+	default:
+		t.Position = before.Position
+	}
+	if before != nil {
+		t.ArchivedAt = before.ArchivedAt
+		t.RuleID = before.RuleID
+	}
+
 	// Closing stamps the time; reopening clears it, so "done this week" is
-	// answerable and a reopened ticket does not still look finished.
-	if t.Status == TicketDone && t.ClosedAt == nil {
+	// answerable and a reopened ticket does not still look finished. Closed
+	// is the list's kind, so a list of your own can finish cards too.
+	closing := listKind(t.Status) == ListClosed
+	if closing && t.ClosedAt == nil {
 		t.ClosedAt = &now
-	} else if t.Status != TicketDone {
+	} else if !closing {
 		t.ClosedAt = nil
 	}
 
-	var due, closed any
+	var due, closed, start, archived any
 	if t.DueAt != nil {
 		due = t.DueAt.UnixMilli()
 	}
 	if t.ClosedAt != nil {
 		closed = t.ClosedAt.UnixMilli()
 	}
+	if t.StartAt != nil {
+		start = t.StartAt.UnixMilli()
+	}
+	if t.ArchivedAt != nil {
+		archived = t.ArchivedAt.UnixMilli()
+	}
 
 	_, err := db.Exec(`
 		INSERT INTO tickets (id, thread_key, title, body, status, priority, due_at,
-			origin, annotator_id, confidence, created_at, updated_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			origin, annotator_id, confidence, created_at, updated_at, closed_at,
+			position, start_at, archived_at, rule_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			thread_key = excluded.thread_key, title = excluded.title, body = excluded.body,
 			status = excluded.status, priority = excluded.priority, due_at = excluded.due_at,
-			updated_at = excluded.updated_at, closed_at = excluded.closed_at`,
+			updated_at = excluded.updated_at, closed_at = excluded.closed_at,
+			position = excluded.position, start_at = excluded.start_at`,
 		t.ID, nullIfEmpty(t.ThreadKey), t.Title, nullIfEmpty(t.Body), t.Status,
 		nullIfEmpty(t.Priority), due, t.Origin, nullIfEmpty(t.AnnotatorID), t.Confidence,
-		t.CreatedAt.UnixMilli(), t.UpdatedAt.UnixMilli(), closed)
+		t.CreatedAt.UnixMilli(), t.UpdatedAt.UnixMilli(), closed,
+		t.Position, start, archived, nullIfEmpty(t.RuleID))
 	if err != nil {
 		return err
 	}
 
-	return recordTicketDiff(before, t, now)
+	if err := recordTicketDiff(before, t, now, actor); err != nil {
+		return err
+	}
+	if before == nil && t.ThreadKey != "" {
+		// A card raised from mail starts with its conversation's topics;
+		// from then on they are the card's own.
+		if err := seedLabelsFromThread(t.ID, t.ThreadKey); err != nil {
+			return err
+		}
+	}
+	if before == nil || before.Status != t.Status {
+		return runEntryRules(t.ID, t.Status)
+	}
+	return nil
 }
 
 // loadTicket reads a ticket without its evidence.
@@ -188,8 +271,10 @@ func GetTicket(id string) (*Ticket, error) {
 	if err != nil {
 		return nil, err
 	}
-	t.Sources, err = ticketSources(t.ID)
-	return t, err
+	if t.Sources, err = ticketSources(t.ID); err != nil {
+		return nil, err
+	}
+	return t, decorateTickets([]*Ticket{t})
 }
 
 func ticketSources(ticketID string) ([]TicketSource, error) {
@@ -241,18 +326,8 @@ func AttachSource(ticketID, messageID, annotationID string) error {
 	return recordTicketEvent(ticketID, EventEvidence, "", messageID, OriginAnnotator, now)
 }
 
-// SetTicketStatus moves a ticket, which is what dragging a card does.
-func SetTicketStatus(id, status string) error {
-	t, err := GetTicket(id)
-	if err != nil {
-		return err
-	}
-	if t == nil {
-		return fmt.Errorf("no ticket %q", id)
-	}
-	t.Status = status
-	return SaveTicket(t)
-}
+// SetTicketStatus moves a ticket to the bottom of a list.
+func SetTicketStatus(id, status string) error { return MoveTicket(id, status, "") }
 
 // DeleteTicket removes a ticket and its evidence links.
 //
@@ -379,9 +454,11 @@ func ProposeTickets(annotatorName string, autoAccept float64, dryRun bool) (*Tic
 			continue
 		}
 
-		status := TicketProposed
+		status := ProposedList()
 		if c.confidence != nil && *c.confidence >= autoAccept {
-			status = TicketTodo
+			if status, err = FirstOpenList(); err != nil {
+				return nil, err
+			}
 			out.Accepted++
 		}
 		out.Proposed++
@@ -470,8 +547,14 @@ func ticketDue(data string) *time.Time {
 	return &t
 }
 
-// AcceptTicket moves a proposal into the working set.
-func AcceptTicket(id string) error { return SetTicketStatus(id, TicketTodo) }
+// AcceptTicket moves a proposal into the working set: the first open list.
+func AcceptTicket(id string) error {
+	list, err := FirstOpenList()
+	if err != nil {
+		return err
+	}
+	return SetTicketStatus(id, list)
+}
 
 // RejectTicket records that a proposal was wrong.
 //
@@ -508,34 +591,6 @@ func MergeTickets(intoID, fromID string) error {
 	return DeleteTicket(fromID)
 }
 
-// TicketStatuses lists the statuses actually in use, for a board's columns.
-func TicketStatuses() ([]string, error) {
-	rows, err := db.Query(`SELECT DISTINCT status FROM tickets ORDER BY status`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	seen := map[string]bool{}
-	out := []string{}
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return nil, err
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	// The defaults always appear, so a board is not empty before the first
-	// ticket reaches a column.
-	for _, s := range DefaultStatuses {
-		if !seen[s] {
-			out = append(out, s)
-		}
-	}
-	return out, rows.Err()
-}
-
 // ParseTicketDue resolves a due-date expression using the query language's
 // date grammar, so `--due 7d` means what `due:7d` means.
 func ParseTicketDue(v string) (*time.Time, error) {
@@ -547,40 +602,44 @@ func ParseTicketDue(v string) (*time.Time, error) {
 	return &t, nil
 }
 
-// BoardColumn is one column of a board.
+// BoardColumn is one list on a board, with the cards the filter lets through.
 type BoardColumn struct {
-	Status  string    `json:"status"`
-	Total   int64     `json:"total"`
-	Tickets []*Ticket `json:"tickets"`
+	// Status is the list's id, which is what a card in it holds.
+	Status   string    `json:"status"`
+	Title    string    `json:"title"`
+	Kind     string    `json:"kind"`
+	Position float64   `json:"position"`
+	Total    int64     `json:"total"`
+	Tickets  []*Ticket `json:"tickets"`
 }
 
-// BoardColumns builds a board from a filter and the status field.
+// BoardColumns builds a board from a filter and the lists.
 //
 // The two are deliberately separate. The filter says which tickets appear;
-// the columns are the values of one designated field. That is what gives
-// dragging a card an unambiguous meaning — it writes that field, which is the
-// inverse of the query that defined the column. If columns were arbitrary
-// queries there would be no answer to what dragging from `due:7d` into
-// `from:acme` should do.
+// the columns are the lists, which are the values of the status field. That
+// is what gives dragging a card an unambiguous meaning — it writes that
+// field, which is the inverse of the query that defined the column. If
+// columns were arbitrary queries there would be no answer to what dragging
+// from `due:7d` into `from:acme` should do.
+//
+// Rejected tickets are kept as evidence that the extractor was wrong, but a
+// board is a working surface and they are not work, so rejected is not a list.
 func BoardColumns(filter string, perColumn int) ([]*BoardColumn, error) {
 	if perColumn <= 0 {
 		perColumn = 10
 	}
-	statuses, err := TicketStatuses()
+	lists, err := TicketLists(false)
 	if err != nil {
 		return nil, err
 	}
+	if strings.Contains(filter, "|") {
+		return nil, fmt.Errorf("a board filter chooses cards; it takes no | stages")
+	}
 
 	out := []*BoardColumn{}
-	for _, status := range statuses {
-		// Rejected tickets are kept as evidence that the extractor was wrong,
-		// but a board is a working surface and they are not work.
-		if status == TicketRejected {
-			continue
-		}
-
-		scoped := strings.TrimSpace(filter + " status:" + status)
-		res, err := RunQuery(scoped, perColumn, 0)
+	for _, l := range lists {
+		scoped := strings.TrimSpace("in:tickets " + filter + " status:" + l.ID)
+		res, err := RunQuery(scoped+" | sort position", perColumn, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -588,7 +647,8 @@ func BoardColumns(filter string, perColumn int) ([]*BoardColumn, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, &BoardColumn{Status: status, Total: total, Tickets: res.Tickets})
+		out = append(out, &BoardColumn{Status: l.ID, Title: l.Title, Kind: l.Kind,
+			Position: l.Position, Total: total, Tickets: res.Tickets})
 	}
 	return out, nil
 }

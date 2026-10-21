@@ -188,7 +188,7 @@ const ComposeDialog = ({ initial, onClose }: { initial: MailtoDraft | null; onCl
   );
 };
 
-/** New task: a card on the board, in To do. */
+/** New task: a card on the board, in the first open list. */
 const NewTaskDialog = ({ onClose }: { onClose: () => void }) => {
   const [title, setTitle] = useState('');
   const [due, setDue] = useState('');
@@ -201,7 +201,7 @@ const NewTaskDialog = ({ onClose }: { onClose: () => void }) => {
     try {
       const r = await fetch('/api/tickets', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), body, status: 'todo', priority: priority || undefined, origin: 'human',
+        body: JSON.stringify({ title: title.trim(), body, priority: priority || undefined, origin: 'human',
           dueAt: due ? new Date(`${due}T17:00`).toISOString() : undefined }),
       });
       if (!r.ok) throw new Error((await r.text()) || 'could not save');

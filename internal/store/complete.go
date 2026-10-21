@@ -58,6 +58,10 @@ func completionValues(source, prefix string) ([]query.Candidate, error) {
 		return out, nil
 	case query.ValuesFileTypes:
 		return fileTypeCandidates(prefix)
+	case query.ValuesTicketLists:
+		return listCandidates(prefix)
+	case query.ValuesCardLabels:
+		return cardLabelCandidates(prefix)
 	case query.ValuesExtractPaths:
 		return extractPathCandidates(prefix)
 	}
@@ -84,6 +88,47 @@ func labelCandidates(prefix string) ([]query.Candidate, error) {
 		return nil, err
 	}
 	return append(out, ann...), nil
+}
+
+// listCandidates offers the board's lists, which are what status: names,
+// and rejected, which is a status but not a list.
+func listCandidates(prefix string) ([]query.Candidate, error) {
+	lists, err := TicketLists(true)
+	if err != nil {
+		return nil, err
+	}
+	p := strings.ToLower(prefix)
+	out := []query.Candidate{}
+	for _, l := range lists {
+		if strings.HasPrefix(l.ID, p) || strings.HasPrefix(strings.ToLower(l.Title), p) {
+			detail := fmt.Sprintf("%s · %d cards", l.Title, l.Cards)
+			if l.ArchivedAt != nil {
+				detail += " · archived"
+			}
+			out = append(out, query.Candidate{Value: l.ID, Kind: "list", Detail: detail})
+		}
+	}
+	if strings.HasPrefix(TicketRejected, p) {
+		out = append(out, query.Candidate{Value: TicketRejected, Kind: "list", Detail: "proposals turned down"})
+	}
+	return out, nil
+}
+
+// cardLabelCandidates offers the labels on cards and the topics on mail.
+func cardLabelCandidates(prefix string) ([]query.Candidate, error) {
+	labels, err := BoardLabels()
+	if err != nil {
+		return nil, err
+	}
+	p := strings.ToLower(prefix)
+	out := []query.Candidate{}
+	for _, l := range labels {
+		if strings.HasPrefix(l.Name, p) {
+			out = append(out, query.Candidate{Value: l.Name, Kind: "label",
+				Detail: fmt.Sprintf("%d cards · %d messages", l.Cards, l.Messages)})
+		}
+	}
+	return out, nil
 }
 
 // fileTypeCandidates offers the category names first, then the MIME types this

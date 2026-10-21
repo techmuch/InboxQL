@@ -562,7 +562,8 @@ func (p *pipeline) buildTicketGroups(field string, limit int) (*Plan, error) {
 // ticketSelectList is the column list store.scanTicket expects.
 const ticketSelectList = `t.id, COALESCE(t.thread_key, ''), t.title, COALESCE(t.body, ''), t.status,
 	COALESCE(t.priority, ''), t.due_at, t.origin, COALESCE(t.annotator_id, ''), t.confidence,
-	t.created_at, t.updated_at, t.closed_at`
+	t.created_at, t.updated_at, t.closed_at, COALESCE(t.position, 0), t.start_at, t.archived_at,
+	COALESCE(t.rule_id, '')`
 
 func ticketGroupKey(field string) (string, error) {
 	switch strings.ToLower(field) {
@@ -593,8 +594,13 @@ func ticketSortColumn(field string) (string, error) {
 		return "t.priority", nil
 	case "title", "ticket":
 		return "t.title", nil
+	case "position":
+		// A list's own order, which is the person's.
+		return "t.position", nil
+	case "start":
+		return "COALESCE(t.start_at, t.due_at, t.updated_at)", nil
 	default:
-		return "", fmt.Errorf("cannot sort tickets by %q (try: due, created, updated, status, priority, title)", field)
+		return "", fmt.Errorf("cannot sort tickets by %q (try: due, start, created, updated, status, priority, title, position)", field)
 	}
 }
 

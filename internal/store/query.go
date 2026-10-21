@@ -95,6 +95,7 @@ func queryOptions(limit, offset int) query.Options {
 		TimeField:          annotatorTimeField,
 		KnownAnnotator:     annotatorExists,
 		KnownMailLabel:     LabelExists,
+		TicketLists:        ticketListIDs,
 		FullText:           ftsEnabled.Load(),
 		DefaultLimit:       limit,
 		Offset:             offset,
@@ -462,7 +463,7 @@ func scanTickets(ctx context.Context, plan *query.Plan) ([]*Ticket, error) {
 			return nil, err
 		}
 	}
-	return out, nil
+	return out, decorateTickets(out)
 }
 
 func scanGroups(ctx context.Context, plan *query.Plan) ([]QueryGroup, error) {

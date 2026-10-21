@@ -22,7 +22,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 45
+	SchemaVersion = 46
 )
 
 var (
@@ -2007,6 +2007,17 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 45
+	}
+
+	if currentVersion < 46 {
+		log.Println("Applying schema migration v46 (the board: lists, order, checklists, labels, comments, boards, rules)...")
+		if err := migrateBoard(db); err != nil {
+			return fmt.Errorf("failed to apply schema v46: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 46;"); err != nil {
+			return err
+		}
+		currentVersion = 46
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

@@ -188,7 +188,7 @@ A query is about one kind of thing. Mail is the default; `in:` says otherwise:
 | `in:drafts` | your drafts and queued mail |
 | `in:contacts` | the people and systems you have corresponded with |
 | `in:attachments` | files, each one once however many times it was sent |
-| `in:tickets` | tickets |
+| `in:tickets` | cards on the board — archived ones only when the query says `archived:` |
 | `in:events` | calendar events, one row per occurrence |
 | `in:logs` | what InboxQL itself has been doing |
 

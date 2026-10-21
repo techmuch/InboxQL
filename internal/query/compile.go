@@ -65,6 +65,9 @@ type Options struct {
 	// KnownMailLabel reports whether a mail label exists — inbox, sent, a
 	// Gmail label, one of the user's own. `label:` answers for both kinds.
 	KnownMailLabel func(name string) bool
+	// TicketLists returns the board's list ids, which are the values status:
+	// takes. Nil skips the check.
+	TicketLists func() []string
 
 	// FullText enables the FTS5 index for prose matching. When false the same
 	// terms compile to substring matching, which is slower and token-blind but
@@ -147,6 +150,12 @@ func compileFilter(n Node, opt Options, entity string) (filter, error) {
 	if err != nil {
 		return filter{}, err
 	}
+	// Archived cards are left out of a ticket query unless it mentions
+	// archived:, as Trash is left out of mail: archived is off the board, not
+	// gone, and a search that names it finds it.
+	if entity == EntityTicket && !c.archived {
+		sql = "(" + sql + " AND t.archived_at IS NULL)"
+	}
 	f := filter{sql: sql, args: c.args}
 	if binsApply(entity) {
 		f.leftOut = c.bins.leftOut()
@@ -165,6 +174,9 @@ type compiler struct {
 	resolving string
 	// bins records which of Trash and Spam the query mentioned.
 	bins binned
+	// archived records that a ticket query mentioned archived:, which is
+	// what brings archived cards back into it.
+	archived bool
 }
 
 // idColumn names the primary key of the table this query reads.
@@ -285,11 +297,15 @@ func (c *compiler) term(t *Term, negated bool) (string, error) {
 		return "1=1", nil
 	}
 
+	// mailField says the term is about mail: a bare word, or a field whose
+	// declaration in this kind of query is a message's.
+	mailField := t.Field == ""
 	if t.Field != "" {
 		f, ok := LookupFieldIn(c.entity, t.Field)
 		if !ok {
 			return "", at(t, unknownFieldError(t.Field))
 		}
+		mailField = f.Entity == EntityMessage
 		if err := f.validate(t); err != nil {
 			return "", at(t, err)
 		}
@@ -314,7 +330,18 @@ func (c *compiler) term(t *Term, negated bool) (string, error) {
 	// Compiling once also matters mechanically: each dispatch appends its
 	// arguments, so building both forms would bind twice as many values as the
 	// statement has placeholders.
-	if c.entity == EntityTicket && isMessageField(t.Field) {
+	if c.entity == EntityTicket && t.Field == "archived" {
+		c.archived = true
+	}
+	if c.entity == EntityTicket && t.Field == "" {
+		sql, err := c.ticketText(t, negated)
+		return sql, at(t, err)
+	}
+	if c.entity == EntityTicket && !mailField {
+		sql, err := c.ticketTerm(t, negated)
+		return sql, at(t, err)
+	}
+	if c.entity == EntityTicket && mailField {
 		inner, err := c.dispatch(t, false)
 		if err != nil {
 			return "", at(t, err)
@@ -1572,6 +1599,97 @@ func (c *compiler) threadTerm(t *Term, negated bool) (string, error) {
 
 // dayMillis is one day, for making a date bound inclusive of its own day.
 const dayMillis = int64(24 * 60 * 60 * 1000)
+
+// ticketTerm compiles a term about a card itself, not its mail.
+func (c *compiler) ticketTerm(t *Term, negated bool) (string, error) {
+	switch t.Field {
+	case "in":
+		return "1=1", nil
+
+	case "state":
+		// A list's kind, so a list of the person's own answers too.
+		switch v := strings.ToLower(t.Value); v {
+		case "rejected":
+			return wrap("t.status = 'rejected'", negated), nil
+		case "open", "closed", "proposed":
+			return wrap("t.status IN (SELECT id FROM ticket_lists WHERE kind = "+c.arg(v)+")", negated), nil
+		}
+		return "", fmt.Errorf("state: %q is not one of open, closed, proposed, rejected", t.Value)
+
+	case "archived":
+		if t.Op == OpGlob {
+			return wrap("1=1", negated), nil
+		}
+		if strings.EqualFold(t.Value, "yes") {
+			return wrap("t.archived_at IS NOT NULL", negated), nil
+		}
+		return wrap("t.archived_at IS NULL", negated), nil
+
+	case "label", "topic":
+		// A label is a whole word, not a fragment: label:home is not
+		// home-office. A glob says otherwise when it is wanted.
+		pred := "LOWER(tl.label) = LOWER(" + c.arg(t.Value) + ")"
+		if t.Op == OpGlob {
+			pred = c.stringPredicate("tl.label", t)
+		}
+		return wrap("EXISTS (SELECT 1 FROM ticket_labels tl WHERE tl.ticket_id = t.id AND "+pred+")",
+			negated), nil
+
+	case "comment":
+		return wrap("EXISTS (SELECT 1 FROM ticket_comments tc WHERE tc.ticket_id = t.id AND "+
+			c.stringPredicate("tc.body", t)+")", negated), nil
+
+	case "checklist":
+		return wrap("EXISTS (SELECT 1 FROM ticket_checklist_items ti WHERE ti.ticket_id = t.id AND "+
+			c.stringPredicate("ti.text", t)+")", negated), nil
+
+	case "status":
+		// The lists are the person's own, so the legal values come from the
+		// store. An unknown one is an error naming them, not an empty result —
+		// status:queued is a draft's status, and silence would hide that.
+		if t.Op != OpGlob && c.opt.TicketLists != nil {
+			lists := c.opt.TicketLists()
+			v := strings.ToLower(t.Value)
+			known := v == "rejected"
+			for _, l := range lists {
+				known = known || l == v
+			}
+			if !known {
+				return "", fmt.Errorf("status: no list %q (%s, rejected); a draft's status needs in:drafts",
+					t.Value, strings.Join(lists, ", "))
+			}
+		}
+		return c.dispatch(t, negated)
+
+	case "start":
+		start, _, err := ParseFutureDate(t.Value)
+		if err != nil {
+			return "", fmt.Errorf("start: %w", err)
+		}
+		return wrap("(t.start_at IS NOT NULL AND t.start_at < "+c.arg(start+dayMillis)+")", negated), nil
+	}
+	return c.dispatch(t, negated)
+}
+
+// ticketText is a bare word in a ticket query: the card's own words — title,
+// description, comments, checklist — or its mail's.
+func (c *compiler) ticketText(t *Term, negated bool) (string, error) {
+	own := []string{
+		c.stringPredicate("t.title", t),
+		c.stringPredicate("COALESCE(t.body, '')", t),
+		"EXISTS (SELECT 1 FROM ticket_comments tc WHERE tc.ticket_id = t.id AND " +
+			c.stringPredicate("tc.body", t) + ")",
+		"EXISTS (SELECT 1 FROM ticket_checklist_items ti WHERE ti.ticket_id = t.id AND " +
+			c.stringPredicate("ti.text", t) + ")",
+	}
+	mail, err := c.dispatch(t, false)
+	if err != nil {
+		return "", err
+	}
+	own = append(own, "EXISTS (SELECT 1 FROM ticket_sources ts JOIN messages m ON m.id = ts.message_id "+
+		"WHERE ts.ticket_id = t.id AND "+mail+")")
+	return wrap("("+strings.Join(own, " OR ")+")", negated), nil
+}
 
 // ticketColumn maps a ticket field name onto its column.
 func ticketColumn(field string) string {

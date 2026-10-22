@@ -483,3 +483,42 @@ func TestSentMailIsFiledAndLinked(t *testing.T) {
 	}
 	want(t, labelsByMessageID(t), "sent-here@x", "sent")
 }
+
+// A message that could not be stored is fetched again by the next full pass.
+// The position moves on regardless, so before this it was never asked for
+// again: v0.0.101 to v0.0.103 failed every insert on a mailbox an earlier
+// build had indexed, and that mail stayed on the server only.
+func TestMessageThatFailedToStoreIsFetchedAgain(t *testing.T) {
+	srv, acc := fakeAccount(t, imaptest.Options{Gmail: true})
+	srv.Deliver(imaptest.Message("a@x", "a", "a@example.com"), imaptest.Inbox)
+	runSync(t, acc)
+
+	// The failure, as the missing module made it: one insert refused.
+	if _, err := store.DB().Exec(`CREATE TRIGGER refuse BEFORE INSERT ON messages WHEN NEW.subject = 'b'
+		BEGIN SELECT RAISE(ABORT, 'no such module: fts5'); END`); err != nil {
+		t.Fatal(err)
+	}
+	srv.Deliver(imaptest.Message("b@x", "b", "b@example.com"), imaptest.Inbox)
+	s, err := NewSyncManager(1).Open(acc, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.QuickPass(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := labelsByMessageID(t)["b@x"]; ok {
+		t.Fatal("b was stored despite the refusal; the test is not testing anything")
+	}
+
+	if _, err := store.DB().Exec(`DROP TRIGGER refuse`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.QuickPass(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FullPass(); err != nil {
+		t.Fatal(err)
+	}
+	want(t, labelsByMessageID(t), "b@x", "inbox")
+}

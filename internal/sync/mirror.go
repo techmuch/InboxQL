@@ -394,7 +394,7 @@ func (s *Session) syncFolder(f Folder, full bool) (Report, error) {
 	}
 
 	if deletions {
-		dr, err := s.findRemoved(f)
+		dr, err := s.reconcileUIDs(f, st)
 		r.add(dr)
 		if err != nil {
 			return r, err
@@ -706,9 +706,17 @@ func (s *Session) flagScan(f Folder, st *store.MailboxState) (Report, error) {
 	return r, <-done
 }
 
-// findRemoved compares the folder's UIDs with the stored ones and forgets the
-// server copies that are gone.
-func (s *Session) findRemoved(f Folder) (Report, error) {
+// reconcileUIDs compares the folder's UIDs on the server with those stored:
+// what the server no longer has is removed here, and what it has that was
+// passed over is fetched again.
+//
+// Passed over, because the position only moves forward: a message that could
+// not be stored — v0.0.101 to v0.0.103 could store none on a mailbox an
+// earlier build had indexed — was behind it by the next pass and never asked
+// for again. Only UIDs the sync has already been through count; above
+// LastUID is new mail and below an unfinished LowUID is history, each read
+// by its own step.
+func (s *Session) reconcileUIDs(f Folder, st *store.MailboxState) (Report, error) {
 	var r Report
 	known, err := store.FolderUIDs(s.acc.ID, f.Name)
 	if err != nil || len(known) == 0 {
@@ -719,8 +727,19 @@ func (s *Session) findRemoved(f Folder) (Report, error) {
 		return r, err
 	}
 	here := make(map[uint32]bool, len(present))
+	var missed []uint32
 	for _, u := range present {
 		here[u] = true
+		if _, ok := known[u]; !ok && u <= st.LastUID && (st.BackfillDone || u >= st.LowUID) {
+			missed = append(missed, u)
+		}
+	}
+	for start := 0; start < len(missed); start += metaBatch {
+		br, err := s.fetchUIDs(f, st.UIDValidity, missed[start:min(start+metaBatch, len(missed))])
+		r.add(br)
+		if err != nil {
+			return r, err
+		}
 	}
 	var gone []uint32
 	for u := range known {

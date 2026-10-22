@@ -84,7 +84,8 @@ export interface Change {
   eventId?: string;
   calendarId: string;
   op: string;
-  payload: { summary?: string; scope?: string; status?: string };
+  /** `event` is the event as proposed — for a create or a move, the time it would take. */
+  payload: { summary?: string; scope?: string; status?: string; event?: { Start?: string; AllDay?: boolean } };
   state: string;
   origin: string;
   error?: string;

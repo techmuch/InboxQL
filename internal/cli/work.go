@@ -393,9 +393,12 @@ func workSubmit(ctx *Context, args []string, acceptTickets bool) error {
 		results = append(results, r)
 	}
 	if ctx.JSON {
-		var labelsAdded, archived, contacts, tickets, events int
+		var labelsAdded, archived, contacts, tickets, events, alreadyStored int
 		var ticketIDs, eventChangeIDs []string
 		for _, r := range results {
+			if r.AlreadyStored {
+				alreadyStored++
+			}
 			labelsAdded += r.Labels
 			archived += r.Archived
 			contacts += r.Contacts
@@ -405,7 +408,8 @@ func workSubmit(ctx *Context, args []string, acceptTickets bool) error {
 			eventChangeIDs = append(eventChangeIDs, r.EventChangeIDs...)
 		}
 		out := map[string]any{
-			"stored":             len(results) - failed,
+			"stored":             len(results) - failed - alreadyStored,
+			"alreadyStored":      alreadyStored,
 			"refused":            failed,
 			"labelsAdded":        labelsAdded,
 			"archived":           archived,
@@ -442,6 +446,9 @@ func workSubmit(ctx *Context, args []string, acceptTickets bool) error {
 }
 
 func submitSummary(r *work.Result) string {
+	if r.AlreadyStored {
+		return "already stored"
+	}
 	var parts []string
 	for el, n := range r.Stored {
 		parts = append(parts, fmt.Sprintf("%s %d", el, n))

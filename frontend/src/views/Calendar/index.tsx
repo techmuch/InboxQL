@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Eye, EyeOff, Loader2, Plus, RefreshCw, Settings2 } from 'lucide-react';
 import {
-  approveChange, createEvent, deleteEvent, listCalendars, listChanges, listOccurrences, rejectChange, syncAccount,
+  approveChange, createEvent, deleteEvent, getEvent, listCalendars, listChanges, listOccurrences, rejectChange, syncAccount,
   updateEvent, patchCalendar,
   type CalendarAccount, type CalendarInfo, type Change, type EventDetail, type EventInput, type Occurrence,
 } from './api';
@@ -297,6 +297,29 @@ export const Calendar = () => {
     return () => window.removeEventListener('keydown', onKey);
   });
 
+  // A change in the list opens its day with the event selected, its details
+  // beside it: the time it would take for a create or a move, else where the
+  // event is now. The open card is cleared first, so the selection is not
+  // dropped as "gone" against the range being left.
+  const showChange = async (c: Change) => {
+    if (!c.eventId) return;
+    let start = c.payload.event?.Start;
+    if (!start) {
+      try { start = (await getEvent(c.eventId)).event.start; } catch (e) { setError(e instanceof Error ? e.message : String(e)); return; }
+    }
+    setSelectedOcc(null);
+    setAnchor(new Date(start));
+    select(c.eventId);
+  };
+  const whenOf = (c: Change) => {
+    const s = c.payload.event?.Start;
+    if (!s) return '';
+    const d = new Date(s);
+    return c.payload.event?.AllDay
+      ? d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+      : d.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  };
+
   const days = view === 'day' ? [startOfDay(anchor)] : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i));
   const attention = changes.filter(c => c.state === 'proposed' || c.state === 'conflict' || c.state === 'failed');
 
@@ -351,11 +374,15 @@ export const Calendar = () => {
 
         {attention.length > 0 && (
           <div className="border-t border-border px-3 py-2">
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-600">Waiting for you</p>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-600">Waiting for you · {attention.length}</p>
             <ul className="space-y-2 text-xs">
               {attention.map(c => (
-                <li key={c.id}>
-                  <p className="truncate" title={c.payload.summary}>{c.payload.summary ?? c.op}</p>
+                <li key={c.id} className={c.eventId && c.eventId === selected ? '-mx-1 bg-primary/10 px-1 ring-1 ring-primary' : ''}>
+                  <button onClick={() => void showChange(c)} disabled={!c.eventId} title={c.eventId ? 'Show it on the calendar' : c.payload.summary}
+                    className="block w-full truncate text-left hover:text-primary hover:underline disabled:no-underline disabled:hover:text-inherit">
+                    {c.payload.summary ?? c.op}
+                  </button>
+                  {whenOf(c) && <p className="text-[10px] tabular-nums">{whenOf(c)}</p>}
                   <p className="text-[10px] text-muted-foreground">
                     {c.state === 'proposed' ? `proposed by ${c.origin}` : c.state === 'conflict' ? 'changed elsewhere first' : `failed: ${c.error ?? ''}`}
                   </p>

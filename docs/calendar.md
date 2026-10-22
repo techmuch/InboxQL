@@ -163,7 +163,8 @@ An AI agent driving InboxQL can read the calendar and find times, and it can
 **propose** changes — a new event, a move, a cancellation, an answer to an
 invitation. A proposal changes nothing and tells nobody: it shows on the
 calendar, striped, and under **Waiting for you**, until you **Approve** or
-**Reject** it. From a terminal, `iql calendar approve <id>` — which works only
+**Reject** it. Each one there says when it would be; click it to go to that
+day with the event open beside it. From a terminal, `iql calendar approve <id>` — which works only
 at a terminal, typed by a person.
 
 ## On the command line

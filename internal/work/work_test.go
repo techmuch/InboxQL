@@ -381,6 +381,8 @@ func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testin
 	}
 	if d := Digest(b); !strings.Contains(d, "Schema reminder (valid levels & fields):") {
 		t.Errorf("expected Digest to end with schema reminder footer")
+	} else if !strings.Contains(d, "items:list<{name*:text, brand:text, sku:text, quantity:number, price:number}>") {
+		t.Errorf("expected Digest to include nested TypeList fields for receipts.items, got:\n%s", d)
 	}
 
 	sub.AcceptTickets = true
@@ -418,6 +420,16 @@ func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testin
 		t.Errorf("expected ticket status %q with AcceptTickets=true, got %q", store.TicketTodo, tk.Status)
 	}
 
+	// Re-submitting the exact same conversation after its lease was consumed succeeds idempotently with AlreadyStored=true.
+	resAgain, err := Submit(sub, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resAgain.OK() || !resAgain.AlreadyStored {
+		t.Fatalf("expected re-submitting already-completed conversation to return OK() && AlreadyStored=true, got OK=%v AlreadyStored=%v Problems=%+v",
+			resAgain.OK(), resAgain.AlreadyStored, resAgain.Problems)
+	}
+
 	// 3. Add a follow-up thread from alice@acme.com ( after ask was labeled & tagged )
 	// and two order/shipped messages with the same order number ("114-1805601-7097067"):
 	// verify Template pre-fills topics/labels/importance from alice@acme.com's prior history
@@ -445,6 +457,9 @@ func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	if d2 := Digest(b2); !strings.Contains(d2, "Actionable Candidates Index") || !strings.Contains(d2, "[CANDIDATE: receipt]") {
+		t.Errorf("expected Digest to contain Actionable Candidates Index and [CANDIDATE: receipt] tag, got:\n%s", d2)
+	}
 	tmpls2 := Template(b2, "fast-agent")
 	for _, s := range tmpls2 {
 		switch s.Thread {
@@ -458,7 +473,8 @@ func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testin
 				t.Fatalf("unmodified Template for known sender alice2 failed: err=%v problems=%+v", err, r.Problems)
 			}
 		case "amz-ord@x":
-			s.Answers["topics"], _ = json.Marshal(Answer{Tags: []string{"receipt"}})
+			// Even for a first-time sender, Template pre-fills topics (either inferred or none),
+			// and here we also add the receipt record:
 			s.Answers["receipts"], _ = json.Marshal(map[string]Answer{
 				"amz-ord": {Records: []map[string]any{
 					{"merchant": "Amazon", "order": "114-1805601-7097067", "total": 157.94, "quote": "Order # 114-1805601-7097067 Grand Total: 157.94 USD"},
@@ -468,7 +484,6 @@ func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testin
 				t.Fatalf("amz-ord submit: err=%v problems=%+v", err, r.Problems)
 			}
 		case "amz-shp@x":
-			s.Answers["topics"], _ = json.Marshal(Answer{Tags: []string{"receipt"}})
 			s.Answers["receipts"], _ = json.Marshal(map[string]Answer{
 				"amz-shp": {Records: []map[string]any{
 					{"merchant": "Amazon", "order": "114-1805601-7097067", "total": 157.94, "quote": "Order # 114-1805601-7097067 Total 157.94 USD"},

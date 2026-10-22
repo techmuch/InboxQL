@@ -73,6 +73,7 @@ type Result struct {
 	Contacts       int            `json:"contactsClassified,omitempty"`
 	Labels         int            `json:"labelsAdded,omitempty"`
 	Archived       int            `json:"archived,omitempty"`
+	AlreadyStored  bool           `json:"alreadyStored,omitempty"`
 	Problems       []Problem      `json:"problems,omitempty"`
 }
 
@@ -96,6 +97,16 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 		return nil, err
 	}
 	if lease == nil {
+		els, byName, err := elements.Installed()
+		if err == nil && len(els) > 0 {
+			if it, err := pending(sub.Thread, els, byName); err == nil && it == nil {
+				msgs, _ := store.ThreadReading(sub.Thread)
+				if len(msgs) > 0 {
+					res.AlreadyStored = true
+					return res, nil
+				}
+			}
+		}
 		bad("", "", "no lease on conversation %q: take it with `iql work next` first (or it was already submitted)", sub.Thread)
 		return res, nil
 	}

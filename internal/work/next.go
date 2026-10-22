@@ -367,10 +367,14 @@ func Template(b *Batch, model string) []Submission {
 					v = Answer{None: "none"}
 				case elements.ShapeTags:
 					tags := hist.Topics
-					if tags == nil {
-						tags = []string{}
+					if len(tags) == 0 {
+						tags, _ = inferTopicsAndLabels(it)
 					}
-					v = Answer{Tags: tags}
+					if len(tags) > 0 {
+						v = Answer{Tags: tags}
+					} else {
+						v = Answer{None: "general"}
+					}
 				case elements.ShapeLevels:
 					lvl := ""
 					switch {
@@ -392,6 +396,9 @@ func Template(b *Batch, model string) []Submission {
 			ans[a.Element] = raw
 		}
 		lbls := hist.Labels
+		if len(lbls) == 0 {
+			_, lbls = inferTopicsAndLabels(it)
+		}
 		if lbls == nil {
 			lbls = []string{}
 		}
@@ -404,6 +411,35 @@ func Template(b *Batch, model string) []Submission {
 		})
 	}
 	return out
+}
+
+func inferTopicsAndLabels(it *Item) (topics []string, labels []string) {
+	subj := strings.ToLower(it.Subject)
+	var addr string
+	if snds := senders(it.Messages); len(snds) > 0 {
+		addr = strings.ToLower(snds[len(snds)-1])
+	}
+	switch {
+	case strings.Contains(addr, "facebookmail.com") || strings.Contains(subj, "facebook") || strings.Contains(subj, "reel"):
+		return []string{"facebook", "social"}, []string{"social", "facebook"}
+	case strings.Contains(addr, "navyfederal.org"):
+		return []string{"navy-federal", "banking"}, []string{"finance"}
+	case strings.Contains(addr, "equifax") || strings.Contains(addr, "transunion") || strings.Contains(addr, "experian") || strings.Contains(subj, "credit report") || strings.Contains(subj, "credit alert"):
+		return []string{"finance", "credit"}, []string{"finance"}
+	case strings.Contains(addr, "churchofjesuschrist.org") || strings.Contains(subj, "ward conference") || strings.Contains(subj, "sacrament") || strings.Contains(subj, "tithing"):
+		return []string{"church"}, []string{"church"}
+	case strings.Contains(addr, "phreesia") || strings.Contains(addr, "waystar") || strings.Contains(subj, "northside hospital") || strings.Contains(subj, "center pointe"):
+		return []string{"health"}, []string{"health"}
+	case strings.Contains(addr, "amazon.com") && (strings.HasPrefix(subj, "ordered") || strings.HasPrefix(subj, "shipped") || strings.HasPrefix(subj, "delivered")):
+		return []string{"amazon", "shopping"}, []string{"shopping"}
+	case strings.Contains(subj, "receipt") || strings.Contains(subj, "order #") || strings.Contains(subj, "invoice"):
+		return []string{"receipt"}, []string{"receipts"}
+	case strings.Contains(subj, "security alert") || strings.Contains(subj, "verification code") || strings.Contains(subj, "sign-in"):
+		return []string{"security"}, []string{"security"}
+	case strings.Contains(addr, "peacock") || strings.Contains(addr, "audible") || strings.Contains(addr, "vrbo") || strings.Contains(subj, "discount") || strings.Contains(subj, "sale") || strings.Contains(subj, "save "):
+		return []string{"promotions"}, []string{"promotions"}
+	}
+	return nil, nil
 }
 
 // defaultQuote picks a clean, verified substring from the newest message's
@@ -473,6 +509,22 @@ func guessSenderLevel(addr string) string {
 	return "person"
 }
 
+func formatFieldsInline(fields []elements.Field) string {
+	flds := make([]string, len(fields))
+	for i, f := range fields {
+		req := ""
+		if f.Required {
+			req = "*"
+		}
+		typ := f.Type
+		if f.Type == elements.TypeList && len(f.Of) > 0 {
+			typ = "list<{" + formatFieldsInline(f.Of) + "}>"
+		}
+		flds[i] = f.Name + req + ":" + typ
+	}
+	return strings.Join(flds, ", ")
+}
+
 func writeElementsSummary(sb *strings.Builder, elementsMap map[string]elements.Element) {
 	if len(elementsMap) == 0 {
 		return
@@ -493,18 +545,57 @@ func writeElementsSummary(sb *strings.Builder, elementsMap map[string]elements.E
 			fmt.Fprintf(sb, " levels=[%s]", strings.Join(lvls, "|"))
 		}
 		if len(el.Fields) > 0 {
-			flds := make([]string, len(el.Fields))
-			for i, f := range el.Fields {
-				req := ""
-				if f.Required {
-					req = "*"
-				}
-				flds[i] = f.Name + req + ":" + f.Type
-			}
-			fmt.Fprintf(sb, " fields={%s}", strings.Join(flds, ", "))
+			fmt.Fprintf(sb, " fields={%s}", formatFieldsInline(el.Fields))
 		}
 		sb.WriteString("\n")
 	}
+}
+
+func candidateSignals(it *Item) []string {
+	subj := strings.ToLower(it.Subject)
+	var bodyBuilder strings.Builder
+	for _, m := range it.Messages {
+		bodyBuilder.WriteString(strings.ToLower(m.Text))
+		bodyBuilder.WriteByte('\n')
+	}
+	body := bodyBuilder.String()
+
+	var signals []string
+	// Receipts signals
+	if strings.Contains(subj, "receipt") ||
+		strings.HasPrefix(subj, "ordered ") ||
+		strings.Contains(subj, "order #") ||
+		strings.Contains(body, "grand total:") ||
+		strings.Contains(body, "amount paid") ||
+		strings.Contains(body, "you paid $") ||
+		(strings.Contains(body, "total:") && strings.Contains(body, "order number:")) {
+		signals = append(signals, "receipt")
+	}
+	// Events signals
+	if strings.Contains(subj, "appointment") ||
+		strings.Contains(subj, "agenda") ||
+		strings.Contains(subj, "tailgate") ||
+		strings.Contains(subj, "invitation") ||
+		strings.Contains(body, "appointment details") ||
+		strings.Contains(body, "add to calendar") {
+		signals = append(signals, "event")
+	}
+	// Travel signals
+	if strings.Contains(subj, "reservation") ||
+		strings.Contains(subj, "itinerary") ||
+		strings.Contains(subj, "flight") ||
+		strings.Contains(body, "confirmation code") ||
+		strings.Contains(body, "check-in:") {
+		signals = append(signals, "travel")
+	}
+	// Tasks signals
+	if strings.Contains(subj, "action required") ||
+		strings.Contains(subj, "tithing declaration") ||
+		strings.Contains(subj, "deadline") ||
+		strings.Contains(body, "action required") {
+		signals = append(signals, "task")
+	}
+	return signals
 }
 
 // Digest renders a Batch as a compact, LLM-ready text digest so an agent can
@@ -526,9 +617,35 @@ func Digest(b *Batch) string {
 		fmt.Fprintf(&sb, "Existing topics: %s\n", strings.Join(b.Topics, ", "))
 	}
 
+	type candEntry struct {
+		idx     int
+		signals []string
+		subject string
+	}
+	var candidates []candEntry
+	signalsByIdx := map[int][]string{}
+	for i, it := range b.Items {
+		if sigs := candidateSignals(it); len(sigs) > 0 {
+			signalsByIdx[i] = sigs
+			candidates = append(candidates, candEntry{idx: i + 1, signals: sigs, subject: it.Subject})
+		}
+	}
+	if len(candidates) > 0 {
+		fmt.Fprintf(&sb, "\nActionable Candidates Index (%d of %d conversations):\n", len(candidates), len(b.Items))
+		for _, c := range candidates {
+			fmt.Fprintf(&sb, "  - [%d/%d] (%s) %s\n", c.idx, len(b.Items), strings.Join(c.signals, ", "), c.subject)
+		}
+	} else {
+		fmt.Fprintf(&sb, "\nActionable Candidates Index: none detected (all %d appear routine).\n", len(b.Items))
+	}
+
 	for i, it := range b.Items {
 		fmt.Fprintf(&sb, "\n============================================================\n")
-		fmt.Fprintf(&sb, "[%d/%d] Subject: %s\n", i+1, len(b.Items), it.Subject)
+		tag := ""
+		if sigs := signalsByIdx[i]; len(sigs) > 0 {
+			tag = " [CANDIDATE: " + strings.Join(sigs, ", ") + "]"
+		}
+		fmt.Fprintf(&sb, "[%d/%d]%s Subject: %s\n", i+1, len(b.Items), tag, it.Subject)
 		fmt.Fprintf(&sb, "Thread: %s\n", it.Thread)
 		fmt.Fprintf(&sb, "Lease:  %s\n", it.Lease)
 		var asks []string

@@ -91,6 +91,16 @@ END;
 // Safe to call on a database that already has one, and safe to call from a
 // build that cannot: the missing-module error is the answer, not a failure.
 func ensureFullTextIndex(db *sql.DB) error {
+	// Asked of the binary, not answered by trying. `CREATE ... IF NOT EXISTS`
+	// succeeds without the module when a build with it already made the
+	// table, and then the triggers on messages fail every insert: v0.0.101 to
+	// v0.0.103 were released without the tag and could not store new mail.
+	if !fts5Compiled(db) {
+		ftsEnabled.Store(false)
+		log.Printf("Full-text search unavailable: this binary was built without FTS5. " +
+			"Text queries will use substring matching. Rebuild with `-tags sqlite_fts5` for the index.")
+		return disableFullTextTriggers(db)
+	}
 	if _, err := db.Exec(ftsSchema); err != nil {
 		if isMissingFTS5(err) {
 			ftsEnabled.Store(false)
@@ -214,6 +224,51 @@ func RebuildFullTextIndex() error {
 		return nil
 	}
 	return rebuildFullTextIndex(db)
+}
+
+// FullTextCompiled reports whether this binary was built with FTS5, without a
+// mailbox: `iql version` says so, and the release workflow refuses a binary
+// that is not.
+func FullTextCompiled() bool {
+	mem, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		return false
+	}
+	defer mem.Close()
+	return fts5Compiled(mem)
+}
+
+func fts5Compiled(db *sql.DB) bool {
+	var used bool
+	return db.QueryRow(`SELECT sqlite_compileoption_used('ENABLE_FTS5')`).Scan(&used) == nil && used
+}
+
+// disableFullTextTriggers lets a build without FTS5 write to a mailbox a build
+// with it indexed.
+//
+// The triggers write into the index, which this binary cannot open, so every
+// insert, update and delete of a message would fail. They are dropped, and
+// recreated by the next build that can keep them. The index then misses what
+// changed meanwhile, so its document counts are emptied too: that build sees
+// an index holding nothing and rebuilds it. The counts are ordinary tables,
+// which is why this binary can write them.
+func disableFullTextTriggers(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%\_fts\_%' ESCAPE '\'`).Scan(&n); err != nil || n == 0 {
+		return err
+	}
+	for _, t := range []string{"messages", "attachment_text"} {
+		for _, op := range []string{"insert", "delete", "update"} {
+			if _, err := db.Exec(`DROP TRIGGER IF EXISTS ` + t + `_fts_` + op); err != nil {
+				return err
+			}
+		}
+		if _, err := db.Exec(`DELETE FROM ` + t + `_fts_docsize`); err != nil && !strings.Contains(err.Error(), "no such table") {
+			return err
+		}
+	}
+	log.Printf("Dropped the full-text index's triggers, which this binary cannot run; a build with FTS5 rebuilds the index.")
+	return nil
 }
 
 func isMissingFTS5(err error) bool {

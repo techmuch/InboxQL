@@ -1618,7 +1618,8 @@ always have been. `-v` remains the shorthand for `--version`.
 **The full-text index may be absent.** FTS5 is a compile-time option. Released
 binaries have it; one built without the `sqlite_fts5` tag falls back to
 substring matching — correct answers, table scans. `iql doctor` reports which,
-and `/api/query/fields` returns `fullText`. If text queries are slow, check
+`/api/query/fields` returns `fullText`, and `iql --json version` says whether
+the binary itself was built with it. If text queries are slow, check
 that before assuming the mailbox is large.
 
 **Sync is live, and you rarely need it.** The running server keeps every

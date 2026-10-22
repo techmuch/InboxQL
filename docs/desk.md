@@ -332,11 +332,16 @@ what it is narrowed to. Click it again to take it off.
   on a day of another year opens on that year. Click a day for `on:` it.
 - **Topics** are the ones an [annotator](labels.md) extracted, which add
   `topic:=`. Where nothing was extracted, a subject's first word stands in,
-  shown in *italic*; a click on one finds subjects containing that word.
+  without the punctuation around it, shown in *italic*; a click on one finds
+  subjects containing that word.
 - **Importance** and **Kind of sender** count the conversation's importance
-  and who sent the mail; a click adds `importance:low` or `sentby:system`,
-  ready to open in the Desk and archive at once.
+  and who sent the mail, best first; a click adds `importance:low` or
+  `sentby:system`, ready to open in the Desk and archive at once. Mail not
+  judged yet is a line under the bars — *Not judged yet: 751 of 905* — rather
+  than a bar that dwarfs the rest.
 
 The charts follow the mail: a move, a bulk action, Undo or new mail updates
-them. On Cards, Files or People the dashboard says it charts mail and offers
+them. Each card draws as soon as its own numbers arrive, and while it
+reloads its previous numbers stay, dimmed — Importance over All Mail can take
+a few seconds, and the others do not wait for it. On Cards, Files or People the dashboard says it charts mail and offers
 **Chart All Mail**.

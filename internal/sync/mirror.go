@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/textproto"
 	"sort"
 	"strconv"
@@ -515,7 +516,10 @@ func (s *Session) fetchUIDs(f Folder, uidValidity uint32, uids []uint32) (Report
 		for _, m := range msgs {
 			stored, err := s.store(f, uidValidity, m)
 			if err != nil {
-				log.Printf("Mailbox %s: message %d: %v", f.Name, m.Uid, err)
+				// A warning: a message that could not be stored is mail the
+				// user does not have, and at info it hid among routine lines.
+				slog.Warn(fmt.Sprintf("Mailbox %s: message %d not stored: %v", f.Name, m.Uid, err),
+					"category", "sync", "account", s.acc.ID)
 				continue
 			}
 			if stored {

@@ -28,6 +28,29 @@ const SENTBY_LABELS: Record<string, string> = {
   person: 'People', organization: 'Organisations', system: 'Systems', unknown: 'Not classified',
 };
 
+/** Levels read best first, not by size: a scale, not a leaderboard. */
+const IMPORTANCE_ORDER = ['important', 'normal', 'low', 'ignorable'];
+const SENTBY_ORDER = ['person', 'organization', 'system', 'unknown'];
+
+/** A widget's last answer, and the request it answered. */
+interface Loaded { key: string; groups: Group[]; error?: string }
+
+/** One widget's groups; a failure is an answer, cleared of numbers. */
+const fetchWidget = async (w: Widget, query: string, year?: number): Promise<Omit<Loaded, 'key'>> => {
+  const params = new URLSearchParams({ type: w });
+  if (query) params.set('q', query);
+  if (year) params.set('year', String(year));
+  try {
+    const res = await fetch(`/api/analytics?${params}`);
+    const body = await res.json().catch(() => null);
+    // Cleared with the error: old numbers beside a warning read as current.
+    if (!res.ok) return { groups: [], error: body?.error ?? `Analytics failed (${res.status}).` };
+    return { groups: Array.isArray(body) ? body : [] };
+  } catch (e) {
+    return { groups: [], error: e instanceof Error ? e.message : String(e) };
+  }
+};
+
 /**
  * The dashboard: how much mail arrived over a year, who sends it, what it is
  * about, how much matters and who — or what — it comes from.
@@ -90,41 +113,37 @@ export const Dashboard = () => {
     return () => { off(); if (pending.current) clearTimeout(pending.current); };
   }, []);
 
-  const [data, setData] = useState<Record<Widget, Group[]>>({ volume: [], senders: [], topics: [], importance: [], sentby: [] });
-  // Why the failure is rendered rather than logged: a chart that is quietly
-  // stale is worse than one that says it could not load.
-  const [error, setError] = useState<string | null>(null);
+  // Each widget loads on its own: one slow grouping (importance over All Mail
+  // takes seconds) leaves the rest drawn, and stepping the year reloads only
+  // the calendar. Until a widget answers, its previous numbers stay, dimmed,
+  // as the rail's counts do.
+  const keyFor = (w: Widget) => `${query}\n${reload}${w === 'volume' ? `\n${year}` : ''}`;
+  const [loaded, setLoaded] = useState<Partial<Record<Widget, Loaded>>>({});
+  const volumeKey = keyFor('volume');
+  const restKey = keyFor('senders');
 
   useEffect(() => {
     if (!mail) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await Promise.all(WIDGETS.map(w => {
-          const params = new URLSearchParams({ type: w });
-          if (query) params.set('q', query);
-          if (w === 'volume') params.set('year', String(year));
-          return fetch(`/api/analytics?${params}`);
-        }));
-        if (cancelled) return;
-        const failed = res.find(r => !r.ok);
-        if (failed) {
-          const body = await failed.json().catch(() => null);
-          setError(body?.error ?? `Analytics failed (${failed.status}).`);
-          // Cleared with the error: old numbers beside a warning read as current.
-          setData({ volume: [], senders: [], topics: [], importance: [], sentby: [] });
-          return;
-        }
-        const bodies = await Promise.all(res.map(r => r.json()));
-        if (cancelled) return;
-        setError(null);
-        setData(Object.fromEntries(WIDGETS.map((w, i) => [w, bodies[i] ?? []])) as Record<Widget, Group[]>);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
-      }
-    })();
+    fetchWidget('volume', query, year).then(r => { if (!cancelled) setLoaded(l => ({ ...l, volume: { key: volumeKey, ...r } })); });
     return () => { cancelled = true; };
-  }, [query, year, reload, mail]);
+  }, [volumeKey, mail]); // eslint-disable-line react-hooks/exhaustive-deps -- the key is query, year and reload
+
+  useEffect(() => {
+    if (!mail) return;
+    let cancelled = false;
+    for (const w of WIDGETS.filter(w => w !== 'volume')) {
+      fetchWidget(w, query).then(r => { if (!cancelled) setLoaded(l => ({ ...l, [w]: { key: restKey, ...r } })); });
+    }
+    return () => { cancelled = true; };
+  }, [restKey, mail]); // eslint-disable-line react-hooks/exhaustive-deps -- the key is query and reload
+
+  const data = useMemo(() => Object.fromEntries(WIDGETS.map(w => [w, loaded[w]?.groups ?? []])) as Record<Widget, Group[]>, [loaded]);
+  const stale = (w: Widget) => loaded[w]?.key !== keyFor(w);
+  // Why the failure is rendered rather than logged: a chart that is quietly
+  // stale is worse than one that says it could not load.
+  const error = WIDGETS.map(w => (!stale(w) && loaded[w]?.error) || null).find(Boolean) ?? null;
+  const dim = (w: Widget) => (stale(w) ? 'opacity-50 transition-opacity' : 'transition-opacity');
 
   const calendar = useMemo(() => data.volume.map(d => ({ day: d.label, value: d.value })), [data.volume]);
   // The applied group of a widget, named in its heading instead of "(Filtered)".
@@ -214,7 +233,7 @@ export const Dashboard = () => {
                 className="p-1 hover:bg-accent disabled:opacity-30"><ChevronRight className="w-4 h-4" /></button>
             </div>
           </div>
-          <div className="flex-1 h-64 min-h-64">
+          <div className={`flex-1 h-64 min-h-64 ${dim('volume')}`}>
             {calendar.length > 0 ? (
               <ActivityCalendar data={calendar} from={`${year}-01-01`} to={`${year}-12-31`} onDay={day => toggleTerm(`on:${day}`)} />
             ) : (
@@ -231,7 +250,7 @@ export const Dashboard = () => {
               <Mail className="w-5 h-5 text-primary" />
               <span className="font-bold text-lg truncate">Top Senders{senderOn ? ` — ${senderOn.label}` : ''}</span>
             </div>
-            <div className="flex-1 space-y-1.5">
+            <div className={`flex-1 space-y-1.5 ${dim('senders')}`}>
               {data.senders.map(d => {
                 const on = Boolean(d.term && hasTerm(terms, d.term));
                 return (
@@ -263,7 +282,7 @@ export const Dashboard = () => {
                 <i>Italic</i> ones are the first word of subjects where no topic was extracted; a click finds subjects containing it.
               </p>
             )}
-            <div className="flex-1 flex flex-wrap gap-1.5 content-start">
+            <div className={`flex-1 flex flex-wrap gap-1.5 content-start ${dim('topics')}`}>
               {data.topics.map(d => {
                 const on = Boolean(d.term && hasTerm(terms, d.term));
                 return (
@@ -280,27 +299,39 @@ export const Dashboard = () => {
           </div>
 
           <Bars title="Importance" icon={Gauge} groups={data.importance} on={importanceOn} terms={terms} onPick={toggleTerm}
+            order={IMPORTANCE_ORDER} names={{ '(not judged)': 'Not judged yet' }} stale={stale('importance')}
             empty="Nothing judged yet — the harness judges importance." />
           <Bars title="Kind of sender" icon={Users} groups={data.sentby} on={sentbyOn} terms={terms} onPick={toggleTerm}
-            names={SENTBY_LABELS} empty="No senders classified yet." />
+            order={SENTBY_ORDER} names={SENTBY_LABELS} stale={stale('sentby')} empty="No senders classified yet." />
         </div>
       </div>
     </div>
   );
 };
 
-/** A card of horizontal bars, each a group a click adds to the query. */
-const Bars = ({ title, icon: Icon, groups, on, terms, onPick, names = {}, empty }: {
+/**
+ * A card of horizontal bars, each a group a click adds to the query, in the
+ * order given. A group no term can name — importance's "not judged" — is a
+ * line under the bars rather than one of them: it is usually most of the
+ * mailbox, and as a bar it shrank every level to a sliver.
+ */
+const Bars = ({ title, icon: Icon, groups, on, terms, onPick, order = [], names = {}, stale, empty }: {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
   groups: Group[];
   on?: Group;
   terms: QueryTerm[];
   onPick: (term: string) => void;
+  order?: string[];
   names?: Record<string, string>;
+  stale?: boolean;
   empty: string;
 }) => {
-  const max = Math.max(1, ...groups.map(g => g.value));
+  const rank = (g: Group) => (order.includes(g.label) ? order.indexOf(g.label) : order.length);
+  const bars = groups.filter(g => g.term).sort((a, b) => rank(a) - rank(b));
+  const rest = groups.filter(g => !g.term);
+  const total = groups.reduce((n, g) => n + g.value, 0);
+  const max = Math.max(1, ...bars.map(g => g.value));
   const name = (g: Group) => names[g.label] ?? g.label;
   return (
     <div className={`p-6 bg-card border shadow-sm flex flex-col transition-colors min-h-48 ${on ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50'}`}
@@ -309,20 +340,24 @@ const Bars = ({ title, icon: Icon, groups, on, terms, onPick, names = {}, empty 
         <Icon className="w-5 h-5 text-primary" />
         <span className="font-bold text-lg truncate">{title}{on ? ` — ${name(on)}` : ''}</span>
       </div>
-      <div className="space-y-1.5">
-        {groups.map(g => {
+      <div className={`space-y-1.5 transition-opacity ${stale ? 'opacity-50' : ''}`}>
+        {bars.map(g => {
           const active = Boolean(g.term && hasTerm(terms, g.term));
           return (
-            <button key={g.label} disabled={!g.term} onClick={() => g.term && onPick(g.term)}
-              title={g.term ?? 'No term names this group'}
-              className={`w-full flex items-center gap-3 px-1.5 py-1 text-xs text-left disabled:cursor-default ${active ? 'bg-primary/10 ring-1 ring-primary' : g.term ? 'hover:bg-accent' : ''}`}>
-              <span className={`w-28 truncate ${g.term ? '' : 'text-muted-foreground italic'}`}>{name(g)}</span>
+            <button key={g.label} onClick={() => g.term && onPick(g.term)} title={g.term}
+              className={`w-full flex items-center gap-3 px-1.5 py-1 text-xs text-left ${active ? 'bg-primary/10 ring-1 ring-primary' : 'hover:bg-accent'}`}>
+              <span className="w-28 truncate">{name(g)}</span>
               <span className="flex-1 h-2 bg-muted"><span className="block h-full bg-primary/60" style={{ width: `${(g.value / max) * 100}%` }} /></span>
               <span className="w-12 text-right tabular-nums">{g.value.toLocaleString()}</span>
             </button>
           );
         })}
-        {groups.length === 0 && <span className="text-xs text-muted-foreground italic">{empty}</span>}
+        {rest.map(g => (
+          <p key={g.label} className="px-1.5 pt-1 text-[11px] text-muted-foreground">
+            {name(g)}: <span className="tabular-nums">{g.value.toLocaleString()}</span> of {total.toLocaleString()}
+          </p>
+        ))}
+        {bars.length === 0 && <span className="text-xs text-muted-foreground italic block">{empty}</span>}
       </div>
     </div>
   );

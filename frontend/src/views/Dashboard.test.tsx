@@ -38,7 +38,8 @@ describe('Dashboard', () => {
             { label: 'Invoices', value: 4, term: 'topic:=Invoices', kind: 'topic' },
             { label: 'lunch', value: 2, term: 'subject:lunch', kind: 'word' },
           ],
-          importance: [{ label: 'low', value: 40, term: 'importance:low' }, { label: '(not judged)', value: 5 }],
+          importance: [{ label: 'low', value: 40, term: 'importance:low' }, { label: '(not judged)', value: 5 },
+            { label: 'important', value: 2, term: 'importance:important' }],
           sentby: [{ label: 'system', value: 60, term: 'sentby:system' }],
         }[params.get('type')!];
       } else if (url.startsWith('/api/query/terms')) {
@@ -82,12 +83,14 @@ describe('Dashboard', () => {
     expect(screen.getByText('lunch').closest('button')!.className).toContain('italic');
   });
 
-  it('charts importance and kind of sender, and a group with no term is not a button to nowhere', async () => {
+  it('charts importance and kind of sender, and a group with no term is a line, not a bar', async () => {
     render(<Dashboard />);
     const imp = await screen.findByRole('region', { name: 'Importance' });
     fireEvent.click(await within(imp).findByText('low'));
     await waitFor(() => expect(useQueryStore.getState().text).toContain('importance:low'));
-    expect((within(imp).getByText('(not judged)').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    // Best first, whatever the counts; the unjudged under the bars.
+    expect(within(imp).getAllByRole('button').map(b => b.textContent)).toEqual(['important2', 'low40']);
+    expect(within(imp).getByText(/Not judged yet/).textContent).toBe('Not judged yet: 5 of 47');
     const kind = screen.getByRole('region', { name: 'Kind of sender' });
     fireEvent.click(within(kind).getByText('Systems'));
     await waitFor(() => expect(useQueryStore.getState().text).toContain('sentby:system'));
@@ -99,6 +102,28 @@ describe('Dashboard', () => {
     await waitFor(() => expect(calls.some(c => c.includes('type=volume') && c.includes('year=2024'))).toBe(true));
     fireEvent.click(screen.getByLabelText('Previous year'));
     await waitFor(() => expect(calls.some(c => c.includes('year=2023'))).toBe(true));
+  });
+
+  it('draws each card as it answers, and a year step reloads only the calendar', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>(r => { release = r; });
+    const spy = vi.mocked(window.fetch);
+    const answer = spy.getMockImplementation()!;
+    spy.mockImplementation(async (input, init) => {
+      if (String(input).includes('type=importance')) await gate;
+      return answer(input, init);
+    });
+    render(<Dashboard />);
+    // Senders drawn while importance is still on its way.
+    expect(await screen.findByText('alice@acme.com')).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: 'Importance' })).queryByText('low')).toBeNull();
+    release();
+    await within(screen.getByRole('region', { name: 'Importance' })).findByText('low');
+
+    const before = calls.length;
+    fireEvent.click(screen.getByLabelText('Previous year'));
+    await waitFor(() => expect(calls.length).toBe(before + 1));
+    expect(calls[calls.length - 1]).toContain('type=volume');
   });
 
   it('refreshes when mail changes', async () => {

@@ -829,14 +829,17 @@ func groupKey(field string, opt Options) (group, error) {
 		// the annotator worth doing incrementally: every message it reaches
 		// gets a real topic, and the rest keep the placeholder answer instead
 		// of vanishing from the chart.
-		expr := "COALESCE(mt.topic, LOWER(SUBSTR(m.subject, 1, INSTR(m.subject || ' ', ' ') - 1)))"
+		// The word is trimmed of the punctuation around it — `Don,`,
+		// `Ordered:`, `[owner/repo]` — so it reads as a word and its click,
+		// `subject:word`, finds what it counted.
+		expr := "COALESCE(mt.topic, LOWER(TRIM(SUBSTR(m.subject, 1, INSTR(m.subject || ' ', ' ') - 1), '[](){}<>:;,.!?\"''')))"
 		g := group{
 			expr: expr,
 			join: "LEFT JOIN message_topics mt ON mt.message_id = m.id",
 			// Parenthesised: the ignore filter is appended with AND, which
 			// binds tighter than OR — without these the exclusion applied to
 			// only half the condition and `fwd:` came straight back.
-			having: "(m.subject != '' OR mt.topic IS NOT NULL)",
+			having: "(m.subject != '' OR mt.topic IS NOT NULL) AND " + expr + " != ''",
 		}
 
 		// The ignore list belongs to the language, not to one consumer of it.

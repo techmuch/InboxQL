@@ -31,7 +31,7 @@ import (
 // Version is the release version, overridable at build time with
 //
 //	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.103"
+var Version = "0.0.104"
 
 func init() {
 	register(&Command{
@@ -91,11 +91,12 @@ func runVersion(ctx *Context, args []string) error {
 	}
 
 	if ctx.JSON {
-		return ctx.EmitJSON(map[string]string{
+		return ctx.EmitJSON(map[string]any{
 			"version":  Version,
 			"revision": revision,
 			"go":       runtime.Version(),
 			"platform": runtime.GOOS + "/" + runtime.GOARCH,
+			"fullText": store.FullTextCompiled(),
 		})
 	}
 

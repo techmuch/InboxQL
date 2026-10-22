@@ -32,6 +32,7 @@ func TestAnalyticsGroupsCarryTheirTerm(t *testing.T) {
 	save("m1", "alice@acme.com", "Invoice for May", now)
 	save("m2", "notalice@acme.com", "Invoice again", now)
 	save("m3", "alice@acme.com", "Lunch plans", now.AddDate(-1, 0, 0))
+	save("m4", "ci@acme.com", "[acme/web] Build failed", now)
 	if err := store.SetMessageTopics("m3", []string{"Food"}, "test", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -69,13 +70,21 @@ func TestAnalyticsGroupsCarryTheirTerm(t *testing.T) {
 	if g := kinds["invoice"]; g.Kind != "word" || g.Term != "subject:invoice" {
 		t.Errorf("a first word = %+v, want kind word and subject:invoice", g)
 	}
+	// A first word is trimmed of its punctuation, and its click finds it.
+	g, ok := kinds["acme/web"]
+	if !ok {
+		t.Fatalf("topics = %+v, want the bracketed first word as acme/web", kinds)
+	}
+	if n, err := store.CountQuery("folder:inbox " + g.Term); err != nil || n != int64(g.Value) {
+		t.Errorf("%s matched %d (%v), want the %v the bar counted", g.Term, n, err, g.Value)
+	}
 
 	total := 0.0
 	for _, g := range get("type=volume&year=2026&q=" + q) {
 		total += g.Value
 	}
-	if total != 2 {
-		t.Errorf("2026 volume = %v, want the two messages of 2026 only", total)
+	if total != 3 {
+		t.Errorf("2026 volume = %v, want the three messages of 2026 only", total)
 	}
 	rr := httptest.NewRecorder()
 	handleAnalytics(rr, httptest.NewRequest(http.MethodGet, "/api/analytics?type=volume&year=26", nil))

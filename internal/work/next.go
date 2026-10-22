@@ -1044,4 +1044,3 @@ func compactDigestText(s string) string {
 	}
 	return out
 }
-

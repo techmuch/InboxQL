@@ -576,4 +576,3 @@ func TestMergeBaseSubmissions(t *testing.T) {
 		t.Errorf("expected untouched conversation t2 to remain intact, got %+v", merged[1])
 	}
 }
-

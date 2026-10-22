@@ -16,7 +16,7 @@ frontend:
 	mkdir -p internal/embed/static
 	cp -r frontend/dist/* internal/embed/static/
 
-VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.107")
+VERSION ?= $(shell node -p "require('./frontend/package.json').version" 2>/dev/null || echo "0.0.108")
 LDFLAGS := -X github.com/user/inboxql/internal/cli.Version=$(VERSION)
 
 # FTS5 is a compile-time option in mattn/go-sqlite3, not a runtime one. Without
@@ -33,7 +33,10 @@ backend:
 install: build
 	@echo "Installing iql binary to $(BINDIR)..."
 	mkdir -p $(BINDIR)
-	install -m 755 bin/iql $(BINDIR)/iql
+	# Beside it, then renamed over it: macOS kills every launch of a signed
+	# binary rewritten in place (exit 137), as `iql update` already avoids.
+	install -m 755 bin/iql $(BINDIR)/iql.new
+	mv -f $(BINDIR)/iql.new $(BINDIR)/iql
 
 uninstall:
 	@echo "Removing iql binary from $(BINDIR)..."

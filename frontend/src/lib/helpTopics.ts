@@ -30,6 +30,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   { id: 'query-bar', where: 'Desk, the query bar', doc: 'query-language', label: 'The query language' },
   { id: 'load-images', where: 'Message viewer, the Load images bar', doc: 'desk', anchor: 'links-and-images', label: 'Links and images' },
   { id: 'message-labels', where: 'Message viewer, labels from annotators', doc: 'labels', anchor: 'reading-the-answers', label: 'Reading the answers' },
+  { id: 'work-loop', where: 'Work loop', doc: 'reading', anchor: 'measuring-the-loop', label: 'Measuring the loop' },
   { id: 'approvals', where: 'Waiting for approval', doc: 'desk', anchor: 'waiting-for-approval', label: 'Waiting for approval' },
   { id: 'contact-card', where: 'Contact card', doc: 'contacts', anchor: 'what-a-contact-card-shows', label: 'What a contact card shows' },
   { id: 'file-tab', where: 'File viewer', doc: 'files', anchor: 'the-file-tab', label: 'The File tab' },

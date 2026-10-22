@@ -37,6 +37,7 @@ import { ReminderToasts } from './views/ReminderToasts';
 import { CALENDAR_TAB, newCalendarEvent } from './lib/calendarNav';
 import { AppDialogs } from './views/AppDialogs';
 import { Approvals } from './views/Approvals';
+import { WorkLoop } from './views/WorkLoop';
 import { openCompose, openKeys, openNewTask, openPalette } from './lib/appUi';
 import { installKeySequences } from './lib/keySequences';
 import { openDoc, DOCS_TAB } from './lib/docsNav';
@@ -726,6 +727,7 @@ componentRegistry.register('windows', Windows);
 componentRegistry.register('board', Board);
 componentRegistry.register('annotators', Annotators);
 componentRegistry.register('approvals', Approvals);
+componentRegistry.register('work-loop', WorkLoop);
 
 /** File → Import calendar: pick an .ics file and add it to your own calendar. */
 function importCalendarFile() {
@@ -907,6 +909,7 @@ function App() {
 
     // Intelligence.
     cmd('iql.open-approvals', 'Waiting for approval', () => openToolCb('approvals', 'Waiting for approval'));
+    cmd('iql.open-work-loop', 'Work loop', () => openToolCb('work-loop', 'Work loop'));
     cmd('iql.open-annotators', 'Labels & extractors', () => openToolCb('annotators', 'Labels & extractors'), 'Control+Shift+L');
     cmd('iql.ai-assistants', 'AI assistants', () => openSetting('ai-assistants'));
     cmd('iql.open-agents', 'AI Agents (Preview)', () => openToolCb('agents', 'AI Agents'), 'Control+Shift+A');
@@ -959,6 +962,7 @@ function App() {
       ],
       'Intelligence': [
         item('iql.open-approvals', 'Waiting for approval', 'G A'),
+        item('iql.open-work-loop', 'Work loop'),
         item('iql.open-annotators', 'Labels & extractors'),
         item('iql.ai-assistants', 'AI assistants'),
         item('iql.open-agents', 'AI Agents (Preview)'),

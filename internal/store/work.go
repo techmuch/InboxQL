@@ -249,21 +249,30 @@ type WorkLease struct {
 	// Asked is the work package's own record of what was asked, as JSON.
 	Asked   string
 	Expires time.Time
+	// CreatedAt is when it was taken; BatchID the batch it was handed out in.
+	CreatedAt time.Time
+	BatchID   string
+	// Prefill is what the template pre-filled for it, as JSON answers by
+	// element, when a template was written.
+	Prefill string
 }
 
 // LeaseFor returns the lease on a conversation, or nil.
 func LeaseFor(threadKey string) (*WorkLease, error) {
 	var l WorkLease
-	var exp int64
-	err := db.QueryRow(`SELECT thread_key, token, asked, expires_at FROM work_leases WHERE thread_key = ?`,
-		threadKey).Scan(&l.ThreadKey, &l.Token, &l.Asked, &exp)
+	var exp, at int64
+	var batch, prefill sql.NullString
+	err := db.QueryRow(`SELECT thread_key, token, asked, expires_at, created_at, batch_id, prefill
+		FROM work_leases WHERE thread_key = ?`,
+		threadKey).Scan(&l.ThreadKey, &l.Token, &l.Asked, &exp, &at, &batch, &prefill)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	l.Expires = time.UnixMilli(exp)
+	l.Expires, l.CreatedAt = time.UnixMilli(exp), time.UnixMilli(at)
+	l.BatchID, l.Prefill = batch.String, prefill.String
 	return &l, nil
 }
 
@@ -271,7 +280,7 @@ func LeaseFor(threadKey string) (*WorkLease, error) {
 // expired lease. It fails if another unexpired lease holds it.
 func TakeLease(threadKey, asked string, d time.Duration) (*WorkLease, error) {
 	now := time.Now()
-	l := &WorkLease{ThreadKey: threadKey, Token: uuid.New().String(), Asked: asked, Expires: now.Add(d)}
+	l := &WorkLease{ThreadKey: threadKey, Token: uuid.New().String(), Asked: asked, Expires: now.Add(d), CreatedAt: now}
 	res, err := db.Exec(`
 		INSERT INTO work_leases (thread_key, token, asked, expires_at, created_at)
 		VALUES (?, ?, ?, ?, ?)
@@ -470,12 +479,18 @@ func SenderDefaults(address string) (SenderHistory, error) {
 	}
 	const recentFromSender = `(SELECT message_id FROM message_participants WHERE address = ? AND role = 'from' LIMIT 50)`
 
+	// Only what somebody concluded teaches the next template: a person, or a
+	// model that changed the guess. Learning from guesses that went back
+	// untouched made one wrong guess every later default for that sender.
+	const consideredTopic = `(mt.source != 'agent' OR EXISTS (SELECT 1 FROM annotations a
+		JOIN annotators an ON an.id = a.annotator_id AND an.name = 'topics'
+		WHERE a.message_id = mt.message_id AND a.source = 'agent' AND a.prefilled = 0))`
 	tRows, err := db.Query(`
-		SELECT topic FROM message_topics
-		WHERE message_id IN `+recentFromSender+`
-		GROUP BY topic
-		HAVING COUNT(*) >= 2 OR (SELECT COUNT(DISTINCT message_id) FROM message_topics WHERE message_id IN `+recentFromSender+`) = 1
-		ORDER BY COUNT(*) DESC, topic ASC LIMIT 3`, addr, addr)
+		SELECT mt.topic FROM message_topics mt
+		WHERE mt.message_id IN `+recentFromSender+` AND `+consideredTopic+`
+		GROUP BY mt.topic
+		HAVING COUNT(*) >= 2 OR (SELECT COUNT(DISTINCT mt.message_id) FROM message_topics mt WHERE mt.message_id IN `+recentFromSender+` AND `+consideredTopic+`) = 1
+		ORDER BY COUNT(*) DESC, mt.topic ASC LIMIT 3`, addr, addr)
 	if err == nil {
 		for tRows.Next() {
 			var t string
@@ -486,13 +501,17 @@ func SenderDefaults(address string) (SenderHistory, error) {
 		tRows.Close()
 	}
 
+	// A label an agent added counts only when a model chose it — recorded
+	// as a work action — and nobody took it off since.
+	const consideredLabel = `ml.label NOT IN ('inbox', 'sent', 'drafts', 'important', 'spam', 'trash', 'starred', 'unread')
+		AND (ml.source != 'agent' OR EXISTS (SELECT 1 FROM work_actions w WHERE w.message_id = ml.message_id
+		     AND w.kind = 'label' AND w.ref = ml.label AND w.undone_at IS NULL))`
 	lRows, err := db.Query(`
-		SELECT label FROM message_labels
-		WHERE message_id IN `+recentFromSender+`
-		  AND label NOT IN ('inbox', 'sent', 'drafts', 'important', 'spam', 'trash', 'starred', 'unread')
-		GROUP BY label
-		HAVING COUNT(*) >= 2 OR (SELECT COUNT(DISTINCT message_id) FROM message_labels WHERE message_id IN `+recentFromSender+` AND label NOT IN ('inbox', 'sent', 'drafts', 'important', 'spam', 'trash', 'starred', 'unread')) = 1
-		ORDER BY COUNT(*) DESC, label ASC LIMIT 3`, addr, addr)
+		SELECT ml.label FROM message_labels ml
+		WHERE ml.message_id IN `+recentFromSender+` AND `+consideredLabel+`
+		GROUP BY ml.label
+		HAVING COUNT(*) >= 2 OR (SELECT COUNT(DISTINCT ml.message_id) FROM message_labels ml WHERE ml.message_id IN `+recentFromSender+` AND `+consideredLabel+`) = 1
+		ORDER BY COUNT(*) DESC, ml.label ASC LIMIT 3`, addr, addr)
 	if err == nil {
 		for lRows.Next() {
 			var l string
@@ -510,7 +529,7 @@ func SenderDefaults(address string) (SenderHistory, error) {
 		FROM annotations a
 		JOIN annotators an ON an.id = a.annotator_id AND an.name = 'importance'
 		WHERE a.message_id IN `+recentFromSender+`
-		  AND a.status = ?
+		  AND a.status = ? AND a.prefilled = 0
 		  AND COALESCE(json_extract(a.data_json, '$.level'), '') != ''
 		GROUP BY 1 ORDER BY COUNT(*) DESC LIMIT 1`, addr, StatusOK).Scan(&imp, &impCount); err == nil && impCount >= 2 {
 		h.Importance = imp

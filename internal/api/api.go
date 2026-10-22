@@ -92,6 +92,10 @@ func Router() (http.Handler, error) {
 	registerBoardRoutes(boardMux)
 	mux.Handle("/api/board/", auth.Middleware(boardMux))
 
+	workMux := http.NewServeMux()
+	registerWorkRoutes(workMux)
+	mux.Handle("/api/work/", auth.Middleware(workMux))
+
 	calendarMux := http.NewServeMux()
 	registerCalendarRoutes(calendarMux)
 	mux.Handle("/api/calendar/", auth.Middleware(calendarMux))

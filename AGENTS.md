@@ -478,14 +478,20 @@ iql elements tune <name> --add-hint "<custom rule>"                 # optional u
 iql work next --limit 10 --template /tmp/answers.json --model <id>  # 1: lease + digest + scaffold
 iql --json work submit /tmp/answers.json                            # 2a: submit edited template
 iql --json work submit /tmp/overrides.json --base /tmp/answers.json # 2b: or merge sparse overrides
+iql work audit next --limit 6 --template /tmp/check.json --model <other id>  # when "Checks due"
+iql --json work audit submit /tmp/check.json
 ```
 
 1. `work next --template <file>` leases the conversations, prints a compact
    digest of all messages (with an `Actionable Candidates Index` at the top,
    element schemas, message IDs, sender addresses, and clean text) to stdout
    (and `<file>.digest.txt`), and writes a pre-scaffolded JSON array to `<file>`
-   with all thread keys, leases, sender guesses, verified default quotes,
-   inferred topics/labels, and default `"none"` answers already filled in.
+   with all thread keys and leases, and a guess for each element it is safe to
+   guess. **What it does not guess is `null` and must be answered** (the digest
+   lists it under "Left for you"): elements whose checked accuracy misses its
+   target, and ones the conversation looks like it holds. **Labels are never
+   pre-filled** — the digest shows "Suggested labels"; add them only if right.
+   A guess sent back unchanged is stored as a guess, not your conclusion.
 2. Either edit `<file>` in place, or write a small sparse overrides JSON file
    containing only the conversations and elements that need changes and submit
    with `work submit <overrides.json> --base <file>` (pass `--accept-tickets` or
@@ -1236,6 +1242,14 @@ iql --json work next --limit 10 [--only receipts,travel] [--query "from:homedepo
 iql --json work submit /tmp/answers.json     one object, an array, or one per line
 iql --json work submit /tmp/overrides.json --base /tmp/answers.json
 iql --json work status                       answered, by element and model
+iql --json work metrics [--since 30d] [--model <id>]   efficiency and accuracy
+iql work next --deep --template /tmp/deep.json --model <id>  re-read flagged and guessed
+iql work audit next --limit 6 --template /tmp/check.json --model <id>   blind checks
+iql --json work audit submit /tmp/check.json [--base f]
+iql --json work audit list [--all]           disagreements waiting for a person
+iql work audit resolve <id> original|checker|neither    a person settles one
+iql work flag <thread> [--reason "..."] | iql work unflag <thread>
+iql --json work targets [set <element> --target 0.95 --cost high|medium|low]
 iql --json work clear --model <id> [--since 1d] [--only a,b]
 ```
 
@@ -1264,7 +1278,13 @@ digest (with an `Actionable Candidates Index` at the top and smart head +
 salient lines + tail windowing) to stdout and `<file>.digest.txt`.
 
 **`work submit`** takes, per conversation, `{"thread", "lease", "model",
-"labels", "archive", "acceptTickets", "answers"}`. Passing `--base <template>`
+"labels", "archive", "acceptTickets", "answers", "usage"}` — `usage`
+(`inputTokens`, `outputTokens`, `costUsd`, `seconds`) is optional and counts
+for the whole batch; `--input-tokens`, `--output-tokens`, `--cost-usd` and
+`--seconds` do the same from the command line. A `null` answer is refused as
+not answered, and a message or sender element must answer every message or
+sender it was asked about — a partial map is refused, never completed with
+`none`. Passing `--base <template>`
 lets you submit a sparse overrides file containing only the conversations,
 elements, or message IDs you want to change, inheriting everything else from
 the template. Optional `labels` adds mail labels (with `origin=agent`) and
@@ -1278,6 +1298,17 @@ conversation** (baseline levels `no-one`, `low`, `ignorable`, `normal`
 auto-fill a verified default quote if omitted); one that is not in the
 conversation refuses that conversation's whole submission, with the problems
 listed — fix and resend. Answers for elements not asked are refused.
+
+**Checks (`work audit`).** `audit next` leases conversations already
+answered, half at random (these measure accuracy) and half where a wrong answer
+is likeliest; the template guesses nothing and the first answers are not shown.
+Read from scratch, preferably as a different model, and `audit submit` in the
+`work submit` shape. Agreement stands; a disagreement flags the conversation
+for `work next --deep` and waits for a person in Intelligence → Work loop.
+**Do not run `audit resolve` yourself** unless the user tells you which answer
+is right — it records their verdict. Each element has a target and cost
+(`work targets`); an element missing its target is no longer guessed by the
+template, and `work next` says how many checks are due.
 
 Records use the declared fields and types: numbers as numbers, dates
 `2026-10-24`, times `2026-10-24T14:30` local as written. Name a brand only

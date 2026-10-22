@@ -24,9 +24,24 @@ the pre-scaffolded template):
 --template <file> prints a compact digest of all leased conversations to
 stdout (with an Actionable Candidates Index at the top, element schemas,
 message IDs, sender addresses, and clean text) and writes a pre-scaffolded
-JSON array to <file> with all thread keys, leases, message IDs, sender
-guesses, learned sender defaults, and verified quotes already filled in.
-Edit <file> directly—or pass only your overrides with --base <file>—and submit.
+JSON array to <file> with all thread keys, leases, message IDs, and a guess
+for each element it is safe to guess. Edit <file> directly—or pass only your
+overrides with --base <file>—and submit.
+
+What the template does not guess is null, and the digest lists it under "Left
+for you": a null answer is refused, so read and answer it. It leaves blank an
+element whose checked answers miss their target, and one the conversation
+looks like it holds (a receipt-looking subject never gets receipts: none). It
+never fills in labels; the digest shows "Suggested labels" — add them to
+"labels" only if they are right, because labels are written to the mail server.
+
+A guess you send back unchanged is stored as a guess, not as your conclusion:
+it is measured separately and read again by a deeper run. Change what is
+wrong; leave what is right.
+
+Say what reading cost, if you know, so efficiency can be measured:
+
+    iql --json work submit answers.json --input-tokens 52000 --output-tokens 6000 --cost-usd 0.21
 
 Repeat until work next returns no items. Narrow with --only receipts,travel or
 --query "from:homedepot"; iql elements shows each element in full, and
@@ -48,6 +63,23 @@ work next returns:
                      it is about
 
 Each conversation is leased to you for 30 minutes.
+
+## Deep reads and checks
+
+    iql work next --deep --template /tmp/deep.json --model <id>
+
+reads properly what was only guessed: conversations a check or a person
+flagged first, then answers that went back as untouched guesses. Nothing is
+pre-filled. Answer every element from the full text.
+
+    iql work audit next --limit 6 --template /tmp/check.json --model <id>
+    iql --json work audit submit /tmp/check.json
+
+checks answers already given. Use a different or stronger model than the one
+that read them if you can. You are not shown the first answers: read each
+conversation from scratch and answer what is asked, in the same shape as work
+submit. Where you disagree, the conversation is flagged and a person decides
+which was right. When work next says "Checks due", run a few.
 
 ## The answer
 

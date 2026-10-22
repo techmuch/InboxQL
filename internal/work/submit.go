@@ -35,6 +35,9 @@ type Submission struct {
 	// entry is an Answer; a message element's maps message id to Answer; a
 	// sender element's maps address to Answer.
 	Answers map[string]json.RawMessage `json:"answers"`
+	// Usage is what reading cost, when the harness knows: on any one
+	// submission of a batch for the whole batch, or split across them.
+	Usage *store.WorkUsage `json:"usage,omitempty"`
 }
 
 // Answer is what was concluded about one thing.
@@ -62,10 +65,18 @@ type Problem struct {
 	Problem string `json:"problem"`
 }
 
+func (p Problem) String() string {
+	if p.Element != "" {
+		return p.Element + ": " + p.Problem
+	}
+	return p.Problem
+}
+
 // Result says what a submission did.
 type Result struct {
 	Thread         string         `json:"thread"`
 	Stored         map[string]int `json:"stored,omitempty"`
+	Prefilled      int            `json:"prefilledUnchanged,omitempty"`
 	Tickets        int            `json:"ticketsProposed,omitempty"`
 	TicketIDs      []string       `json:"ticketIds,omitempty"`
 	Events         int            `json:"eventsProposed,omitempty"`
@@ -79,6 +90,185 @@ type Result struct {
 
 // OK reports whether the submission was stored.
 func (r *Result) OK() bool { return len(r.Problems) == 0 }
+
+// planned is one element's checked answers, ready to store.
+type planned struct {
+	ask     Ask
+	el      elements.Element
+	ann     *store.Annotator
+	answers map[string]Answer // target → answer
+	// guessed marks the targets whose answer went back exactly as the
+	// template pre-filled it.
+	guessed map[string]bool
+}
+
+// reading is a conversation as checking needs it.
+type reading struct {
+	msgs   []*store.ReadingMessage
+	corpus string
+	fromOf map[string]string // sender → their newest message
+}
+
+func readConversation(thread string) (*reading, error) {
+	msgs, err := store.ThreadReading(thread)
+	if err != nil {
+		return nil, err
+	}
+	r := &reading{msgs: msgs, corpus: corpusOf(msgs), fromOf: map[string]string{}}
+	for _, m := range msgs {
+		if a, _ := store.NormaliseAddress(m.From); a != "" {
+			r.fromOf[a] = m.ID
+		}
+	}
+	return r, nil
+}
+
+// checkAnswers checks a submission's answers against what was asked, without
+// storing anything. extraSenders lets a reader classify a sender it was not
+// asked about; a checker may not, since there is nothing to compare.
+func checkAnswers(sub Submission, asked []Ask, conv *reading, prefill map[string]json.RawMessage,
+	extraSenders bool) ([]planned, []Problem, error) {
+	var problems []Problem
+	bad := func(el, target, f string, a ...any) {
+		problems = append(problems, Problem{Element: el, Target: target, Problem: fmt.Sprintf(f, a...)})
+	}
+	_, byName, err := elements.Installed()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var plan []planned
+	askedNames := map[string]bool{}
+	for _, ask := range asked {
+		askedNames[ask.Element] = true
+		a := byName[ask.Element]
+		if a == nil {
+			bad(ask.Element, "", "this element was switched off or removed since it was asked")
+			continue
+		}
+		el, _ := elements.FromAnnotator(a)
+		if a.Version != ask.Version {
+			bad(ask.Element, "", "its instructions changed since this conversation was taken (version %d, now %d): take it again", ask.Version, a.Version)
+			continue
+		}
+		raw, ok := sub.Answers[ask.Element]
+		if !ok || isNull(raw) {
+			bad(ask.Element, "", "not answered: answer it, or give none or skip with a reason")
+			continue
+		}
+		answers := map[string]Answer{}
+		targets := ask.Messages
+		if el.Unit == elements.UnitSender {
+			targets = ask.Senders
+		}
+		guessed := map[string]bool{}
+		if el.Unit == elements.UnitThread {
+			var ans Answer
+			if err := strictDecode(raw, &ans); err != nil {
+				bad(ask.Element, "", "not an answer: %v", err)
+				continue
+			}
+			answers[targets[0]] = ans
+			if p, ok := prefill[ask.Element]; ok && !isNull(p) {
+				var pa Answer
+				if json.Unmarshal(p, &pa) == nil && sameAnswer(pa, ans) {
+					guessed[targets[0]] = true
+				}
+			}
+		} else {
+			var m map[string]*Answer
+			if err := strictDecode(raw, &m); err != nil {
+				bad(ask.Element, "", "should map each %s to an answer: %v", targetNoun(el.Unit), err)
+				continue
+			}
+			var pm map[string]Answer
+			if p, ok := prefill[ask.Element]; ok && !isNull(p) {
+				_ = json.Unmarshal(p, &pm)
+			}
+			for k, v := range m {
+				if el.Unit == elements.UnitSender {
+					k = strings.ToLower(strings.TrimSpace(k))
+				}
+				if v == nil {
+					continue // left null: reported below as not answered
+				}
+				answers[k] = *v
+				if pa, ok := pm[k]; ok && sameAnswer(pa, *v) {
+					guessed[k] = true
+				}
+			}
+			for k := range answers {
+				if !has(targets, k) && !(extraSenders && el.Unit == elements.UnitSender && conv.fromOf[k] != "") {
+					bad(ask.Element, k, "this %s was not asked about", targetNoun(el.Unit))
+				}
+			}
+			// Every target needs its own answer. Filling the missing ones in
+			// with "none" lost whatever was there: a model that answered one
+			// of three receipts lost the other two for good.
+			for _, t := range targets {
+				if _, ok := answers[t]; !ok {
+					bad(ask.Element, t, "not answered")
+				}
+			}
+		}
+		for t, ans := range answers {
+			if el.Shape == elements.ShapeLevels && el.Unit != elements.UnitSender &&
+				strings.TrimSpace(ans.Quote) == "" && isBaselineLevel(ans.Level) {
+				ans.Quote = defaultQuote(conv.msgs)
+				answers[t] = ans
+			}
+			for _, p := range check(el, ans, conv.corpus) {
+				bad(ask.Element, t, "%s", p)
+			}
+		}
+		plan = append(plan, planned{ask: ask, el: el, ann: a, answers: answers, guessed: guessed})
+	}
+	for name, raw := range sub.Answers {
+		if askedNames[name] {
+			continue
+		}
+		if isNull(raw) {
+			continue
+		}
+		if extraSenders && name == "sender" && byName["sender"] != nil {
+			a := byName["sender"]
+			el, _ := elements.FromAnnotator(a)
+			var m map[string]Answer
+			if err := strictDecode(raw, &m); err != nil {
+				bad(name, "", "should map each %s to an answer: %v", targetNoun(el.Unit), err)
+				continue
+			}
+			answers := map[string]Answer{}
+			for k, v := range m {
+				k = strings.ToLower(strings.TrimSpace(k))
+				answers[k] = v
+				if conv.fromOf[k] == "" {
+					bad(name, k, "this %s was not asked about", targetNoun(el.Unit))
+				}
+			}
+			for t, ans := range answers {
+				for _, p := range check(el, ans, conv.corpus) {
+					bad(name, t, "%s", p)
+				}
+			}
+			plan = append(plan, planned{ask: Ask{Element: name, Version: a.Version}, el: el, ann: a, answers: answers})
+			continue
+		}
+		bad(name, "", "not asked about this conversation; answers are taken only for what was asked")
+	}
+	return plan, problems, nil
+}
+
+func isNull(raw json.RawMessage) bool {
+	return len(raw) == 0 || strings.TrimSpace(string(raw)) == "null"
+}
+
+// sameAnswer reports whether an answer is the pre-filled guess, untouched.
+func sameAnswer(a, b Answer) bool {
+	x, _ := json.Marshal(a)
+	y, _ := json.Marshal(b)
+	return string(x) == string(y)
+}
 
 // Submit checks a conversation's answers and, if every one is sound, stores
 // them all. One problem stores nothing: half a conversation's answers would
@@ -99,7 +289,7 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 	if lease == nil {
 		els, byName, err := elements.Installed()
 		if err == nil && len(els) > 0 {
-			if it, err := pending(sub.Thread, els, byName); err == nil && it == nil {
+			if it, err := pending(sub.Thread, els, byName, modeRead); err == nil && it == nil {
 				msgs, _ := store.ThreadReading(sub.Thread)
 				if len(msgs) > 0 {
 					res.AlreadyStored = true
@@ -108,145 +298,34 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 			}
 		}
 		bad("", "", "no lease on conversation %q: take it with `iql work next` first (or it was already submitted)", sub.Thread)
-		return res, nil
+		return res, recordSubmission(sub, nil, res, store.WorkKindRead)
 	}
 	if lease.Token != sub.Lease {
 		bad("", "", "the lease does not match: another run took this conversation; take it again with `iql work next`")
-		return res, nil
+		return res, recordSubmission(sub, lease, res, store.WorkKindRead)
 	}
 	var asked []Ask
 	if err := json.Unmarshal([]byte(lease.Asked), &asked); err != nil {
 		return nil, err
 	}
-
-	msgs, err := store.ThreadReading(sub.Thread)
-	if err != nil {
-		return nil, err
+	var prefill map[string]json.RawMessage
+	if lease.Prefill != "" {
+		_ = json.Unmarshal([]byte(lease.Prefill), &prefill)
 	}
-	corpus := corpusOf(msgs)
-	fromOf := map[string]string{} // sender → their newest message
-	for _, m := range msgs {
-		if a, _ := store.NormaliseAddress(m.From); a != "" {
-			fromOf[a] = m.ID
-		}
-	}
-
-	_, byName, err := elements.Installed()
+	kind, err := store.BatchKind(lease.BatchID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check everything first.
-	type planned struct {
-		ask     Ask
-		el      elements.Element
-		ann     *store.Annotator
-		answers map[string]Answer // target → answer
+	conv, err := readConversation(sub.Thread)
+	if err != nil {
+		return nil, err
 	}
-	var plan []planned
-	askedNames := map[string]bool{}
-	for _, ask := range asked {
-		askedNames[ask.Element] = true
-		a := byName[ask.Element]
-		if a == nil {
-			bad(ask.Element, "", "this element was switched off or removed since it was asked")
-			continue
-		}
-		el, _ := elements.FromAnnotator(a)
-		if a.Version != ask.Version {
-			bad(ask.Element, "", "its instructions changed since this conversation was taken (version %d, now %d): take it again", ask.Version, a.Version)
-			continue
-		}
-		raw, ok := sub.Answers[ask.Element]
-		if !ok {
-			bad(ask.Element, "", "not answered: answer it, or give none or skip with a reason")
-			continue
-		}
-		answers := map[string]Answer{}
-		targets := ask.Messages
-		if el.Unit == elements.UnitSender {
-			targets = ask.Senders
-		}
-		if el.Unit == elements.UnitThread {
-			var ans Answer
-			if err := strictDecode(raw, &ans); err != nil {
-				bad(ask.Element, "", "not an answer: %v", err)
-				continue
-			}
-			answers[targets[0]] = ans
-		} else {
-			var m map[string]Answer
-			if err := strictDecode(raw, &m); err != nil {
-				bad(ask.Element, "", "should map each %s to an answer: %v", targetNoun(el.Unit), err)
-				continue
-			}
-			for k, v := range m {
-				if el.Unit == elements.UnitSender {
-					k = strings.ToLower(strings.TrimSpace(k))
-				}
-				answers[k] = v
-			}
-			for k := range answers {
-				if !has(targets, k) && !(el.Unit == elements.UnitSender && fromOf[k] != "") {
-					bad(ask.Element, k, "this %s was not asked about", targetNoun(el.Unit))
-				}
-			}
-			for _, t := range targets {
-				if _, ok := answers[t]; !ok {
-					if len(answers) > 0 {
-						if el.Unit == elements.UnitSender {
-							answers[t] = Answer{Level: guessSenderLevelForMessages(t, msgs)}
-						} else {
-							answers[t] = Answer{None: "none"}
-						}
-						continue
-					}
-					bad(ask.Element, t, "not answered")
-				}
-			}
-		}
-		for t, ans := range answers {
-			if el.Shape == elements.ShapeLevels && el.Unit != elements.UnitSender &&
-				strings.TrimSpace(ans.Quote) == "" && isBaselineLevel(ans.Level) {
-				ans.Quote = defaultQuote(msgs)
-				answers[t] = ans
-			}
-			for _, p := range check(el, ans, corpus) {
-				bad(ask.Element, t, "%s", p)
-			}
-		}
-		plan = append(plan, planned{ask: ask, el: el, ann: a, answers: answers})
+	plan, problems, err := checkAnswers(sub, asked, conv, prefill, true)
+	if err != nil {
+		return nil, err
 	}
-	for name, raw := range sub.Answers {
-		if askedNames[name] {
-			continue
-		}
-		if name == "sender" && byName["sender"] != nil {
-			a := byName["sender"]
-			el, _ := elements.FromAnnotator(a)
-			var m map[string]Answer
-			if err := strictDecode(raw, &m); err != nil {
-				bad(name, "", "should map each %s to an answer: %v", targetNoun(el.Unit), err)
-				continue
-			}
-			answers := map[string]Answer{}
-			for k, v := range m {
-				k = strings.ToLower(strings.TrimSpace(k))
-				answers[k] = v
-				if fromOf[k] == "" {
-					bad(name, k, "this %s was not asked about", targetNoun(el.Unit))
-				}
-			}
-			for t, ans := range answers {
-				for _, p := range check(el, ans, corpus) {
-					bad(name, t, "%s", p)
-				}
-			}
-			plan = append(plan, planned{ask: Ask{Element: name, Version: a.Version}, el: el, ann: a, answers: answers})
-			continue
-		}
-		bad(name, "", "not asked about this conversation; answers are taken only for what `work next` asked")
-	}
+	res.Problems = append(res.Problems, problems...)
 	var cleanLabels []string
 	for _, l := range sub.Labels {
 		n := store.NormalizeLabel(l)
@@ -260,7 +339,7 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 		cleanLabels = append(cleanLabels, n)
 	}
 	if !res.OK() {
-		return res, nil
+		return res, recordSubmission(sub, lease, res, kind)
 	}
 
 	// Then store.
@@ -274,7 +353,7 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 			ans := p.answers[t]
 			subject := t
 			if p.el.Unit == elements.UnitSender {
-				subject = fromOf[t]
+				subject = conv.fromOf[t]
 			}
 			if p.el.Name == "receipts" && len(ans.Records) > 0 {
 				var kept []map[string]any
@@ -294,6 +373,12 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 				}
 			}
 			anns := annotations(p.el, ans, sub.Model, t)
+			for _, a := range anns {
+				a.Prefilled = p.guessed[t]
+			}
+			if p.guessed[t] {
+				res.Prefilled++
+			}
 			if err := store.SaveAnnotations(p.ann.ID, p.ann.Version, subject, anns); err != nil {
 				return nil, fmt.Errorf("%s: %w", p.el.Name, err)
 			}
@@ -301,30 +386,9 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 			if ans.Skip != "" || ans.None != "" {
 				continue
 			}
-			switch p.el.Target {
-			case elements.TargetContacts:
-				if err := store.SetContactKind(t, ans.Level, store.ContactFromAgent); err != nil {
-					return nil, err
-				}
-				res.Contacts++
-			case elements.TargetTopics:
-				if err := store.SetMessageTopics(subject, normTags(ans.Tags), store.SourceAgent, ans.Confidence); err != nil {
-					return nil, err
-				}
-			case elements.TargetTickets:
-				ids, err := proposeTickets(sub.Thread, subject, ans, anns, sub.AcceptTickets)
-				if err != nil {
-					return nil, err
-				}
-				res.Tickets += len(ids)
-				res.TicketIDs = append(res.TicketIDs, ids...)
-			case elements.TargetCalendar:
-				ids, err := proposeEvents(cal, sub.Thread, subject, ans)
-				if err != nil {
-					return nil, err
-				}
-				res.Events += len(ids)
-				res.EventChangeIDs = append(res.EventChangeIDs, ids...)
+			if err := applyAnswer(p.el, ans, anns, sub.Thread, subject, t, sub.Model, sub.AcceptTickets,
+				store.ContactFromAgent, store.SourceAgent, cal, res); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -336,8 +400,8 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 		}
 	}
 	if len(cleanLabels) > 0 || sub.Archive {
-		msgIDs := make([]string, len(msgs))
-		for i, m := range msgs {
+		msgIDs := make([]string, len(conv.msgs))
+		for i, m := range conv.msgs {
 			msgIDs[i] = m.ID
 		}
 		if len(cleanLabels) > 0 {
@@ -346,6 +410,13 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 				return nil, err
 			}
 			res.Labels = n
+			for _, id := range msgIDs {
+				for _, l := range cleanLabels {
+					if err := store.RecordWorkAction(sub.Thread, id, store.WorkActionLabel, l, sub.Model); err != nil {
+						return nil, err
+					}
+				}
+			}
 		}
 		if sub.Archive {
 			ch := store.Moves["archive"]
@@ -355,9 +426,89 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 				return nil, err
 			}
 			res.Archived = n
+			for _, id := range msgIDs {
+				if err := store.RecordWorkAction(sub.Thread, id, store.WorkActionArchive, store.LabelInbox, sub.Model); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
+	if kind == store.WorkKindDeep {
+		if err := store.UnflagThread(sub.Thread); err != nil {
+			return nil, err
+		}
+	}
+	if err := recordSubmission(sub, lease, res, kind); err != nil {
+		return nil, err
+	}
 	return res, store.DropLease(sub.Thread)
+}
+
+// applyAnswer does what an answer is for beyond being stored: a contact's
+// kind, a message's topics, proposed cards and events.
+func applyAnswer(el elements.Element, ans Answer, anns []*store.Annotation, thread, subject, target, model string,
+	acceptTickets bool, contactSource, topicSource string, cal *calsync.Engine, res *Result) error {
+	switch el.Target {
+	case elements.TargetContacts:
+		if err := store.SetContactKind(target, ans.Level, contactSource); err != nil {
+			return err
+		}
+		res.Contacts++
+	case elements.TargetTopics:
+		if err := store.SetMessageTopics(subject, normTags(ans.Tags), topicSource, ans.Confidence); err != nil {
+			return err
+		}
+	case elements.TargetTickets:
+		ids, err := proposeTickets(thread, subject, ans, anns, acceptTickets)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if err := store.RecordWorkAction(thread, subject, store.WorkActionTicket, id, model); err != nil {
+				return err
+			}
+		}
+		res.Tickets += len(ids)
+		res.TicketIDs = append(res.TicketIDs, ids...)
+	case elements.TargetCalendar:
+		ids, err := proposeEvents(cal, thread, subject, ans)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if err := store.RecordWorkAction(thread, subject, store.WorkActionEvent, id, model); err != nil {
+				return err
+			}
+		}
+		res.Events += len(ids)
+		res.EventChangeIDs = append(res.EventChangeIDs, ids...)
+	}
+	return nil
+}
+
+// recordSubmission notes a submission for the measures, and adds what the
+// harness said reading cost to its batch.
+func recordSubmission(sub Submission, lease *store.WorkLease, res *Result, kind string) error {
+	rec := store.WorkSubmissionRecord{Kind: kind, Thread: sub.Thread, Model: sub.Model, OK: res.OK(),
+		Prefilled: res.Prefilled}
+	for _, n := range res.Stored {
+		rec.Answers += n
+	}
+	for _, p := range res.Problems {
+		rec.Problems = append(rec.Problems, p.String())
+	}
+	if lease != nil {
+		rec.BatchID, rec.LeasedAt = lease.BatchID, lease.CreatedAt
+		if err := store.SetBatchModel(lease.BatchID, sub.Model); err != nil {
+			return err
+		}
+		if sub.Usage != nil {
+			if err := store.AddBatchUsage(lease.BatchID, *sub.Usage); err != nil {
+				return err
+			}
+		}
+	}
+	return store.RecordWorkSubmission(rec)
 }
 
 func targetNoun(unit string) string {

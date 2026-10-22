@@ -68,6 +68,55 @@ newest 100 conversations."*
   [Board](tickets.md) and events as proposed calendar events; nothing happens
   until you accept them.
 
+## Measuring the loop
+
+**Intelligence → [Work loop](#open/work-loop)** shows how well the reading is
+going: how often each kind of answer is right, how much effort it takes, and
+where it should read more carefully.
+
+**Guesses are kept apart from conclusions.** `work next --template` fills every
+answer in advance with a guess, so the AI only edits what differs. An answer
+sent back exactly as guessed is stored as a guess: it is counted separately, a
+deeper read (`iql work next --deep`) asks it again, and it does not teach the
+next template anything about that sender. The template never guesses where the
+conversation looks like it holds the thing — a receipt-looking subject is never
+pre-filled with "no receipt" — and never adds mail labels; it only suggests them.
+
+**Checks.** `iql work audit next` hands answered conversations to a second
+reader — ideally a different or stronger model — to read again from scratch,
+without seeing the first answers. Half of each batch is drawn at random, and
+only those measure accuracy; the other half goes where a wrong answer is
+likeliest and costliest. Where the two readers agree, the answer stands. Where
+they disagree, the conversation is flagged for a deep read and the pair waits
+for you under **Waiting for you**, as *Answer A* and *Answer B* — which was the
+first read and which the check is shown only after you choose (keys **1**,
+**2**, **3** for neither). Your choice becomes a ruling that outranks both.
+
+**Targets.** Each element has a target (how often it must be right) and a cost
+(what a wrong answer does: a missed receipt costs more than a wrong topic).
+Where checks show an element missing its target, the template stops guessing it
+and it has to be read; costlier and less certain elements are checked more
+often. A sender whose answers passed ten checks in a row earns the cheap path
+back. Change targets on the page, or with
+`iql work targets set receipts --target 0.99 --cost high`.
+
+**What the page shows:**
+
+- **Right, on random checks** — with the range it is probably in. A range
+  that dips below the target means more checks are needed before trusting it.
+- **Your reviews** — your rulings from **Review** in Annotators.
+- **What you did with its work** — proposed cards and events you approved or
+  rejected, labels you took off, conversations you moved back to the inbox:
+  corrections you make without being asked.
+- **Effort** — conversations per day, refusals and why (rework), leases that
+  ran out, time from lease to submit, and cost per conversation when the
+  harness reports it (`work submit --input-tokens … --output-tokens … --cost-usd …`).
+- **Confidence** — whether answers that say they are 90% sure are right 90% of
+  the time.
+
+From a terminal: `iql work metrics --since 30d`, `iql work audit list`, and
+`iql work audit resolve <id> original|checker|neither`.
+
 ## Asking about the answers
 
 ```

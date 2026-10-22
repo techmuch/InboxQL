@@ -163,6 +163,9 @@ type Annotation struct {
 	Model            string    `json:"model,omitempty"`
 	Error            string    `json:"error,omitempty"`
 	CreatedAt        time.Time `json:"createdAt"`
+	// Prefilled is an agent answer that went back exactly as `work next
+	// --template` guessed it: stored, but nobody concluded it.
+	Prefilled bool `json:"prefilled,omitempty"`
 }
 
 // Data decodes the annotation payload.
@@ -395,11 +398,11 @@ func SaveAnnotations(annotatorID string, version int, messageID string, anns []*
 		}
 		if _, err := tx.Exec(`
 			INSERT OR REPLACE INTO annotations
-				(id, message_id, annotator_id, annotator_version, seq, status, source, data_json, confidence, model, error, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				(id, message_id, annotator_id, annotator_version, seq, status, source, data_json, confidence, model, error, created_at, prefilled)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			a.ID, a.MessageID, a.AnnotatorID, a.AnnotatorVersion, a.Seq, a.Status, a.Source,
 			a.DataJSON, a.Confidence, nullIfEmpty(a.Model), nullIfEmpty(a.Error),
-			a.CreatedAt.UnixMilli()); err != nil {
+			a.CreatedAt.UnixMilli(), boolToInt(a.Prefilled)); err != nil {
 			return err
 		}
 	}
@@ -580,6 +583,9 @@ const (
 	// RuledReview is a ruling on a message drawn at random for review. These are
 	// the ones accuracy and calibration may be measured on.
 	RuledReview = "review"
+	// RuledAudit is a person settling a disagreement between an agent's answer
+	// and a check of it. Like inflow, it is chosen, not drawn: never scored.
+	RuledAudit = "audit"
 )
 
 // Ruling is a person's verdict on one message for one annotator.

@@ -71,10 +71,22 @@ type Item struct {
 	Earlier int      `json:"earlier,omitempty"`
 	People  []Person `json:"people"`
 	Ask     []Ask    `json:"ask"`
+	// Flag is why this conversation was marked to be read again properly,
+	// when it was.
+	Flag string `json:"flag,omitempty"`
+	// Blank names the elements the template left for you to answer rather
+	// than guessing, and SuggestedLabels what the subject suggests — set by
+	// Template, shown by Digest.
+	Blank           []string `json:"blank,omitempty"`
+	SuggestedLabels []string `json:"suggestedLabels,omitempty"`
 }
 
 // Batch is what `work next` returns.
 type Batch struct {
+	// ID names the batch, so what reading it cost can be reported against it.
+	ID string `json:"batch,omitempty"`
+	// Kind is read, deep or audit.
+	Kind string `json:"kind,omitempty"`
 	// Elements are the definitions of everything asked in this batch, once.
 	Elements map[string]elements.Element `json:"elements"`
 	// Topics are the topics already in use, when topics are asked.
@@ -82,6 +94,12 @@ type Batch struct {
 	Items  []*Item  `json:"items"`
 	// Submit says how to answer.
 	Submit string `json:"submit"`
+	// Exhausted is set when the scan stopped at its budget before filling the
+	// batch: older conversations may still be waiting, reachable with --query.
+	Exhausted bool `json:"exhausted,omitempty"`
+	// ChecksDue is how many conversations should be checked now to keep the
+	// measured accuracy honest (see `iql work audit`).
+	ChecksDue int `json:"checksDue,omitempty"`
 }
 
 // Options narrow what `work next` hands out.
@@ -91,6 +109,12 @@ type Options struct {
 	Only []string
 	// Query narrows the conversations to those with mail it matches.
 	Query string
+	// Deep reads properly what was only guessed: conversations flagged for it
+	// first, then answers that went back exactly as the template pre-filled
+	// them. Its template guesses nothing.
+	Deep bool
+	// Model is who will answer, recorded with the batch.
+	Model string
 }
 
 // scanBudget bounds how many conversations one call looks through for work,
@@ -122,10 +146,69 @@ func Next(opt Options) (*Batch, error) {
 		return nil, fmt.Errorf("no elements are installed: `iql elements install` adds the catalog")
 	}
 
-	b := &Batch{Elements: map[string]elements.Element{}, Items: []*Item{},
+	kind := store.WorkKindRead
+	if opt.Deep {
+		kind = store.WorkKindDeep
+	}
+	b := &Batch{ID: store.NewWorkBatchID(), Kind: kind, Elements: map[string]elements.Element{}, Items: []*Item{},
 		Submit: "iql --json work submit < answers.json — one answer per item; `iql work guide` for the shape"}
+	seen := map[string]bool{}
+	take := func(k string, m mode, flag string) error {
+		if seen[k] {
+			return nil
+		}
+		seen[k] = true
+		if l, err := store.LeaseFor(k); err != nil {
+			return err
+		} else if l != nil && l.Expires.After(time.Now()) {
+			return nil
+		}
+		item, err := pending(k, els, byName, m)
+		if err != nil || item == nil {
+			return err
+		}
+		item.Flag = flag
+		asked, _ := json.Marshal(item.Ask)
+		l, err := store.TakeLeaseIn(k, string(asked), b.ID, LeaseFor)
+		if err != nil {
+			return nil // taken by another run between the check and now
+		}
+		item.Lease, item.Expires = l.Token, l.Expires
+		for _, a := range item.Ask {
+			b.Elements[a.Element] = elementFor(a.Element, els)
+		}
+		b.Items = append(b.Items, item)
+		return nil
+	}
+
+	// A deep read starts with what a check or a person flagged.
+	if opt.Deep {
+		flags, err := store.FlaggedThreads(opt.Limit * 4)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range flags {
+			if len(b.Items) >= opt.Limit {
+				break
+			}
+			if opt.Query != "" {
+				if ok, err := store.ThreadMatches(f.Thread, opt.Query); err != nil || !ok {
+					continue
+				}
+			}
+			if err := take(f.Thread, modeAll, f.Reason); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	m := modeRead
+	if opt.Deep {
+		m = modeDeep
+	}
 	const page = 50
-	for skip := 0; skip < scanBudget && len(b.Items) < opt.Limit; skip += page {
+	skip := 0
+	for ; skip < scanBudget && len(b.Items) < opt.Limit; skip += page {
 		keys, err := store.RecentThreads(opt.Query, skip, page)
 		if err != nil {
 			return nil, err
@@ -134,32 +217,25 @@ func Next(opt Options) (*Batch, error) {
 			if len(b.Items) >= opt.Limit {
 				break
 			}
-			if l, err := store.LeaseFor(k); err != nil {
-				return nil, err
-			} else if l != nil && l.Expires.After(time.Now()) {
-				continue
-			}
-			item, err := pending(k, els, byName)
-			if err != nil {
+			if err := take(k, m, ""); err != nil {
 				return nil, err
 			}
-			if item == nil {
-				continue
-			}
-			asked, _ := json.Marshal(item.Ask)
-			l, err := store.TakeLease(k, string(asked), LeaseFor)
-			if err != nil {
-				continue // taken by another run between the check and now
-			}
-			item.Lease, item.Expires = l.Token, l.Expires
-			for _, a := range item.Ask {
-				b.Elements[a.Element] = elementFor(a.Element, els)
-			}
-			b.Items = append(b.Items, item)
 		}
 		if len(keys) < page {
+			skip = -1
 			break
 		}
+	}
+	b.Exhausted = skip >= scanBudget && len(b.Items) < opt.Limit
+	if len(b.Items) > 0 {
+		if _, err := store.CreateWorkBatch(b.ID, kind, opt.Model, len(b.Items)); err != nil {
+			return nil, err
+		}
+	} else {
+		b.ID = ""
+	}
+	if r, err := LoadRouting(); err == nil {
+		b.ChecksDue, _ = r.ChecksDue()
 	}
 	if _, ok := b.Elements["topics"]; ok {
 		if b.Topics, err = store.KnownTopics(80); err != nil {
@@ -169,8 +245,21 @@ func Next(opt Options) (*Batch, error) {
 	return b, nil
 }
 
+// mode is how much of a conversation counts as still to answer.
+type mode int
+
+const (
+	// modeRead: what has no answer at all.
+	modeRead mode = iota
+	// modeDeep: also what was answered only by an untouched template guess.
+	modeDeep
+	// modeAll: everything no person has ruled on — a flagged conversation is
+	// read again whole.
+	modeAll
+)
+
 // pending builds the item for a conversation, or nil when nothing is pending.
-func pending(key string, els []elements.Element, byName map[string]*store.Annotator) (*Item, error) {
+func pending(key string, els []elements.Element, byName map[string]*store.Annotator, m mode) (*Item, error) {
 	msgs, err := store.ThreadReading(key)
 	if err != nil || len(msgs) == 0 {
 		return nil, err
@@ -189,7 +278,7 @@ func pending(key string, els []elements.Element, byName map[string]*store.Annota
 		ask := Ask{Element: e.Name, Version: a.Version, Unit: e.Unit}
 		switch e.Unit {
 		case elements.UnitThread:
-			ok, err := needs(a, newest.ID)
+			ok, err := needs(a, newest.ID, m)
 			if err != nil {
 				return nil, err
 			}
@@ -197,13 +286,13 @@ func pending(key string, els []elements.Element, byName map[string]*store.Annota
 				ask.Messages = []string{newest.ID}
 			}
 		case elements.UnitMessage:
-			for _, m := range msgs {
-				ok, err := needs(a, m.ID)
+			for _, msg := range msgs {
+				ok, err := needs(a, msg.ID, m)
 				if err != nil {
 					return nil, err
 				}
 				if ok {
-					ask.Messages = append(ask.Messages, m.ID)
+					ask.Messages = append(ask.Messages, msg.ID)
 				}
 			}
 		case elements.UnitSender:
@@ -212,7 +301,7 @@ func pending(key string, els []elements.Element, byName map[string]*store.Annota
 				if err != nil {
 					return nil, err
 				}
-				if c == nil || c.Kind == store.KindUnknown {
+				if c == nil || c.Kind == store.KindUnknown || (m == modeAll && c.KindSource != store.ContactFromHuman) {
 					ask.Senders = append(ask.Senders, s)
 				}
 			}
@@ -233,8 +322,12 @@ func pending(key string, els []elements.Element, byName map[string]*store.Annota
 	return item, err
 }
 
-func needs(a *store.Annotator, messageID string) (bool, error) {
-	done, err := store.Answered(a, messageID)
+func needs(a *store.Annotator, messageID string, m mode) (bool, error) {
+	if m == modeAll {
+		ruled, err := store.HumanRuled(a, messageID)
+		return !ruled, err
+	}
+	done, err := store.AnsweredBy(a, messageID, m == modeDeep)
 	return !done, err
 }
 
@@ -317,42 +410,86 @@ func firstNonEmpty(xs ...string) string {
 }
 
 // Template builds a pre-scaffolded slice of Submissions for a Batch, with all
-// thread keys, lease tokens, message IDs, sender addresses, default quotes from
-// the conversation subject/text, and default "none" entries pre-filled so a
-// harness only edits the fields that apply.
+// thread keys, lease tokens, message IDs and sender addresses filled in, and a
+// guess for the elements the routing says may be guessed, so a harness only
+// edits what differs.
+//
+// # What is not guessed
+//
+// A guess left untouched is stored as the answer, so a template guesses only
+// where guessing has been measured to be safe enough:
+//
+//   - nothing at all in a deep read or a flagged conversation;
+//   - no element whose checked accuracy misses its target (LoadRouting),
+//     unless the sender has a long record of being answered right;
+//   - no "none" for an element the conversation looks like it holds — a
+//     receipt-looking subject does not get receipts: none;
+//   - no mail labels: a label is written to the server, so a keyword guess
+//     must not reach it untouched. They are shown as suggestions instead.
+//
+// What is not guessed is left null, and a null answer is refused, so it has
+// to be read. What was guessed is kept with the lease, so the submission can
+// say which answers went back unchanged.
 func Template(b *Batch, model string) []Submission {
 	if strings.TrimSpace(model) == "" {
 		model = "agent"
 	}
+	route, err := LoadRouting()
+	if err != nil {
+		route = &Routing{Elements: map[string]*ElementRoute{}}
+	}
 	senderCache := map[string]store.SenderHistory{}
-	lookupSender := func(it *Item) store.SenderHistory {
+	lookupSender := func(it *Item) (string, store.SenderHistory) {
 		snds := senders(it.Messages)
 		if len(snds) == 0 {
-			return store.SenderHistory{}
+			return "", store.SenderHistory{}
 		}
 		addr := snds[len(snds)-1]
 		if h, ok := senderCache[addr]; ok {
-			return h
+			return addr, h
 		}
 		h, _ := store.SenderDefaults(addr)
 		senderCache[addr] = h
-		return h
+		return addr, h
 	}
 
 	out := make([]Submission, 0, len(b.Items))
 	for _, it := range b.Items {
-		sub := defaultSubmissionFor(it, b.Elements, model, lookupSender(it))
+		addr, hist := lookupSender(it)
+		// A deep read and a check are there to read, so nothing is guessed:
+		// a check that started from the first read's guesses would agree
+		// with them and prove nothing.
+		guess := (b.Kind == "" || b.Kind == store.WorkKindRead) && it.Flag == ""
+		sub := defaultSubmissionFor(it, b.Elements, model, hist, route, addr, guess)
+		if prefill, err := json.Marshal(sub.Answers); err == nil {
+			_ = store.SetLeasePrefill(it.Thread, it.Lease, string(prefill))
+		}
 		out = append(out, sub)
 	}
 	return out
 }
 
-func defaultSubmissionFor(it *Item, elementsMap map[string]elements.Element, model string, hist store.SenderHistory) Submission {
+// signalFor names the candidate signal that says a conversation probably
+// holds an element, so the template does not guess "none" for it.
+var signalFor = map[string]string{"receipts": "receipt", "travel": "travel", "events": "event", "tasks": "task"}
+
+var nullAnswer = json.RawMessage("null")
+
+func defaultSubmissionFor(it *Item, elementsMap map[string]elements.Element, model string,
+	hist store.SenderHistory, route *Routing, sender string, guess bool) Submission {
 	defQuote := defaultQuote(it.Messages)
 	allSystem := isSystemThread(it)
+	sigs := candidateSignals(it)
+	trusted := route.Trusted(sender)
 	ans := map[string]json.RawMessage{}
+	it.Blank = nil
 	for _, a := range it.Ask {
 		el := elementsMap[a.Element]
+		if !guess || !route.MayGuess(a.Element, trusted) || (signalFor[a.Element] != "" && has(sigs, signalFor[a.Element])) {
+			ans[a.Element] = nullAnswer
+			it.Blank = append(it.Blank, a.Element)
+			continue
+		}
 		var v any
 		switch el.Unit {
 		case elements.UnitMessage:
@@ -393,14 +530,12 @@ func defaultSubmissionFor(it *Item, elementsMap map[string]elements.Element, mod
 	if len(lbls) == 0 {
 		_, lbls = inferTopicsAndLabels(it)
 	}
-	if lbls == nil {
-		lbls = []string{}
-	}
+	it.SuggestedLabels = lbls
 	return Submission{
 		Thread:  it.Thread,
 		Lease:   it.Lease,
 		Model:   model,
-		Labels:  lbls,
+		Labels:  []string{},
 		Answers: ans,
 	}
 }
@@ -572,7 +707,8 @@ func guessSenderLevelForItem(addr string, it *Item) string {
 }
 
 func guessSenderLevelForMessages(addr string, msgs []*store.ReadingMessage) string {
-	if lvl := guessSenderLevel(addr); lvl != "person" {
+	lvl := guessSenderLevel(addr)
+	if lvl == "system" {
 		return lvl
 	}
 	for _, m := range msgs {
@@ -580,7 +716,7 @@ func guessSenderLevelForMessages(addr string, msgs []*store.ReadingMessage) stri
 			return "system"
 		}
 	}
-	return "person"
+	return lvl
 }
 
 func guessSenderLevel(addr string) string {
@@ -590,15 +726,23 @@ func guessSenderLevel(addr string) string {
 		"mailer-daemon", "postmaster", "notifications@", "notification@",
 		"alerts@", "alert@", "receipts@", "receipt@", "notice@",
 		"updates@", "friendupdates@", "order-update@", "shipment-tracking@",
-		"auto-confirm@", "newsletter@", "news@", "digest@", "billing@",
-		"info@", "service@", "automated", "bounce", "invoicing@",
-		"registration@", "confirm@", "calendar-notification@",
-		"messenger@messaging.squareup.com",
+		"auto-confirm@", "newsletter@", "news@", "digest@",
+		"automated", "bounce",
+		"confirm@", "calendar-notification@",
 		"@facebookmail.com", "@email.amazonses.com", "@us-west-2.amazonses.com",
 		"@notifications.google.com",
 	} {
 		if strings.Contains(a, kw) {
 			return "system"
+		}
+	}
+	// A shared mailbox people answer: a business, not a person and not a
+	// machine.
+	if at := strings.IndexByte(a, '@'); at > 0 {
+		switch a[:at] {
+		case "info", "service", "support", "help", "billing", "invoicing", "accounts", "sales",
+			"hello", "contact", "team", "office", "registration", "admissions", "reservations":
+			return "organization"
 		}
 	}
 	return "person"
@@ -681,7 +825,6 @@ func candidateSignals(it *Item) []string {
 	if hasCal ||
 		strings.Contains(subj, "appointment") ||
 		strings.Contains(subj, "agenda") ||
-		strings.Contains(subj, "tailgate") ||
 		strings.Contains(subj, "invitation") ||
 		strings.Contains(body, "appointment details") ||
 		strings.Contains(body, "add to calendar") {
@@ -697,7 +840,6 @@ func candidateSignals(it *Item) []string {
 	}
 	// Tasks / Waiting signals
 	if strings.Contains(subj, "action required") ||
-		strings.Contains(subj, "tithing declaration") ||
 		strings.Contains(subj, "deadline") ||
 		strings.Contains(body, "action required") ||
 		(!isSystemThread(it) && len(it.Messages) > 0 && !it.Messages[len(it.Messages)-1].Mine && strings.Contains(unquotedText(it.Messages[len(it.Messages)-1].Text), "?")) {
@@ -711,11 +853,18 @@ func candidateSignals(it *Item) []string {
 // tool call without writing inspection scripts.
 func Digest(b *Batch) string {
 	if len(b.Items) == 0 {
-		return "Nothing to read: every recent conversation is answered.\n"
+		return NothingToRead(b)
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Leased %d conversations for 30 minutes.\n", len(b.Items))
+	fmt.Fprintf(&sb, "Leased %d conversations for 30 minutes", len(b.Items))
+	if b.ID != "" {
+		fmt.Fprintf(&sb, " (batch %s)", b.ID)
+	}
+	sb.WriteString(".\n")
 	fmt.Fprintf(&sb, "Submit: %s\n", b.Submit)
+	if b.Kind == store.WorkKindDeep {
+		sb.WriteString("Deep read: nothing is pre-filled. Read every message in full and answer every element.\n")
+	}
 
 	if len(b.Elements) > 0 {
 		sb.WriteString("\nElements in this batch:\n")
@@ -768,6 +917,16 @@ func Digest(b *Batch) string {
 			}
 		}
 		fmt.Fprintf(&sb, "Ask:    %s\n", strings.Join(asks, ", "))
+		if it.Flag != "" {
+			fmt.Fprintf(&sb, "Flagged for a careful read: %s\n", it.Flag)
+		}
+		if len(it.Blank) > 0 {
+			fmt.Fprintf(&sb, "Left for you (null in the template, must be answered): %s\n", strings.Join(it.Blank, ", "))
+		}
+		if len(it.SuggestedLabels) > 0 {
+			fmt.Fprintf(&sb, "Suggested labels (a guess from the subject; add to \"labels\" only if right): %s\n",
+				strings.Join(it.SuggestedLabels, ", "))
+		}
 		for _, m := range it.Messages {
 			mine := ""
 			if m.Mine {
@@ -786,6 +945,28 @@ func Digest(b *Batch) string {
 		sb.WriteString("\n============================================================\n")
 		sb.WriteString("Schema reminder (valid levels & fields):\n")
 		writeElementsSummary(&sb, b.Elements)
+	}
+	if b.ChecksDue > 0 {
+		fmt.Fprintf(&sb, "\nChecks due: %d. After this batch, run `iql work audit next --limit %d` with a different model if you can.\n",
+			b.ChecksDue, min(b.ChecksDue, 10))
+	}
+	return sb.String()
+}
+
+// NothingToRead says why a batch is empty, and where more work is.
+func NothingToRead(b *Batch) string {
+	var sb strings.Builder
+	switch {
+	case b.Kind == store.WorkKindDeep:
+		sb.WriteString("Nothing to read again: no conversation is flagged, and no recent answer is an untouched guess.\n")
+	case b.Exhausted:
+		fmt.Fprintf(&sb, "Nothing to read among the newest %d conversations. Older ones may still be waiting: "+
+			"narrow with --query, e.g. --query \"before:2026-01-01\".\n", scanBudget)
+	default:
+		sb.WriteString("Nothing to read: every recent conversation is answered.\n")
+	}
+	if b.ChecksDue > 0 {
+		fmt.Fprintf(&sb, "Checks due: %d — run `iql work audit next`.\n", b.ChecksDue)
 	}
 	return sb.String()
 }

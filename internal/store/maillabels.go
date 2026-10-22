@@ -564,6 +564,13 @@ func changeLabels(ids []string, ch LabelChange) (map[string]*labelDelta, error) 
 			}
 		}
 	}
+	if ch.Source == LabelSourceHuman {
+		for id, d := range changed {
+			if err := noteUndone(tx, id, d.removed, d.added, now); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}

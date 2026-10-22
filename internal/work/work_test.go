@@ -316,6 +316,16 @@ func TestTemplateDigestAndLabels(t *testing.T) {
 	askSub.Answers["waiting"], _ = json.Marshal(Answer{Level: "on-me", Quote: "by Friday"})
 	askSub.Answers["importance"], _ = json.Marshal(Answer{Level: "important", Quote: "signed contract"})
 	askSub.Answers["topics"], _ = json.Marshal(Answer{Tags: []string{"legal"}})
+	// A question to the user looks like a task, so the template left tasks
+	// for the harness rather than guessing none.
+	if string(askSub.Answers["tasks"]) != "null" || !has(itemFor(t, b, "ask").Blank, "tasks") {
+		t.Fatalf("tasks was guessed on a conversation that looks like it holds one: %s", askSub.Answers["tasks"])
+	}
+	if res, _ := Submit(askSub, nil); res.OK() {
+		t.Fatal("a null answer left in the template was accepted")
+	}
+	askSub.Answers["tasks"], _ = json.Marshal(Answer{Records: []map[string]any{{
+		"what": "Send Alice the signed contract", "owner": "me", "quote": "send the signed contract back by Friday"}}})
 
 	// Trash in Labels is refused.
 	badSub := askSub
@@ -435,7 +445,9 @@ func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testin
 	// and two order/shipped messages with the same order number ("114-1805601-7097067"):
 	// verify Template pre-fills topics/labels/importance from alice@acme.com's prior history
 	// so the template is submittable out-of-the-box, and duplicate receipt orders are not double-counted.
-	if _, err := store.ChangeLabels([]string{"ask"}, store.LabelChange{Add: []string{"contracts"}, Source: store.LabelSourceAgent}); err != nil {
+	// Labelled by the user: a person's label is what a sender's history
+	// learns from (an agent's only when a model chose it in a submission).
+	if _, err := store.ChangeLabels([]string{"ask"}, store.LabelChange{Add: []string{"contracts"}, Source: store.LabelSourceHuman}); err != nil {
 		t.Fatal(err)
 	}
 	for i, m := range []*message.Message{
@@ -465,13 +477,22 @@ func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testin
 	for _, s := range tmpls2 {
 		switch s.Thread {
 		case "alice2@x":
-			if !has(s.Labels, "contracts") {
-				t.Errorf("expected Template for alice2 to inherit label 'contracts', got %v", s.Labels)
+			// A label is written to the server, so the sender's usual label is
+			// suggested, never pre-filled.
+			if len(s.Labels) != 0 {
+				t.Errorf("template pre-filled labels %v; labels are only suggested", s.Labels)
 			}
-			// Submitting the unmodified template for alice2 succeeds out of the box!
+			if it := itemFor(t, b2, "alice2"); !has(it.SuggestedLabels, "contracts") {
+				t.Errorf("expected alice2's usual label 'contracts' to be suggested, got %v", it.SuggestedLabels)
+			}
+			// Submitting the unmodified template for alice2 succeeds out of the
+			// box — and every answer is marked as the untouched guess it is.
 			r, err := Submit(s, nil)
 			if err != nil || !r.OK() {
 				t.Fatalf("unmodified Template for known sender alice2 failed: err=%v problems=%+v", err, r.Problems)
+			}
+			if r.Prefilled == 0 {
+				t.Errorf("an untouched template was not marked prefilled: %+v", r)
 			}
 		case "amz-ord@x":
 			// Even for a first-time sender, Template pre-fills topics (either inferred or none),

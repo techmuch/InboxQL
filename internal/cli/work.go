@@ -44,20 +44,36 @@ with iql work; see iql work guide.
 	register(&Command{
 		Name:    "work",
 		Summary: "hand conversations to an AI harness and take its answers",
-		Usage: `iql work <next|submit|status|clear|guide> [flags]
+		Usage: `iql work <next|submit|status|metrics|audit|flag|unflag|targets|clear|guide> [flags]
 
   next      the newest conversations with something to answer, leased to you
             --limit n          how many (default 10)
             --only a,b         just these elements
             --query <q>        just conversations with mail this matches
+            --model <id>       who will answer (recorded with the batch)
             --template <file>  write a pre-scaffolded answers JSON file
             --out <file>       write the full batch JSON to a file
             --digest           print a compact readable digest of all leased items
+            --deep             read properly what was only guessed: flagged
+                               conversations first, then untouched guesses;
+                               the template guesses nothing
   submit    answers, from a file or standard input: one JSON object, an
             array of them, or one per line
             --base <file>      merge partial/sparse answers on top of a --template file
             --accept-tickets   put created task tickets straight on the board (status: todo)
+            --input-tokens n --output-tokens n --cost-usd x --seconds x
+                               what reading the batch cost, if you know
   status    what has been answered, by element and model
+  metrics   how efficient and how accurate the loop is: --since 30d, --model <id>
+  audit     check answers already given, reading them again blind:
+              next   [--limit n] [--model <id>] [--template f] [--digest] [--only a,b]
+              submit <file> [--base f]   the same answer shape as work submit
+              list   [--all]             disagreements waiting for a person
+              resolve <id> original|checker|neither
+  flag      mark a conversation for a deep read: flag <thread> [--reason text]
+  unflag    clear that mark
+  targets   how right each element must be, and what a wrong answer costs:
+            targets [set <element> --target 0.95 --cost high|medium|low]
   clear     undo answers given through work: --model <id>, --since 1d|2h|date,
             --only a,b
   guide     everything a harness needs to run the loop
@@ -271,6 +287,10 @@ func runWork(ctx *Context, args []string) error {
 		ctx.Printf("%s", work.Guide)
 		return nil
 	}
+	auditSub := ""
+	if sub == "audit" {
+		auditSub, rest = subcommand(rest)
+	}
 	fs := flag.NewFlagSet("work", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	limit := fs.Int("limit", 10, "conversations to take")
@@ -284,6 +304,17 @@ func runWork(ctx *Context, args []string) error {
 	outPath := fs.String("out", "", "for next: write the full batch JSON to this file")
 	digest := fs.Bool("digest", false, "for next: print a compact readable digest of all leased items")
 	acceptTickets := fs.Bool("accept-tickets", false, "for submit/template: put created task tickets directly in todo status")
+	deep := fs.Bool("deep", false, "for next: read properly what was only guessed")
+	var usage store.WorkUsage
+	fs.IntVar(&usage.InputTokens, "input-tokens", 0, "for submit: input tokens reading the batch took")
+	fs.IntVar(&usage.OutputTokens, "output-tokens", 0, "for submit: output tokens reading the batch took")
+	fs.Float64Var(&usage.CostUSD, "cost-usd", 0, "for submit: what reading the batch cost, in dollars")
+	fs.Float64Var(&usage.Seconds, "seconds", 0, "for submit: how long reading the batch took")
+	randomShare := fs.Float64("random-share", 0.5, "for audit next: share of the batch drawn at random")
+	all := fs.Bool("all", false, "for audit list: settled disagreements too")
+	reason := fs.String("reason", "", "for flag: why")
+	target := fs.Float64("target", 0, "for targets set: the share of answers that must be right, 0.5 to 1")
+	cost := fs.String("cost", "", "for targets set: what a wrong answer costs: high, medium or low")
 	if err := parseArgs(fs, rest); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -295,74 +326,87 @@ func runWork(ctx *Context, args []string) error {
 	names := splitList(*only)
 	switch sub {
 	case "next":
-		b, err := work.Next(work.Options{Limit: *limit, Only: names, Query: *query})
+		b, err := work.Next(work.Options{Limit: *limit, Only: names, Query: *query, Deep: *deep, Model: *model})
 		if err != nil {
 			return Fail(ExitUsage, "%v", err)
 		}
-		if *outPath != "" {
-			raw, err := json.MarshalIndent(b, "", "  ")
-			if err != nil {
-				return Fail(ExitError, "%v", err)
-			}
-			if err := os.WriteFile(*outPath, append(raw, '\n'), 0o644); err != nil {
-				return Fail(ExitError, "%v", err)
-			}
-		}
-		if *templatePath != "" {
-			tmpl := work.Template(b, *model)
-			if *acceptTickets {
-				for i := range tmpl {
-					tmpl[i].AcceptTickets = true
-				}
-			}
-			raw, err := json.MarshalIndent(tmpl, "", "  ")
-			if err != nil {
-				return Fail(ExitError, "%v", err)
-			}
-			if err := os.WriteFile(*templatePath, append(raw, '\n'), 0o644); err != nil {
-				return Fail(ExitError, "%v", err)
+		return emitBatch(ctx, b, *model, *templatePath, *digestOut, *outPath, *digest, *acceptTickets)
+
+	case "submit":
+		return workSubmit(ctx, fs.Args(), *basePath, *acceptTickets, usage, false)
+
+	case "metrics":
+		from := time.Now().AddDate(0, 0, -30)
+		var err error
+		if *since != "" {
+			if *since == "all" {
+				from = time.Time{}
+			} else if from, err = parseSince(*since); err != nil {
+				return Fail(ExitUsage, "%v", err)
 			}
 		}
-		dPath := *digestOut
-		if dPath == "" && *templatePath != "" {
-			dPath = *templatePath + ".digest.txt"
-		}
-		var dText string
-		if dPath != "" || *digest || (*templatePath != "" && !ctx.JSON) {
-			dText = work.Digest(b)
-		}
-		if dPath != "" {
-			if err := os.WriteFile(dPath, []byte(dText), 0o644); err != nil {
-				return Fail(ExitError, "%v", err)
-			}
-		}
-		if *digest || (*templatePath != "" && !ctx.JSON) {
-			ctx.Printf("%s", dText)
-			if dPath != "" && *templatePath != "" {
-				ctx.Printf("Digest saved to %s (read with view_file if stdout is truncated); template saved to %s.\n", dPath, *templatePath)
-			}
-			return nil
+		m, err := work.Measure(from, *model)
+		if err != nil {
+			return Fail(ExitError, "%v", err)
 		}
 		if ctx.JSON {
-			return ctx.EmitJSON(b)
+			return ctx.EmitJSON(m)
 		}
-		if len(b.Items) == 0 {
-			ctx.Printf("Nothing to read: every recent conversation is answered.\n")
-			return nil
+		printMetrics(ctx, m)
+		return nil
+
+	case "audit":
+		return workAudit(ctx, auditSub, fs.Args(), auditFlags{limit: *limit, model: *model, only: names,
+			template: *templatePath, digestOut: *digestOut, out: *outPath, digest: *digest, base: *basePath,
+			randomShare: *randomShare, all: *all, usage: usage})
+
+	case "flag", "unflag":
+		if len(fs.Args()) != 1 {
+			return Fail(ExitUsage, "usage: iql work %s <thread>", sub)
 		}
-		ctx.Printf("%d conversations leased for 30 minutes. Use --digest or --json to read them:\n", len(b.Items))
-		for _, it := range b.Items {
-			var asked []string
-			for _, a := range it.Ask {
-				asked = append(asked, a.Element)
+		thread := fs.Args()[0]
+		if sub == "flag" {
+			r := strings.TrimSpace(*reason)
+			if r == "" {
+				r = "flagged by hand"
 			}
-			ctx.Printf("  %s  %s  [%s]\n", it.Thread, it.Subject, strings.Join(asked, ", "))
+			err := store.FlagThread(thread, r, store.SourceHuman)
+			if err != nil {
+				return Fail(ExitError, "%v", err)
+			}
+		} else if err := store.UnflagThread(thread); err != nil {
+			return Fail(ExitError, "%v", err)
+		}
+		if ctx.JSON {
+			return ctx.EmitJSON(map[string]any{"thread": thread, "flagged": sub == "flag"})
+		}
+		if sub == "flag" {
+			ctx.Printf("Flagged %s: `iql work next --deep` reads it first.\n", thread)
+		} else {
+			ctx.Printf("Unflagged %s.\n", thread)
 		}
 		return nil
 
-	case "submit":
-		return workSubmit(ctx, fs.Args(), *basePath, *acceptTickets)
-
+	case "targets":
+		if args := fs.Args(); len(args) > 0 {
+			if args[0] != "set" || len(args) != 2 {
+				return Fail(ExitUsage, "usage: iql work targets set <element> --target 0.95 --cost high")
+			}
+			if err := work.SetTarget(args[1], *target, *cost); err != nil {
+				return Fail(ExitUsage, "%v", err)
+			}
+		}
+		r, err := work.LoadRouting()
+		if err != nil {
+			return Fail(ExitError, "%v", err)
+		}
+		if ctx.JSON {
+			return ctx.EmitJSON(r)
+		}
+		printRoutes(ctx, r)
+		return nil
+	}
+	switch sub {
 	case "status":
 		counts, err := store.AgentAnswerCounts()
 		if err != nil {
@@ -416,38 +460,121 @@ func runWork(ctx *Context, args []string) error {
 	return Fail(ExitUsage, "unknown work command %q (next, submit, status, clear, guide)", sub)
 }
 
-// workSubmit reads one submission, an array of them, or one per line.
-func workSubmit(ctx *Context, args []string, basePath string, acceptTickets bool) error {
+// emitBatch writes a batch where it was asked for — the batch JSON, the
+// template, the digest — and says what was leased.
+func emitBatch(ctx *Context, b *work.Batch, model, templatePath, digestOut, outPath string, digest, acceptTickets bool) error {
+	if templatePath != "" {
+		tmpl := work.Template(b, model)
+		if acceptTickets {
+			for i := range tmpl {
+				tmpl[i].AcceptTickets = true
+			}
+		}
+		raw, err := json.MarshalIndent(tmpl, "", "  ")
+		if err != nil {
+			return Fail(ExitError, "%v", err)
+		}
+		if err := os.WriteFile(templatePath, append(raw, '\n'), 0o644); err != nil {
+			return Fail(ExitError, "%v", err)
+		}
+	}
+	if outPath != "" {
+		raw, err := json.MarshalIndent(b, "", "  ")
+		if err != nil {
+			return Fail(ExitError, "%v", err)
+		}
+		if err := os.WriteFile(outPath, append(raw, '\n'), 0o644); err != nil {
+			return Fail(ExitError, "%v", err)
+		}
+	}
+	dPath := digestOut
+	if dPath == "" && templatePath != "" {
+		dPath = templatePath + ".digest.txt"
+	}
+	var dText string
+	if dPath != "" || digest || (templatePath != "" && !ctx.JSON) {
+		dText = work.Digest(b)
+	}
+	if dPath != "" {
+		if err := os.WriteFile(dPath, []byte(dText), 0o644); err != nil {
+			return Fail(ExitError, "%v", err)
+		}
+	}
+	if digest || (templatePath != "" && !ctx.JSON) {
+		ctx.Printf("%s", dText)
+		if dPath != "" && templatePath != "" {
+			ctx.Printf("Digest saved to %s (read with view_file if stdout is truncated); template saved to %s.\n", dPath, templatePath)
+		}
+		return nil
+	}
+	if ctx.JSON {
+		return ctx.EmitJSON(b)
+	}
+	if len(b.Items) == 0 {
+		ctx.Printf("%s", work.NothingToRead(b))
+		return nil
+	}
+	ctx.Printf("%d conversations leased for 30 minutes. Use --digest or --json to read them:\n", len(b.Items))
+	for _, it := range b.Items {
+		var asked []string
+		for _, a := range it.Ask {
+			asked = append(asked, a.Element)
+		}
+		ctx.Printf("  %s  %s  [%s]\n", it.Thread, it.Subject, strings.Join(asked, ", "))
+	}
+	return nil
+}
+
+// readSubmissions reads one submission, an array of them, or one per line,
+// merged over a template when one is given.
+func readSubmissions(ctx *Context, args []string, basePath string) ([]work.Submission, error) {
 	var in io.Reader = ctx.Stdin
 	if len(args) == 1 && args[0] != "-" {
 		f, err := os.Open(args[0])
 		if err != nil {
-			return Fail(ExitNotFound, "%v", err)
+			return nil, Fail(ExitNotFound, "%v", err)
 		}
 		defer f.Close()
 		in = f
 	}
 	raw, err := io.ReadAll(in)
 	if err != nil {
-		return Fail(ExitError, "%v", err)
+		return nil, Fail(ExitError, "%v", err)
 	}
 	subs, err := decodeSubmissions(raw)
 	if err != nil {
-		return Fail(ExitUsage, "%v", err)
+		return nil, Fail(ExitUsage, "%v", err)
 	}
 	if basePath != "" {
 		baseRaw, err := os.ReadFile(basePath)
 		if err != nil {
-			return Fail(ExitNotFound, "%v", err)
+			return nil, Fail(ExitNotFound, "%v", err)
 		}
 		baseSubs, err := decodeSubmissions(baseRaw)
 		if err != nil {
-			return Fail(ExitUsage, "--base %s: %v", basePath, err)
+			return nil, Fail(ExitUsage, "--base %s: %v", basePath, err)
 		}
 		subs = mergeBaseSubmissions(baseSubs, subs)
 	}
 	if len(subs) == 0 {
-		return Fail(ExitUsage, "no answers given")
+		return nil, Fail(ExitUsage, "no answers given")
+	}
+	return subs, nil
+}
+
+// workSubmit reads one submission, an array of them, or one per line.
+func workSubmit(ctx *Context, args []string, basePath string, acceptTickets bool, usage store.WorkUsage, audit bool) error {
+	subs, err := readSubmissions(ctx, args, basePath)
+	if err != nil {
+		return err
+	}
+	// Usage given on the command line is for the batch: it goes on the first
+	// submission, which names the batch through its lease.
+	if !usage.Empty() && subs[0].Usage == nil {
+		subs[0].Usage = &usage
+	}
+	if audit {
+		return auditSubmit(ctx, subs)
 	}
 
 	cal := calsync.New()
@@ -628,7 +755,9 @@ func mergeRawAnswer(baseRaw, ovRaw json.RawMessage) json.RawMessage {
 		return ovRaw
 	}
 	var baseMap, ovMap map[string]work.Answer
-	if json.Unmarshal(baseRaw, &baseMap) == nil && json.Unmarshal(ovRaw, &ovMap) == nil && len(ovMap) > 0 {
+	// A base left null — the template would not guess it — has nothing to
+	// merge into: the override is the whole answer.
+	if json.Unmarshal(baseRaw, &baseMap) == nil && baseMap != nil && json.Unmarshal(ovRaw, &ovMap) == nil && len(ovMap) > 0 {
 		for k, v := range ovMap {
 			baseMap[k] = v
 		}

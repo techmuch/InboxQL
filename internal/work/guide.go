@@ -16,20 +16,21 @@ Fast path (two tool calls per batch):
     iql work next --limit 10 --template /tmp/answers.json --model <id> [--accept-tickets]
     iql --json work submit /tmp/answers.json [--accept-tickets]
 
+Or sparse override path (emit only the conversations/elements that differ from
+the pre-scaffolded template):
+
+    iql --json work submit overrides.json --base /tmp/answers.json [--accept-tickets]
+
 --template <file> prints a compact digest of all leased conversations to
-stdout (with element schemas, message IDs, sender addresses, and clean text)
-and writes a pre-scaffolded JSON array to <file> with all thread keys,
-leases, message IDs, sender guesses, and default "none" answers already
-filled in. Edit <file> to fill in quotes, tags, labels, and any extracted
-records, then pass it to work submit.
-
-For raw JSON:
-
-    iql --json work next --limit 10        conversations to read, newest first
-    iql --json work submit < answers.json  your answers, one per conversation
+stdout (with an Actionable Candidates Index at the top, element schemas,
+message IDs, sender addresses, and clean text) and writes a pre-scaffolded
+JSON array to <file> with all thread keys, leases, message IDs, sender
+guesses, learned sender defaults, and verified quotes already filled in.
+Edit <file> directly—or pass only your overrides with --base <file>—and submit.
 
 Repeat until work next returns no items. Narrow with --only receipts,travel or
---query "from:homedepot"; iql elements shows each element in full.
+--query "from:homedepot"; iql elements shows each element in full, and
+iql elements tune <name> --add-hint "..." adds custom rules without code changes.
 
 work next returns:
 

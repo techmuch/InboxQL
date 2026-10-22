@@ -518,3 +518,62 @@ func TestBoundToLoopback(t *testing.T) {
 		}
 	}
 }
+
+func TestMergeBaseSubmissions(t *testing.T) {
+	baseJSON := `[
+		{
+			"thread": "t1",
+			"lease": "lease-1",
+			"model": "test-model",
+			"labels": ["promotions"],
+			"answers": {
+				"receipts": {"m1": {"none": "none"}, "m2": {"none": "none"}},
+				"importance": {"level": "low", "quote": "Flash sale"}
+			}
+		},
+		{
+			"thread": "t2",
+			"lease": "lease-2",
+			"model": "test-model",
+			"answers": {
+				"importance": {"level": "normal", "quote": "Hello"}
+			}
+		}
+	]`
+	overrideJSON := `[
+		{
+			"thread": "t1",
+			"archive": true,
+			"answers": {
+				"receipts": {"m2": {"records": [{"merchant": "Acme", "total": 19.99, "quote": "Total $19.99"}]}},
+				"importance": {"level": "important", "quote": "Total $19.99"}
+			}
+		}
+	]`
+	baseSubs, err := decodeSubmissions([]byte(baseJSON))
+	if err != nil {
+		t.Fatalf("decode base: %v", err)
+	}
+	ovSubs, err := decodeSubmissions([]byte(overrideJSON))
+	if err != nil {
+		t.Fatalf("decode override: %v", err)
+	}
+	merged := mergeBaseSubmissions(baseSubs, ovSubs)
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 merged submissions, got %d", len(merged))
+	}
+	if merged[0].Lease != "lease-1" || merged[0].Model != "test-model" || !merged[0].Archive {
+		t.Errorf("expected t1 to inherit lease/model and apply archive=true, got %+v", merged[0])
+	}
+	if len(merged[0].Labels) != 1 || merged[0].Labels[0] != "promotions" {
+		t.Errorf("expected t1 to inherit base labels, got %v", merged[0].Labels)
+	}
+	if !strings.Contains(string(merged[0].Answers["receipts"]), `"m1":{"none":"none"}`) ||
+		!strings.Contains(string(merged[0].Answers["receipts"]), `"merchant":"Acme"`) {
+		t.Errorf("expected receipts map to keep m1 none and merge m2 record, got %s", string(merged[0].Answers["receipts"]))
+	}
+	if merged[1].Thread != "t2" || merged[1].Lease != "lease-2" {
+		t.Errorf("expected untouched conversation t2 to remain intact, got %+v", merged[1])
+	}
+}
+

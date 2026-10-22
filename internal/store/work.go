@@ -82,6 +82,12 @@ type ReadingMessage struct {
 	Text        string        `json:"text"`
 	Attachments []ReadingFile `json:"attachments,omitempty"`
 	Truncated   bool          `json:"truncated,omitempty"`
+	// Automated is true when standard RFC headers (List-Unsubscribe, List-Id,
+	// Precedence: bulk/list, Auto-Submitted) mark the message as bulk/automated.
+	Automated bool `json:"automated,omitempty"`
+	// HasCalendar is true when the message or its attachments carry an
+	// iCalendar (text/calendar or .ics) invitation.
+	HasCalendar bool `json:"hasCalendar,omitempty"`
 }
 
 // ReadingFile is an attachment and the text extracted from it.
@@ -142,9 +148,41 @@ func ThreadReading(threadKey string) ([]*ReadingMessage, error) {
 			return nil, err
 		}
 		r.Attachments = files
+		r.Automated, r.HasCalendar = inspectRawSignals(m.ID, files)
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+func inspectRawSignals(messageID string, files []ReadingFile) (automated, hasCal bool) {
+	for _, f := range files {
+		lt := strings.ToLower(f.Type)
+		ln := strings.ToLower(f.Name)
+		if strings.Contains(lt, "calendar") || strings.HasSuffix(ln, ".ics") {
+			hasCal = true
+		}
+	}
+	var raw []byte
+	if err := db.QueryRow(`SELECT SUBSTR(raw, 1, 8192) FROM message_raw WHERE message_id = ?`, messageID).Scan(&raw); err == nil && len(raw) > 0 {
+		hdr := strings.ToLower(string(raw))
+		if idx := strings.Index(hdr, "\r\n\r\n"); idx != -1 {
+			hdr = hdr[:idx]
+		} else if idx := strings.Index(hdr, "\n\n"); idx != -1 {
+			hdr = hdr[:idx]
+		}
+		if strings.Contains(hdr, "list-unsubscribe:") ||
+			strings.Contains(hdr, "list-id:") ||
+			strings.Contains(hdr, "precedence: bulk") ||
+			strings.Contains(hdr, "precedence: list") ||
+			strings.Contains(hdr, "x-auto-response-suppress:") ||
+			(strings.Contains(hdr, "auto-submitted:") && !strings.Contains(hdr, "auto-submitted: no")) {
+			automated = true
+		}
+		if strings.Contains(hdr, "text/calendar") {
+			hasCal = true
+		}
+	}
+	return automated, hasCal
 }
 
 func readingFiles(messageID string) ([]ReadingFile, error) {
@@ -435,7 +473,9 @@ func SenderDefaults(address string) (SenderHistory, error) {
 	tRows, err := db.Query(`
 		SELECT topic FROM message_topics
 		WHERE message_id IN `+recentFromSender+`
-		GROUP BY topic ORDER BY COUNT(*) DESC, topic ASC LIMIT 3`, addr)
+		GROUP BY topic
+		HAVING COUNT(*) >= 2 OR (SELECT COUNT(DISTINCT message_id) FROM message_topics WHERE message_id IN `+recentFromSender+`) = 1
+		ORDER BY COUNT(*) DESC, topic ASC LIMIT 3`, addr, addr)
 	if err == nil {
 		for tRows.Next() {
 			var t string
@@ -450,7 +490,9 @@ func SenderDefaults(address string) (SenderHistory, error) {
 		SELECT label FROM message_labels
 		WHERE message_id IN `+recentFromSender+`
 		  AND label NOT IN ('inbox', 'sent', 'drafts', 'important', 'spam', 'trash', 'starred', 'unread')
-		GROUP BY label ORDER BY COUNT(*) DESC, label ASC LIMIT 3`, addr)
+		GROUP BY label
+		HAVING COUNT(*) >= 2 OR (SELECT COUNT(DISTINCT message_id) FROM message_labels WHERE message_id IN `+recentFromSender+` AND label NOT IN ('inbox', 'sent', 'drafts', 'important', 'spam', 'trash', 'starred', 'unread')) = 1
+		ORDER BY COUNT(*) DESC, label ASC LIMIT 3`, addr, addr)
 	if err == nil {
 		for lRows.Next() {
 			var l string
@@ -461,14 +503,45 @@ func SenderDefaults(address string) (SenderHistory, error) {
 		lRows.Close()
 	}
 
-	_ = db.QueryRow(`
-		SELECT COALESCE(json_extract(a.data_json, '$.level'), '')
+	var imp string
+	var impCount int
+	if err := db.QueryRow(`
+		SELECT COALESCE(json_extract(a.data_json, '$.level'), ''), COUNT(*)
 		FROM annotations a
 		JOIN annotators an ON an.id = a.annotator_id AND an.name = 'importance'
 		WHERE a.message_id IN `+recentFromSender+`
 		  AND a.status = ?
 		  AND COALESCE(json_extract(a.data_json, '$.level'), '') != ''
-		GROUP BY 1 ORDER BY COUNT(*) DESC LIMIT 1`, addr, StatusOK).Scan(&h.Importance)
+		GROUP BY 1 ORDER BY COUNT(*) DESC LIMIT 1`, addr, StatusOK).Scan(&imp, &impCount); err == nil && impCount >= 2 {
+		h.Importance = imp
+	}
 
 	return h, nil
 }
+
+// TuneElement updates an installed element's instructions in place (preserving
+// its version unless bumpVersion is true) so users can add domain-specific
+// rules without invalidating their existing answers or editing Go code.
+func TuneElement(name, instructions string, bumpVersion bool) (*Annotator, error) {
+	a, err := GetAnnotator(name)
+	if err != nil {
+		return nil, err
+	}
+	if a == nil {
+		return nil, fmt.Errorf("element %q is not installed (run `iql elements install` first)", name)
+	}
+	ver := a.Version
+	if bumpVersion && strings.TrimSpace(a.Instructions) != strings.TrimSpace(instructions) {
+		ver++
+	}
+	now := time.Now()
+	if _, err := db.Exec(`UPDATE annotators SET instructions = ?, version = ?, updated_at = ? WHERE id = ?`,
+		instructions, ver, now.UnixMilli(), a.ID); err != nil {
+		return nil, err
+	}
+	a.Instructions = instructions
+	a.Version = ver
+	a.UpdatedAt = now
+	return a, nil
+}
+

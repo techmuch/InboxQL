@@ -193,11 +193,24 @@ func Submit(sub Submission, cal *calsync.Engine) (*Result, error) {
 			}
 			for _, t := range targets {
 				if _, ok := answers[t]; !ok {
+					if len(answers) > 0 {
+						if el.Unit == elements.UnitSender {
+							answers[t] = Answer{Level: guessSenderLevelForMessages(t, msgs)}
+						} else {
+							answers[t] = Answer{None: "none"}
+						}
+						continue
+					}
 					bad(ask.Element, t, "not answered")
 				}
 			}
 		}
 		for t, ans := range answers {
+			if el.Shape == elements.ShapeLevels && el.Unit != elements.UnitSender &&
+				strings.TrimSpace(ans.Quote) == "" && isBaselineLevel(ans.Level) {
+				ans.Quote = defaultQuote(msgs)
+				answers[t] = ans
+			}
 			for _, p := range check(el, ans, corpus) {
 				bad(ask.Element, t, "%s", p)
 			}
@@ -352,6 +365,14 @@ func targetNoun(unit string) string {
 		return "sender"
 	}
 	return "message"
+}
+
+func isBaselineLevel(lvl string) bool {
+	switch strings.ToLower(strings.TrimSpace(lvl)) {
+	case "no-one", "low", "ignorable", "normal":
+		return true
+	}
+	return false
 }
 
 func strictDecode(raw json.RawMessage, v any) error {

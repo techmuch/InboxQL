@@ -2,6 +2,7 @@ package work
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -502,3 +503,94 @@ func TestDigestCompactsTrackingURLsAndIdempotentSenderAndAcceptTickets(t *testin
 		t.Errorf("expected duplicate order receipt on shipped email to be deduplicated to 1 message, got %d", len(qr.Messages))
 	}
 }
+
+func TestUniversalRobustnessForOtherUsers(t *testing.T) {
+	openWorkFixture(t)
+
+	// 1. Long receipt where Grand Total is past line 50: compactDigestText preserves salient tail lines.
+	var longLines []string
+	for i := 1; i <= 55; i++ {
+		longLines = append(longLines, fmt.Sprintf("Item %d: Standard Bolt Pack", i))
+	}
+	longLines = append(longLines, "Grand Total: $412.88")
+	gotDigest := compactDigestText(strings.Join(longLines, "\n"))
+	if !strings.Contains(gotDigest, "… [") || !strings.Contains(gotDigest, "Grand Total: $412.88") {
+		t.Errorf("expected compactDigestText to preserve salient tail line 'Grand Total: $412.88', got:\n%s", gotDigest)
+	}
+
+	// 2. TuneElement updates instructions without bumping version by default, and bumps version when requested.
+	tuned, err := store.TuneElement("importance", "Treat @client.org as important.", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tuned.Version != 1 || !strings.Contains(tuned.Instructions, "Treat @client.org") {
+		t.Errorf("unexpected tuned element: version=%d instructions=%q", tuned.Version, tuned.Instructions)
+	}
+	bumped, err := store.TuneElement("importance", "Treat @vip.org as important.", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bumped.Version != 2 {
+		t.Errorf("expected bumpVersion=true to increment version to 2, got %d", bumped.Version)
+	}
+
+	// 3. Message with List-Unsubscribe header is detected as Automated (system), while human
+	// conversation with a question is flagged as [CANDIDATE: person, task], and baseline
+	// levels ("no-one", "low") auto-fill defaultQuote when Quote is omitted.
+	bulkMsg := &message.Message{
+		ID: "bulk1", AccountID: "acct", ContentHash: "bulk1", MessageID: "<bulk1@x>",
+		From: "digest@unknownvendor.io", To: []string{"me@example.com"},
+		Subject: "Weekly Industry Digest", Body: "Here are the top stories of the week.",
+		Header: []byte("Message-ID: <bulk1@x>\r\nList-Unsubscribe: <mailto:unsub@unknownvendor.io>\r\n\r\nHere are the top stories of the week."),
+		Date:   time.Now().Add(5 * time.Minute),
+	}
+	if err := store.SaveMessage(bulkMsg); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := Next(Options{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bulkItem := itemFor(t, b, "bulk1")
+	if !bulkItem.Messages[0].Automated {
+		t.Errorf("expected List-Unsubscribe header to mark message as Automated=true")
+	}
+	askItem := itemFor(t, b, "ask")
+	sigs := candidateSignals(askItem)
+	if !has(sigs, "person") || !has(sigs, "task") {
+		t.Errorf("expected human thread with '?' to be flagged with [person, task] signals, got %v", sigs)
+	}
+
+	// Submit bulk1 with empty quote on baseline levels ("no-one" and "low") — Submit auto-fills defaultQuote!
+	none := map[string]string{"none": "not here"}
+	res, err := Submit(answers(t, bulkItem, map[string]any{
+		"receipts":   map[string]any{"bulk1": none},
+		"travel":     map[string]any{"bulk1": none},
+		"events":     map[string]any{"bulk1": none},
+		"tasks":      none,
+		"waiting":    map[string]any{"level": "no-one"},
+		"importance": map[string]any{"level": "low"},
+		"sender":     map[string]any{"digest@unknownvendor.io": map[string]any{"level": "system"}},
+		"topics":     map[string]any{"tags": []string{"newsletter"}},
+	}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK() {
+		t.Fatalf("expected baseline levels with empty quote to auto-fill defaultQuote and succeed, got problems: %+v", res.Problems)
+	}
+
+	// 4. Quoted reply lines (> Can you send the file?) do not trigger false-positive question detection.
+	quotedReply := &Item{
+		Subject: "Re: Project update",
+		Messages: []*store.ReadingMessage{
+			{ID: "qr1", From: "alice@acme.com", Text: "Sounds good, thanks!\n> Can you send the file by Friday?"},
+		},
+	}
+	qrSigs := candidateSignals(quotedReply)
+	if !has(qrSigs, "person") || has(qrSigs, "task") {
+		t.Errorf("expected quoted '?' not to trigger task signal, got %v", qrSigs)
+	}
+}
+

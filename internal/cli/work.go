@@ -24,7 +24,7 @@ func init() {
 		Name:    "elements",
 		Aliases: []string{"element"},
 		Summary: "what is worth knowing about mail, for an AI harness to read and answer",
-		Usage: `iql elements [list|show <name>|install [names...] [--replace]]
+		Usage: `iql elements [list|show <name>|install [names...] [--replace]|tune <name> [--add-hint <text>|--instructions <text>|--reset]]
 
 An element is something worth knowing later: receipts, travel, calendar events,
 tasks, waiting, importance, sender and topics. Your AI harness answers them
@@ -34,7 +34,11 @@ with iql work; see iql work guide.
   show      one element in full: instructions, levels or fields
   install   add the catalog, or the named elements. An annotator with the same
             name is replaced only if it never answered anything, unless
-            --replace is given.`,
+            --replace is given.
+  tune      customize an element's instructions without editing code:
+            --add-hint <text>      append a custom rule/hint (preserves version)
+            --instructions <text>  replace instructions (preserves version unless --bump-version)
+            --reset                restore catalog instructions`,
 		Run: runElements,
 	})
 	register(&Command{
@@ -51,6 +55,7 @@ with iql work; see iql work guide.
             --digest           print a compact readable digest of all leased items
   submit    answers, from a file or standard input: one JSON object, an
             array of them, or one per line
+            --base <file>      merge partial/sparse answers on top of a --template file
             --accept-tickets   put created task tickets straight on the board (status: todo)
   status    what has been answered, by element and model
   clear     undo answers given through work: --model <id>, --since 1d|2h|date,
@@ -67,6 +72,10 @@ func runElements(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("elements", flag.ContinueOnError)
 	fs.SetOutput(ctx.Stderr)
 	replace := fs.Bool("replace", false, "replace same-named annotators even if they have answers")
+	addHint := fs.String("add-hint", "", "for tune: append a custom hint/rule to the element's instructions")
+	instructions := fs.String("instructions", "", "for tune: set the element's instructions")
+	reset := fs.Bool("reset", false, "for tune: restore the default catalog instructions")
+	bumpVersion := fs.Bool("bump-version", false, "for tune: increment the element's version so existing answers are re-asked")
 	if err := parseArgs(fs, rest); err != nil {
 		return Fail(ExitUsage, "invalid flags")
 	}
@@ -83,6 +92,11 @@ func runElements(ctx *Context, args []string) error {
 			return Fail(ExitUsage, "usage: iql elements show <name>")
 		}
 		return elementsShow(ctx, fs.Arg(0))
+	case "tune", "customize":
+		if fs.NArg() != 1 {
+			return Fail(ExitUsage, "usage: iql elements tune <name> [--add-hint <text>|--instructions <text>|--reset]")
+		}
+		return elementsTune(ctx, fs.Arg(0), *addHint, *instructions, *reset, *bumpVersion)
 	case "install":
 		made, replaced, skipped, err := elements.Install(fs.Args(), *replace)
 		if err != nil {
@@ -186,6 +200,54 @@ func elementsShow(ctx *Context, name string) error {
 	return nil
 }
 
+func elementsTune(ctx *Context, name, addHint, instructions string, reset, bumpVersion bool) error {
+	cat, inCatalog := elements.ByName(name)
+	a, err := store.GetAnnotator(name)
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	if a == nil {
+		return Fail(ExitNotFound, "element %q is not installed (run `iql elements install` first)", name)
+	}
+	if _, isEl := elements.FromAnnotator(a); !isEl {
+		return Fail(ExitUsage, "%q is not an agent element", name)
+	}
+	given := 0
+	for _, set := range []bool{strings.TrimSpace(addHint) != "", strings.TrimSpace(instructions) != "", reset} {
+		if set {
+			given++
+		}
+	}
+	if given != 1 {
+		return Fail(ExitUsage, "specify exactly one of --add-hint <text>, --instructions <text>, or --reset")
+	}
+
+	var nextInst string
+	switch {
+	case reset:
+		if !inCatalog {
+			return Fail(ExitNotFound, "no built-in catalog instructions for %q", name)
+		}
+		nextInst = cat.Instructions
+	case strings.TrimSpace(instructions) != "":
+		nextInst = strings.TrimSpace(instructions)
+	case strings.TrimSpace(addHint) != "":
+		hint := strings.TrimSpace(addHint)
+		nextInst = strings.TrimSpace(a.Instructions) + "\n\nCustom rule: " + hint
+	}
+
+	updated, err := store.TuneElement(name, nextInst, bumpVersion)
+	if err != nil {
+		return Fail(ExitError, "%v", err)
+	}
+	if ctx.JSON {
+		el, _ := elements.FromAnnotator(updated)
+		return ctx.EmitJSON(el)
+	}
+	ctx.Printf("Updated %s (version %d):\n\n%s\n", updated.Name, updated.Version, updated.Instructions)
+	return nil
+}
+
 func printFields(ctx *Context, fields []elements.Field, indent string) {
 	for _, f := range fields {
 		req := ""
@@ -217,6 +279,7 @@ func runWork(ctx *Context, args []string) error {
 	model := fs.String("model", "", "model id (for template or clear)")
 	since := fs.String("since", "", "for clear: only answers since this (1d, 2h, or a date)")
 	templatePath := fs.String("template", "", "for next: write pre-scaffolded answers JSON to this file")
+	basePath := fs.String("base", "", "for submit: merge partial/sparse answers on top of this template file")
 	digestOut := fs.String("digest-out", "", "for next: write the readable digest to this file (defaults to <template>.digest.txt)")
 	outPath := fs.String("out", "", "for next: write the full batch JSON to this file")
 	digest := fs.Bool("digest", false, "for next: print a compact readable digest of all leased items")
@@ -298,7 +361,7 @@ func runWork(ctx *Context, args []string) error {
 		return nil
 
 	case "submit":
-		return workSubmit(ctx, fs.Args(), *acceptTickets)
+		return workSubmit(ctx, fs.Args(), *basePath, *acceptTickets)
 
 	case "status":
 		counts, err := store.AgentAnswerCounts()
@@ -354,7 +417,7 @@ func runWork(ctx *Context, args []string) error {
 }
 
 // workSubmit reads one submission, an array of them, or one per line.
-func workSubmit(ctx *Context, args []string, acceptTickets bool) error {
+func workSubmit(ctx *Context, args []string, basePath string, acceptTickets bool) error {
 	var in io.Reader = ctx.Stdin
 	if len(args) == 1 && args[0] != "-" {
 		f, err := os.Open(args[0])
@@ -371,6 +434,17 @@ func workSubmit(ctx *Context, args []string, acceptTickets bool) error {
 	subs, err := decodeSubmissions(raw)
 	if err != nil {
 		return Fail(ExitUsage, "%v", err)
+	}
+	if basePath != "" {
+		baseRaw, err := os.ReadFile(basePath)
+		if err != nil {
+			return Fail(ExitNotFound, "%v", err)
+		}
+		baseSubs, err := decodeSubmissions(baseRaw)
+		if err != nil {
+			return Fail(ExitUsage, "--base %s: %v", basePath, err)
+		}
+		subs = mergeBaseSubmissions(baseSubs, subs)
 	}
 	if len(subs) == 0 {
 		return Fail(ExitUsage, "no answers given")
@@ -492,6 +566,77 @@ func decodeSubmissions(raw []byte) ([]work.Submission, error) {
 		subs = append(subs, s)
 	}
 	return subs, nil
+}
+
+// mergeBaseSubmissions overlays sparse/partial overrides onto a base template
+// slice so an agent only needs to emit the conversations and elements it
+// wants to change, inheriting Lease, Model, Labels, and untouched element
+// defaults from the base template.
+func mergeBaseSubmissions(base, overrides []work.Submission) []work.Submission {
+	byThread := map[string]int{}
+	out := make([]work.Submission, len(base))
+	for i, b := range base {
+		ans := map[string]json.RawMessage{}
+		for k, v := range b.Answers {
+			ans[k] = v
+		}
+		b.Answers = ans
+		out[i] = b
+		byThread[b.Thread] = i
+	}
+	for _, ov := range overrides {
+		idx, ok := byThread[ov.Thread]
+		if !ok {
+			out = append(out, ov)
+			continue
+		}
+		cur := out[idx]
+		if strings.TrimSpace(ov.Lease) != "" {
+			cur.Lease = ov.Lease
+		}
+		if strings.TrimSpace(ov.Model) != "" {
+			cur.Model = ov.Model
+		}
+		if len(ov.Labels) > 0 {
+			cur.Labels = ov.Labels
+		}
+		if ov.Archive {
+			cur.Archive = true
+		}
+		if ov.AcceptTickets {
+			cur.AcceptTickets = true
+		}
+		for k, v := range ov.Answers {
+			if prev, exists := cur.Answers[k]; exists {
+				cur.Answers[k] = mergeRawAnswer(prev, v)
+			} else {
+				cur.Answers[k] = v
+			}
+		}
+		out[idx] = cur
+	}
+	return out
+}
+
+// mergeRawAnswer merges a partial message/sender map (e.g. overriding only 1
+// message ID in a 5-message thread) over the base template's map when both are
+// target-keyed maps; otherwise returns the override directly.
+func mergeRawAnswer(baseRaw, ovRaw json.RawMessage) json.RawMessage {
+	var ovAns work.Answer
+	if json.Unmarshal(ovRaw, &ovAns) == nil &&
+		(ovAns.Level != "" || len(ovAns.Records) > 0 || len(ovAns.Tags) > 0 || ovAns.None != "" || ovAns.Skip != "") {
+		return ovRaw
+	}
+	var baseMap, ovMap map[string]work.Answer
+	if json.Unmarshal(baseRaw, &baseMap) == nil && json.Unmarshal(ovRaw, &ovMap) == nil && len(ovMap) > 0 {
+		for k, v := range ovMap {
+			baseMap[k] = v
+		}
+		if merged, err := json.Marshal(baseMap); err == nil {
+			return merged
+		}
+	}
+	return ovRaw
 }
 
 // parseSince reads 1d, 12h, 30m or a date.

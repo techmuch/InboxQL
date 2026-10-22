@@ -341,76 +341,118 @@ func Template(b *Batch, model string) []Submission {
 
 	out := make([]Submission, 0, len(b.Items))
 	for _, it := range b.Items {
-		defQuote := defaultQuote(it.Messages)
-		allSystem := isSystemThread(it)
-		hist := lookupSender(it)
-		ans := map[string]json.RawMessage{}
-		for _, a := range it.Ask {
-			el := b.Elements[a.Element]
-			var v any
-			switch el.Unit {
-			case elements.UnitMessage:
-				m := map[string]Answer{}
-				for _, mid := range a.Messages {
-					m[mid] = Answer{None: "none"}
-				}
-				v = m
-			case elements.UnitSender:
-				m := map[string]Answer{}
-				for _, s := range a.Senders {
-					m[s] = Answer{Level: guessSenderLevel(s)}
-				}
-				v = m
-			default: // UnitThread
-				switch el.Shape {
-				case elements.ShapeRecords:
-					v = Answer{None: "none"}
-				case elements.ShapeTags:
-					tags := hist.Topics
-					if len(tags) == 0 {
-						tags, _ = inferTopicsAndLabels(it)
-					}
-					if len(tags) > 0 {
-						v = Answer{Tags: tags}
-					} else {
-						v = Answer{None: "general"}
-					}
-				case elements.ShapeLevels:
-					lvl := ""
-					switch {
-					case el.HasLevel("no-one"):
-						lvl = "no-one"
-					case hist.Importance != "" && el.HasLevel(hist.Importance):
-						lvl = hist.Importance
-					case allSystem && el.HasLevel("low"):
-						lvl = "low"
-					case el.HasLevel("normal"):
-						lvl = "normal"
-					case len(el.Levels) > 0:
-						lvl = el.Levels[0].Label
-					}
-					v = Answer{Level: lvl, Quote: defQuote}
-				}
-			}
-			raw, _ := json.Marshal(v)
-			ans[a.Element] = raw
-		}
-		lbls := hist.Labels
-		if len(lbls) == 0 {
-			_, lbls = inferTopicsAndLabels(it)
-		}
-		if lbls == nil {
-			lbls = []string{}
-		}
-		out = append(out, Submission{
-			Thread:  it.Thread,
-			Lease:   it.Lease,
-			Model:   model,
-			Labels:  lbls,
-			Answers: ans,
-		})
+		sub := defaultSubmissionFor(it, b.Elements, model, lookupSender(it))
+		out = append(out, sub)
 	}
 	return out
+}
+
+func defaultSubmissionFor(it *Item, elementsMap map[string]elements.Element, model string, hist store.SenderHistory) Submission {
+	defQuote := defaultQuote(it.Messages)
+	allSystem := isSystemThread(it)
+	ans := map[string]json.RawMessage{}
+	for _, a := range it.Ask {
+		el := elementsMap[a.Element]
+		var v any
+		switch el.Unit {
+		case elements.UnitMessage:
+			m := map[string]Answer{}
+			for _, mid := range a.Messages {
+				m[mid] = Answer{None: "none"}
+			}
+			v = m
+		case elements.UnitSender:
+			m := map[string]Answer{}
+			for _, s := range a.Senders {
+				m[s] = Answer{Level: guessSenderLevelForItem(s, it)}
+			}
+			v = m
+		default: // UnitThread
+			switch el.Shape {
+			case elements.ShapeRecords:
+				v = Answer{None: "none"}
+			case elements.ShapeTags:
+				tags := hist.Topics
+				if len(tags) == 0 {
+					tags, _ = inferTopicsAndLabels(it)
+				}
+				if len(tags) > 0 {
+					v = Answer{Tags: tags}
+				} else {
+					v = Answer{None: "general"}
+				}
+			case elements.ShapeLevels:
+				lvl := defaultLevelFor(el, it, hist, allSystem)
+				v = Answer{Level: lvl, Quote: defQuote}
+			}
+		}
+		raw, _ := json.Marshal(v)
+		ans[a.Element] = raw
+	}
+	lbls := hist.Labels
+	if len(lbls) == 0 {
+		_, lbls = inferTopicsAndLabels(it)
+	}
+	if lbls == nil {
+		lbls = []string{}
+	}
+	return Submission{
+		Thread:  it.Thread,
+		Lease:   it.Lease,
+		Model:   model,
+		Labels:  lbls,
+		Answers: ans,
+	}
+}
+
+func unquotedText(s string) string {
+	var sb strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, ">") {
+			continue
+		}
+		sb.WriteString(trimmed)
+		sb.WriteByte('\n')
+	}
+	return sb.String()
+}
+
+func defaultLevelFor(el elements.Element, it *Item, hist store.SenderHistory, allSystem bool) string {
+	// Waiting element: check turn-taking in human threads
+	if el.HasLevel("no-one") {
+		if !allSystem && len(it.Messages) > 0 {
+			newest := it.Messages[len(it.Messages)-1]
+			if newest.Mine && strings.Contains(unquotedText(newest.Text), "?") && el.HasLevel("on-them") {
+				return "on-them"
+			}
+		}
+		return "no-one"
+	}
+	// Subject-level urgency override: even if a sender usually sends low-importance
+	// notifications, an urgent subject ("action required", "security alert", "fraud",
+	// "appointment") upgrades the default level so it isn't buried.
+	subj := strings.ToLower(it.Subject)
+	if el.HasLevel("important") && (strings.Contains(subj, "action required") ||
+		strings.Contains(subj, "urgent") ||
+		strings.Contains(subj, "fraud") ||
+		strings.Contains(subj, "past due") ||
+		strings.Contains(subj, "appointment")) {
+		return "important"
+	}
+	if hist.Importance != "" && el.HasLevel(hist.Importance) {
+		return hist.Importance
+	}
+	if allSystem && el.HasLevel("low") {
+		return "low"
+	}
+	if el.HasLevel("normal") {
+		return "normal"
+	}
+	if len(el.Levels) > 0 {
+		return el.Levels[0].Label
+	}
+	return ""
 }
 
 func inferTopicsAndLabels(it *Item) (topics []string, labels []string) {
@@ -419,25 +461,44 @@ func inferTopicsAndLabels(it *Item) (topics []string, labels []string) {
 	if snds := senders(it.Messages); len(snds) > 0 {
 		addr = strings.ToLower(snds[len(snds)-1])
 	}
+	hasCal := false
+	automated := false
+	for _, m := range it.Messages {
+		if m.HasCalendar {
+			hasCal = true
+		}
+		if m.Automated {
+			automated = true
+		}
+	}
 	switch {
-	case strings.Contains(addr, "facebookmail.com") || strings.Contains(subj, "facebook") || strings.Contains(subj, "reel"):
-		return []string{"facebook", "social"}, []string{"social", "facebook"}
-	case strings.Contains(addr, "navyfederal.org"):
-		return []string{"navy-federal", "banking"}, []string{"finance"}
-	case strings.Contains(addr, "equifax") || strings.Contains(addr, "transunion") || strings.Contains(addr, "experian") || strings.Contains(subj, "credit report") || strings.Contains(subj, "credit alert"):
-		return []string{"finance", "credit"}, []string{"finance"}
-	case strings.Contains(addr, "churchofjesuschrist.org") || strings.Contains(subj, "ward conference") || strings.Contains(subj, "sacrament") || strings.Contains(subj, "tithing"):
-		return []string{"church"}, []string{"church"}
-	case strings.Contains(addr, "phreesia") || strings.Contains(addr, "waystar") || strings.Contains(subj, "northside hospital") || strings.Contains(subj, "center pointe"):
-		return []string{"health"}, []string{"health"}
-	case strings.Contains(addr, "amazon.com") && (strings.HasPrefix(subj, "ordered") || strings.HasPrefix(subj, "shipped") || strings.HasPrefix(subj, "delivered")):
-		return []string{"amazon", "shopping"}, []string{"shopping"}
-	case strings.Contains(subj, "receipt") || strings.Contains(subj, "order #") || strings.Contains(subj, "invoice"):
+	case strings.Contains(subj, "receipt") || strings.Contains(subj, "order #") || strings.Contains(subj, "invoice") ||
+		strings.HasPrefix(subj, "ordered:") || strings.HasPrefix(subj, "ordered "):
 		return []string{"receipt"}, []string{"receipts"}
-	case strings.Contains(subj, "security alert") || strings.Contains(subj, "verification code") || strings.Contains(subj, "sign-in"):
+	case strings.Contains(subj, "shipped:") || strings.Contains(subj, "shipped ") ||
+		strings.Contains(subj, "delivered:") || strings.Contains(subj, "delivered ") ||
+		strings.Contains(subj, "out for delivery"):
+		return []string{"shipping", "shopping"}, []string{"shopping"}
+	case strings.Contains(subj, "security alert") || strings.Contains(subj, "verification code") ||
+		strings.Contains(subj, "sign-in") || strings.Contains(subj, "two-factor") || strings.Contains(subj, "password reset"):
 		return []string{"security"}, []string{"security"}
-	case strings.Contains(addr, "peacock") || strings.Contains(addr, "audible") || strings.Contains(addr, "vrbo") || strings.Contains(subj, "discount") || strings.Contains(subj, "sale") || strings.Contains(subj, "save "):
+	case strings.Contains(subj, "statement") || strings.Contains(subj, "credit report") ||
+		strings.Contains(subj, "credit alert") || strings.Contains(subj, "deposit notification") ||
+		strings.Contains(subj, "withdrawal notification") || strings.Contains(subj, "payment scheduled"):
+		return []string{"finance"}, []string{"finance"}
+	case strings.Contains(subj, "appointment") || strings.Contains(subj, "patient") ||
+		strings.Contains(subj, "radiology") || strings.Contains(subj, "clinic") || strings.Contains(subj, "hospital"):
+		return []string{"health"}, []string{"health"}
+	case hasCal || strings.Contains(subj, "invitation:") || strings.Contains(subj, "agenda"):
+		return []string{"events"}, []string{"events"}
+	case strings.Contains(addr, "facebookmail.com") || strings.Contains(addr, "linkedin.com") ||
+		strings.Contains(subj, "shared a new reel") || strings.Contains(subj, "added a new reel"):
+		return []string{"social"}, []string{"social"}
+	case strings.Contains(subj, "discount") || strings.Contains(subj, "flash sale") ||
+		strings.Contains(subj, "% off") || strings.Contains(subj, "save ") || strings.Contains(subj, "deal"):
 		return []string{"promotions"}, []string{"promotions"}
+	case automated && (strings.Contains(addr, "newsletter") || strings.Contains(addr, "substack.com") || strings.Contains(subj, "digest") || strings.Contains(subj, "newsletter")):
+		return []string{"newsletter"}, []string{"newsletters"}
 	}
 	return nil, nil
 }
@@ -465,10 +526,24 @@ func defaultQuote(msgs []*store.ReadingMessage) string {
 			}
 		}
 	}
+	// Fallback for ultra-short messages ("Hi", "Ok")
+	if s := strings.TrimSpace(newest.Subject); s != "" && quoted(s, corpus) == "" {
+		return s
+	}
+	for _, line := range strings.Split(newest.Text, "\n") {
+		if line = strings.TrimSpace(line); line != "" && quoted(line, corpus) == "" {
+			return line
+		}
+	}
 	return ""
 }
 
 func isSystemThread(it *Item) bool {
+	for _, m := range it.Messages {
+		if m.Automated {
+			return true
+		}
+	}
 	snds := senders(it.Messages)
 	if len(snds) == 0 {
 		return false
@@ -480,13 +555,32 @@ func isSystemThread(it *Item) bool {
 	for _, s := range snds {
 		k := kindByAddr[s]
 		if k == "" || k == store.KindUnknown {
-			k = guessSenderLevel(s)
+			k = guessSenderLevelForItem(s, it)
 		}
 		if k != "system" {
 			return false
 		}
 	}
 	return true
+}
+
+func guessSenderLevelForItem(addr string, it *Item) string {
+	if it == nil {
+		return guessSenderLevel(addr)
+	}
+	return guessSenderLevelForMessages(addr, it.Messages)
+}
+
+func guessSenderLevelForMessages(addr string, msgs []*store.ReadingMessage) string {
+	if lvl := guessSenderLevel(addr); lvl != "person" {
+		return lvl
+	}
+	for _, m := range msgs {
+		if m.Automated {
+			return "system"
+		}
+	}
+	return "person"
 }
 
 func guessSenderLevel(addr string) string {
@@ -497,7 +591,8 @@ func guessSenderLevel(addr string) string {
 		"alerts@", "alert@", "receipts@", "receipt@", "notice@",
 		"updates@", "friendupdates@", "order-update@", "shipment-tracking@",
 		"auto-confirm@", "newsletter@", "news@", "digest@", "billing@",
-		"info@", "service@", "automated", "bounce",
+		"info@", "service@", "automated", "bounce", "invoicing@",
+		"registration@", "confirm@", "calendar-notification@",
 		"messenger@messaging.squareup.com",
 		"@facebookmail.com", "@email.amazonses.com", "@us-west-2.amazonses.com",
 		"@notifications.google.com",
@@ -554,17 +649,28 @@ func writeElementsSummary(sb *strings.Builder, elementsMap map[string]elements.E
 func candidateSignals(it *Item) []string {
 	subj := strings.ToLower(it.Subject)
 	var bodyBuilder strings.Builder
+	hasCal := false
 	for _, m := range it.Messages {
 		bodyBuilder.WriteString(strings.ToLower(m.Text))
 		bodyBuilder.WriteByte('\n')
+		if m.HasCalendar {
+			hasCal = true
+		}
 	}
 	body := bodyBuilder.String()
 
 	var signals []string
+	// Human / direct person conversation signal: human emails rarely use rigid
+	// B2C keywords when asking for deliverables or scheduling meetings.
+	if !isSystemThread(it) && len(senders(it.Messages)) > 0 {
+		signals = append(signals, "person")
+	}
 	// Receipts signals
 	if strings.Contains(subj, "receipt") ||
 		strings.HasPrefix(subj, "ordered ") ||
+		strings.HasPrefix(subj, "ordered:") ||
 		strings.Contains(subj, "order #") ||
+		strings.Contains(subj, "invoice") ||
 		strings.Contains(body, "grand total:") ||
 		strings.Contains(body, "amount paid") ||
 		strings.Contains(body, "you paid $") ||
@@ -572,7 +678,8 @@ func candidateSignals(it *Item) []string {
 		signals = append(signals, "receipt")
 	}
 	// Events signals
-	if strings.Contains(subj, "appointment") ||
+	if hasCal ||
+		strings.Contains(subj, "appointment") ||
 		strings.Contains(subj, "agenda") ||
 		strings.Contains(subj, "tailgate") ||
 		strings.Contains(subj, "invitation") ||
@@ -588,11 +695,12 @@ func candidateSignals(it *Item) []string {
 		strings.Contains(body, "check-in:") {
 		signals = append(signals, "travel")
 	}
-	// Tasks signals
+	// Tasks / Waiting signals
 	if strings.Contains(subj, "action required") ||
 		strings.Contains(subj, "tithing declaration") ||
 		strings.Contains(subj, "deadline") ||
-		strings.Contains(body, "action required") {
+		strings.Contains(body, "action required") ||
+		(!isSystemThread(it) && len(it.Messages) > 0 && !it.Messages[len(it.Messages)-1].Mine && strings.Contains(unquotedText(it.Messages[len(it.Messages)-1].Text), "?")) {
 		signals = append(signals, "task")
 	}
 	return signals
@@ -685,6 +793,7 @@ func Digest(b *Batch) string {
 var (
 	standaloneURL = regexp.MustCompile(`^[\s(<\[|]*https?://\S{50,}[\s)>\]|]*$`)
 	longURL       = regexp.MustCompile(`https?://[^\s)>\]"]+`)
+	salientLine   = regexp.MustCompile(`(?i)(\$\s*\d|\b\d+\.\d{2}\b|\b(?:usd|eur|gbp|cad)\b|\b(?:total|subtotal|amount paid|balance due|order #|confirmation|check-in|appointment|due date|deadline)\b|\?)`)
 )
 
 const (
@@ -694,14 +803,12 @@ const (
 
 func compactDigestText(s string) string {
 	rawLines := strings.Split(s, "\n")
-	var kept []string
-	omitted := 0
-	chars := 0
+	var cleanedLines []string
 	for _, line := range rawLines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
-			if len(kept) > 0 && kept[len(kept)-1] != "" {
-				kept = append(kept, "")
+			if len(cleanedLines) > 0 && cleanedLines[len(cleanedLines)-1] != "" {
+				cleanedLines = append(cleanedLines, "")
 			}
 			continue
 		}
@@ -721,8 +828,24 @@ func compactDigestText(s string) string {
 			}
 			return u[:40] + "…"
 		})
+		cleanedLines = append(cleanedLines, cleaned)
+	}
+	for len(cleanedLines) > 0 && cleanedLines[len(cleanedLines)-1] == "" {
+		cleanedLines = cleanedLines[:len(cleanedLines)-1]
+	}
+
+	var kept []string
+	var tailSalient []string
+	omitted := 0
+	chars := 0
+	for _, cleaned := range cleanedLines {
 		if len(kept) >= digestMaxLines || chars+len(cleaned) > digestMaxChars {
-			omitted++
+			if cleaned != "" && salientLine.MatchString(cleaned) && len(tailSalient) < 10 && chars+len(cleaned) <= digestMaxChars+600 {
+				tailSalient = append(tailSalient, cleaned)
+				chars += len(cleaned) + 1
+			} else {
+				omitted++
+			}
 			continue
 		}
 		kept = append(kept, cleaned)
@@ -735,5 +858,9 @@ func compactDigestText(s string) string {
 	if omitted > 0 {
 		out += fmt.Sprintf("\n… [%d more lines]", omitted)
 	}
+	if len(tailSalient) > 0 {
+		out += "\n" + strings.Join(tailSalient, "\n")
+	}
 	return out
 }
+

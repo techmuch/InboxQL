@@ -474,23 +474,27 @@ commands** rather than reading messages one by one:
 
 ```
 iql elements install                                                # once
+iql elements tune <name> --add-hint "<custom rule>"                 # optional user rule
 iql work next --limit 10 --template /tmp/answers.json --model <id>  # 1: lease + digest + scaffold
-iql --json work submit /tmp/answers.json                            # 2: submit answers + labels
+iql --json work submit /tmp/answers.json                            # 2a: submit edited template
+iql --json work submit /tmp/overrides.json --base /tmp/answers.json # 2b: or merge sparse overrides
 ```
 
 1. `work next --template <file>` leases the conversations, prints a compact
-   digest of all messages (with element schemas, message IDs, sender addresses,
-   and clean text) to stdout, and writes a pre-scaffolded JSON array to `<file>`
-   with all thread keys, leases, sender guesses, and default `"none"` answers
-   already filled in.
-2. Edit `<file>` to fill in verbatim `quote` substrings, `tags`, optional mail
-   `"labels": ["receipts"]` (or `"archive": true`), and any `receipts`,
-   `travel`, `events`, or `tasks` records, then pass `<file>` to `work submit`
-   (pass `--accept-tickets` or `"acceptTickets": true` when the user asked to
-   create task cards directly on the board).
+   digest of all messages (with an `Actionable Candidates Index` at the top,
+   element schemas, message IDs, sender addresses, and clean text) to stdout
+   (and `<file>.digest.txt`), and writes a pre-scaffolded JSON array to `<file>`
+   with all thread keys, leases, sender guesses, verified default quotes,
+   inferred topics/labels, and default `"none"` answers already filled in.
+2. Either edit `<file>` in place, or write a small sparse overrides JSON file
+   containing only the conversations and elements that need changes and submit
+   with `work submit <overrides.json> --base <file>` (pass `--accept-tickets` or
+   `"acceptTickets": true` when the user asked to create task cards directly on
+   the board).
 3. `events` records automatically propose calendar events (`eventChangeIds` in
    the result); `tasks` records automatically propose or create tickets
-   (`ticketIds` in the result).
+   (`ticketIds` in the result). Duplicate receipt order numbers across messages
+   are automatically deduplicated.
    See [`work`](#work--read-conversations-and-record-what-is-worth-knowing),
    [`calendar`](#calendar--inevents--the-calendar), and
    [`ticket`](#ticket--the-board) below for full details.
@@ -1226,9 +1230,11 @@ iql work guide                               the loop, the answer shape, the rul
 iql --json elements list                     the catalog and what is answered
 iql --json elements show receipts            one element in full
 iql elements install                         add the catalog (once)
+iql elements tune <name> --add-hint "..."    customize an element's instructions (--instructions, --reset)
 iql work next --limit 10 --template /tmp/answers.json --model <id>
 iql --json work next --limit 10 [--only receipts,travel] [--query "from:homedepot"] [--out batch.json] [--digest]
 iql --json work submit /tmp/answers.json     one object, an array, or one per line
+iql --json work submit /tmp/overrides.json --base /tmp/answers.json
 iql --json work status                       answered, by element and model
 iql --json work clear --model <id> [--since 1d] [--only a,b]
 ```
@@ -1247,24 +1253,31 @@ iql --json work clear --model <id> [--since 1d] [--only a,b]
 **`work next`** returns `elements` (the definitions — read their
 instructions), `topics` (in use; prefer them), and `items`: each with `thread`
 and `lease` to echo back, `messages` oldest first (readable `text`, attachment
-text, `mine` for the user's own), `people`, and `ask` — the elements to answer
-and the message ids or sender addresses each is about. Each item is leased to
-you for 30 minutes. Passing `--template <file>` writes a pre-scaffolded JSON
-array of submissions to `<file>` (with IDs, leases, sender guesses, and default
-`"none"` entries pre-filled) and prints a compact readable digest of all leased
-items to stdout.
+text, `mine` for the user's own, `automated` from RFC bulk/list headers, and
+`hasCalendar` from MIME calendar invitations), `people`, and `ask` — the
+elements to answer and the message ids or sender addresses each is about. Each
+item is leased to you for 30 minutes. Passing `--template <file>` writes a
+pre-scaffolded JSON array of submissions to `<file>` (with IDs, leases, sender
+guesses, verified default quotes, sender-history / subject-inferred topics and
+labels, and default `"none"` entries pre-filled) and prints a compact readable
+digest (with an `Actionable Candidates Index` at the top and smart head +
+salient lines + tail windowing) to stdout and `<file>.digest.txt`.
 
 **`work submit`** takes, per conversation, `{"thread", "lease", "model",
-"labels", "archive", "answers"}`. Optional `labels` adds mail labels (with
-`origin=agent`) and `archive: true` archives the conversation in the same
-step. A thread element's answer is one object; a message element's maps
-message id to an answer; `sender` maps address to an answer. An answer is
-exactly one of `level`, `records`, `tags`, `none` (does not apply, why) or
-`skip` (cannot tell, why), with optional `confidence` (0–1, meant honestly),
-`why`, and `quote`. **Every level (except sender) and every record needs a
-quote copied from the conversation**; one that is not there refuses that
-conversation's whole submission, with the problems listed — fix and resend.
-Answers for elements not asked are refused.
+"labels", "archive", "acceptTickets", "answers"}`. Passing `--base <template>`
+lets you submit a sparse overrides file containing only the conversations,
+elements, or message IDs you want to change, inheriting everything else from
+the template. Optional `labels` adds mail labels (with `origin=agent`) and
+`archive: true` archives the conversation in the same step. A thread element's
+answer is one object; a message element's maps message id to an answer;
+`sender` maps address to an answer. An answer is exactly one of `level`,
+`records`, `tags`, `none` (does not apply, why) or `skip` (cannot tell, why),
+with optional `confidence` (0–1, meant honestly), `why`, and `quote`. **Every
+level (except sender) and every record needs a quote copied from the
+conversation** (baseline levels `no-one`, `low`, `ignorable`, `normal`
+auto-fill a verified default quote if omitted); one that is not in the
+conversation refuses that conversation's whole submission, with the problems
+listed — fix and resend. Answers for elements not asked are refused.
 
 Records use the declared fields and types: numbers as numbers, dates
 `2026-10-24`, times `2026-10-24T14:30` local as written. Name a brand only

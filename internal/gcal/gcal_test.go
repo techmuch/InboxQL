@@ -126,11 +126,17 @@ func setup(t *testing.T) (*fakeGoogle, *calsync.Engine) {
 	}
 	t.Cleanup(store.CloseDB)
 	start := time.Now().Add(48 * time.Hour).Truncate(time.Hour).UTC()
+	// A daily event repeats at the same time on the wall clock, so "the next
+	// day" is a calendar day in its zone, not 24 hours: across a change of
+	// daylight saving the two are an hour apart, and an exception computed in
+	// hours matches no occurrence at all.
+	ny := mustLoc("America/New_York")
+	day := func(n int) time.Time { return start.In(ny).AddDate(0, 0, n) }
 	f := &fakeGoogle{events: map[string]gEvent{
 		"standup": {ID: "standup", ICalUID: "standup@google.com", ETag: `"s"`, Status: "confirmed", Summary: "Standup",
 			Start:      &gTime{DateTime: start.Format(time.RFC3339), TimeZone: "America/New_York"},
 			End:        &gTime{DateTime: start.Add(15 * time.Minute).Format(time.RFC3339), TimeZone: "America/New_York"},
-			Recurrence: []string{"RRULE:FREQ=DAILY;COUNT=5", "EXDATE;TZID=America/New_York:" + start.In(mustLoc("America/New_York")).Add(24*time.Hour).Format("20060102T150405")},
+			Recurrence: []string{"RRULE:FREQ=DAILY;COUNT=5", "EXDATE;TZID=America/New_York:" + day(1).Format("20060102T150405")},
 			Organizer: &struct {
 				Email string `json:"email"`
 				Self  bool   `json:"self"`
@@ -138,7 +144,7 @@ func setup(t *testing.T) (*fakeGoogle, *calsync.Engine) {
 			HangoutLink: "https://meet.google.com/abc-defg-hij"},
 		// The third day's standup, cancelled.
 		"standup_3": {ID: "standup_3", ICalUID: "standup@google.com", Status: "cancelled", RecurringEventID: "standup",
-			OriginalStartTime: &gTime{DateTime: start.Add(48 * time.Hour).Format(time.RFC3339)}},
+			OriginalStartTime: &gTime{DateTime: day(2).UTC().Format(time.RFC3339)}},
 		"invite": {ID: "invite", ICalUID: "invite@acme.com", ETag: `"v"`, Status: "confirmed", Summary: "Acme review",
 			Start: &gTime{DateTime: start.Add(3 * time.Hour).Format(time.RFC3339)}, End: &gTime{DateTime: start.Add(4 * time.Hour).Format(time.RFC3339)},
 			Attendees: []gAttendee{{Email: "me@gmail.com", Self: true, ResponseStatus: "needsAction"}, {Email: "ada@acme.com", ResponseStatus: "accepted"}}},

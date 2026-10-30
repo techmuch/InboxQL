@@ -23,7 +23,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 47
+	SchemaVersion = 48
 )
 
 var (
@@ -2030,6 +2030,36 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 47
+	}
+
+	if currentVersion < 48 {
+		log.Println("Applying schema migration v48 (an index the counts can be answered from)...")
+		// The folder counts, the account's totals and the rail's counts read
+		// five columns of a message — its account, id, flags, size and date —
+		// and the table row they live in also holds the body and the HTML.
+		// Those come first in the row, so reaching flags meant walking each
+		// message's overflow pages: on a mailbox of 7,800 messages and 9.4 GB
+		// that is gigabytes read to count to 7,800, two to four seconds a
+		// time, and the rail asks after every change of view.
+		//
+		// An index holding exactly those columns answers every one of them
+		// without touching a row. Measured on a scratch database shaped like
+		// that mailbox (1,200 messages of 1.2 MB, columns in the same order):
+		//
+		//	inbox count        46 ms -> 1.3 ms
+		//	all mail count    350 ms -> 1.2 ms
+		//	account totals    235-383 ms -> 0.1-0.2 ms each
+		//	  SCAN messages  ->  SCAN messages USING COVERING INDEX idx_messages_counts
+		//
+		// It is small — five short columns a message — and built once.
+		if _, err := db.Exec(
+			`CREATE INDEX IF NOT EXISTS idx_messages_counts ON messages(account_id, id, flags, size, date)`); err != nil {
+			return fmt.Errorf("failed to apply schema v48: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 48;"); err != nil {
+			return err
+		}
+		currentVersion = 48
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

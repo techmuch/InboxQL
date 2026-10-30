@@ -10,8 +10,11 @@ export const fillDays = (days: WorkDay[], since: string): WorkDay[] => {
   const by = new Map(days.map(d => [d.day, d]));
   const start = new Date(since).getFullYear() > 1970 ? new Date(since) : days[0] ? new Date(`${days[0].day}T12:00:00`) : new Date();
   const out: WorkDay[] = [];
+  // Both at noon, so the walk compares days rather than times: ending at "now"
+  // left today off the chart all morning, since today's noon was still ahead.
   const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 12);
-  const end = new Date();
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
   while (cur <= end && out.length < 400) {
     const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
     out.push(by.get(key) ?? { day: key, stored: 0, refused: 0, checked: 0 });

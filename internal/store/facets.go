@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -51,6 +52,17 @@ const unreadSum = `COALESCE(SUM(CASE WHEN m.flags NOT LIKE '%\Seen%' THEN 1 ELSE
 // the folders are each their own count, run together: each is an indexed
 // seek, which FolderCounts measured as faster than one grouping scan.
 func MessageFacets(src, rest string) (*Facets, error) {
+	return MessageFacetsContext(context.Background(), src, rest)
+}
+
+// MessageFacetsContext is MessageFacets, stopping when the caller gives up.
+//
+// The rail asks for these on every change of view, and somebody working
+// through the inbox one sender at a time changes view every few seconds. A
+// count nobody is waiting for any more is interrupted inside SQLite rather
+// than left holding a connection and a core — the same reason planRows takes
+// a context.
+func MessageFacetsContext(ctx context.Context, src, rest string) (*Facets, error) {
 	frame, err := mailFilter(src)
 	if err != nil {
 		return nil, err
@@ -61,13 +73,13 @@ func MessageFacets(src, rest string) (*Facets, error) {
 	}
 
 	out := &Facets{Labels: []FacetCount{}, Annotators: []FacetCount{}}
-	if err := db.QueryRow("SELECT COUNT(*), "+unreadSum+" FROM messages m WHERE "+where, args...).
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*), "+unreadSum+" FROM messages m WHERE "+where, args...).
 		Scan(&out.Total, &out.Unread); err != nil {
 		return nil, err
 	}
 
 	byLabel := map[string]FacetCount{}
-	rows, err := db.Query(`SELECT ml.label, COUNT(*), `+unreadSum+`
+	rows, err := db.QueryContext(ctx, `SELECT ml.label, COUNT(*), `+unreadSum+`
 		FROM messages m JOIN message_labels ml ON ml.message_id = m.id
 		WHERE `+where+` GROUP BY ml.label`, args...)
 	if err != nil {
@@ -153,7 +165,7 @@ func MessageFacets(src, rest string) (*Facets, error) {
 				errs[i] = err
 				return
 			}
-			errs[i] = db.QueryRow("SELECT COUNT(*), "+unreadSum+" FROM messages m WHERE "+w, a...).
+			errs[i] = db.QueryRowContext(ctx, "SELECT COUNT(*), "+unreadSum+" FROM messages m WHERE "+w, a...).
 				Scan(&j.into.Total, &j.into.Unread)
 		}(i, j)
 	}

@@ -41,7 +41,7 @@ describe('Rail counts inside the query', () => {
     expect(screen.getByText('In Starred')).toBeTruthy();
     expect(row('banking').textContent).toContain('12');
     expect(row('banking').title).toBe('12 of 40 in Starred');
-    expect(row('travel').className).toContain('opacity-40');
+    expect(row('travel').className).toContain('!text-muted-foreground');
     expect(row('receipts').textContent).toContain('7');
     // Nothing added: the folders keep their own badges.
     expect(row('Inbox').textContent).toContain('40');
@@ -58,7 +58,7 @@ describe('Rail counts inside the query', () => {
     expect(screen.getByText('With label:banking')).toBeTruthy();
     expect(row('Inbox').textContent).toContain('12');
     expect(row('Inbox').title).toBe('12 with label:banking in Inbox');
-    expect(row('Spam').className).toContain('opacity-40');
+    expect(row('Spam').className).toContain('!text-muted-foreground');
     expect(row('Drafts').textContent).toContain('3');
   });
 
@@ -67,6 +67,6 @@ describe('Rail counts inside the query', () => {
       within: 'Inbox', rest: '', total: 40, unread: 0,
       labels: [{ name: 'banking', total: 12, unread: 0 }], annotators: [],
     }} />);
-    expect(row('banking').querySelector('.tabular-nums')!.className).toContain('opacity-40');
+    expect(row('banking').querySelector('.tabular-nums')!.className).toContain('!text-muted-foreground');
   });
 });

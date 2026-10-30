@@ -256,6 +256,10 @@ export const KeyboardHelp = ({ onClose }: { onClose: () => void }) => {
     { keys: 's', label: 'Star or unstar' },
     { keys: 'I', label: 'Mark read (Shift+i)' },
     { keys: 'U', label: 'Mark unread (Shift+u)' },
+    { keys: 'f', label: 'Everything from this sender' },
+    { keys: 'm', label: 'Messages like this one' },
+    { keys: 'u', label: 'Back to the previous view (or Alt+←)' },
+    { keys: 'Esc', label: 'Clear the selection, then show all of the folder' },
   ];
   const Key = ({ k }: { k: string }) => (
     <span className="inline-flex gap-1">{k.split(' ').map((p, i) => <kbd key={i} className="border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px]">{p}</kbd>)}</span>

@@ -106,3 +106,13 @@ export const namesItsFrame = (terms: QueryTerm[]): boolean =>
 /** Whether a term is in the query, at the top level, as written. */
 export const hasTerm = (terms: QueryTerm[], term: string): boolean =>
   terms.some(t => t.text.toLowerCase() === term.toLowerCase());
+
+/**
+ * What was added to a folder, ignoring how it is displayed.
+ *
+ * A trailing conversation stage is a view of the folder rather than a
+ * filter on it, so `folder:inbox | timeline` has nothing added and needs no
+ * way back to plain.
+ */
+export const addedTo = (rest: string, displayStage: string): string =>
+  rest.replace(new RegExp(`\\|\\s*${displayStage}\\s*$`), '').trim();

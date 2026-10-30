@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertOctagon, Bookmark, Code2, Eye, File, Inbox, Mail, Mails, MoreVertical,
-  MessagesSquare, RefreshCw, Search, Send, SlidersHorizontal, Sparkles, Star, Trash2, X,
+  AlertOctagon, ArrowLeft, Bookmark, Check, Code2, Eye, File, Inbox, Mail, Mails, MoreVertical,
+  MessagesSquare, RefreshCw, Search, Send, SlidersHorizontal, Sparkles, Star, Trash2, UserRound, X,
 } from 'lucide-react';
 import {
   bulkApply, bulkCount, bulkUndo, labelQuery, listLabels, messageFacets, moveMessages, onMailChanged, setFlag, shownLabels,
@@ -16,6 +16,7 @@ import { HiddenNote } from './HiddenNote';
 import { SelectionBar } from './SelectionBar';
 import { BulkBar } from './BulkBar';
 import { GroupView, GROUPINGS } from './GroupView';
+import { useViewHistory, type Visited } from './viewHistory';
 import { AllItems } from './AllItems';
 import { Editor } from './Editor';
 import { Results } from './Results';
@@ -29,7 +30,7 @@ import {
 } from './api';
 import { listAnnotators, type Annotator } from '../ai/api';
 import { useQueryStore, compose, queryStages, queryTerms, type QueryTerm } from '../../lib/filters';
-import { hasTerm, joinScope, namesItsFrame, splitScope, type Scope } from '../../lib/scope';
+import { addedTo, hasTerm, joinScope, namesItsFrame, splitScope, type Scope } from '../../lib/scope';
 import {
   canThread, isMailQuery, openingFolderQuery, THREAD_STAGE, useThreadingStore,
 } from '../../lib/threading';
@@ -113,10 +114,36 @@ const ScopeChip = ({ label, icon: Icon }: { label: string; icon?: React.Componen
   <span
     className="shrink-0 flex items-center gap-1 px-2 py-1 text-xs leading-4 font-semibold border border-border bg-muted/50"
     title="The folder this query is inside. Choose another in the rail."
-    aria-label={`Inside ${label}`}
+    data-scope-chip=""
   >
-    {Icon && <Icon size={12} className="text-muted-foreground" />}
-    {label} <span aria-hidden className="text-muted-foreground font-normal">›</span>
+    {Icon && <Icon size={12} className="text-muted-foreground" aria-hidden />}
+    {/* Text rather than aria-label: a label on a plain span is not read by
+        every screen reader, and this is what the query box is inside. */}
+    <span className="sr-only">Inside </span>{label} <span aria-hidden className="text-muted-foreground font-normal">›</span>
+  </span>
+);
+
+/**
+ * A mouse target inside a message row.
+ *
+ * Not a button, on purpose. The row is a listbox option, and an option's
+ * contents are not controls to assistive technology — a focusable button in
+ * one is reachable by some screen readers and not others, which is worse than
+ * either. So the row is the one control: its name says what these show
+ * (unread, starred, its labels), `aria-selected` says whether it is ticked,
+ * and each of these has a key on the row (x, s, f) that the list describes.
+ */
+const RowTarget = ({ title, onClick, className = '', children }: {
+  title: string; onClick: () => void; className?: string; children: React.ReactNode;
+}) => (
+  <span
+    aria-hidden="true"
+    title={title}
+    data-row-target=""
+    onClick={e => { e.stopPropagation(); onClick(); }}
+    className={`cursor-pointer ${className}`}
+  >
+    {children}
   </span>
 );
 
@@ -125,7 +152,29 @@ export const Desk = () => {
   const openMessageId = useViewerStore(s => s.messageId);
   const [loading, setLoading] = useState(true);
   const query = useQueryStore(s => s.text);
-  const setQuery = useQueryStore(s => s.set);
+  const storeQuery = useQueryStore(s => s.set);
+
+  // Changes of view land in the order they were asked for.
+  //
+  // Most of them ask the server to compose the next query first, so a click
+  // made while one of those is in flight — Show on a group, then the folder
+  // straight after — could be overtaken by the slower, older one landing
+  // second. Each change takes a ticket when it is asked for; an answer whose
+  // ticket is no longer the latest is dropped, along with anything it would
+  // have done besides.
+  const asked = useRef(0);
+  const setQuery = useCallback((q: string) => { asked.current += 1; storeQuery(q); }, [storeQuery]);
+  const settle = async (next: Promise<string> | (() => Promise<string>), then?: () => void) => {
+    const ticket = ++asked.current;
+    try {
+      const q = await (typeof next === 'function' ? next() : next);
+      if (ticket !== asked.current) return;
+      then?.();
+      storeQuery(q);
+    } catch {
+      // The view stays as it was: a composer that failed has nothing to show.
+    }
+  };
 
   // The query's top-level terms, from the server's lexer: what the folder is,
   // which labels are on, what the box should hold. Kept with the query they
@@ -229,10 +278,11 @@ export const Desk = () => {
   // the chip into nothing.
   const runTyped = async () => {
     const typed = queryText.trim();
-    const own = typed ? await queryTerms(typed).catch(() => [] as QueryTerm[]) : [];
-    setQuery(namesItsFrame(own) ? typed : joinScope(scope.term, typed));
+    await settle(async () => {
+      const own = typed ? await queryTerms(typed).catch(() => [] as QueryTerm[]) : [];
+      return namesItsFrame(own) ? typed : joinScope(scope.term, typed);
+    });
   };
-  const clearAll = () => setQuery(joinScope(scope.term, ''));
 
   // The builder is for composing by hand; most of the time it is in the way.
   const [builder, setBuilder] = useState(() => {
@@ -344,6 +394,9 @@ export const Desk = () => {
   // The request in flight. A slower earlier response must not overwrite a
   // faster later one — the same guard the editor's completions need.
   const runSeq = useRef(0);
+  // Which query the rows on screen belong to: a position being returned to
+  // is put back only once the list holds that view's rows, not the last one's.
+  const [loadedQuery, setLoadedQuery] = useState<string | null>(null);
 
   const fetchMessages = async (currentOffset = 0) => {
     const isLoadMore = currentOffset > 0;
@@ -372,6 +425,7 @@ export const Desk = () => {
         setMessages([]);
         setHasMore(false);
         setOffset(0);
+        setLoadedQuery(effectiveQuery);
         return;
       }
 
@@ -386,6 +440,7 @@ export const Desk = () => {
       } else {
         setResult(res);
         setMessages(res.kind === 'messages' ? incoming : []);
+        setLoadedQuery(effectiveQuery);
       }
       setOffset(currentOffset + incoming.length);
       setHasMore(incoming.length === 50);
@@ -414,9 +469,16 @@ export const Desk = () => {
    * reported "how many of the fifty messages on screen are unread" while
    * looking like a mailbox total.
    */
+  // The previous view's counts are cancelled when a new view asks, so the
+  // server stops them rather than finishing work nobody will see. Working
+  // through the inbox one sender at a time changes view every few seconds.
+  const countsAbort = useRef<AbortController | null>(null);
   const fetchCounts = async () => {
+    countsAbort.current?.abort();
+    const ctl = new AbortController();
+    countsAbort.current = ctl;
     try {
-      const res = await fetch('/api/messages/counts');
+      const res = await fetch('/api/messages/counts', { signal: ctl.signal });
       if (!res.ok) return;
       const rows = await res.json();
       const byFolder: Record<string, { total: number; unread: number }> = {};
@@ -440,6 +502,7 @@ export const Desk = () => {
   const [facets, setFacets] = useState<{ within: string; rest: string; counts: Facets } | null>(null);
   const [facetsStale, setFacetsStale] = useState(false);
   const facetSeq = useRef(0);
+  const facetsAbort = useRef<AbortController | null>(null);
   const facetsFor = (): { q: string; rest: string; within: string } | null => {
     if (allItems) {
       // The words searched everywhere are the additions; with none, the
@@ -454,10 +517,13 @@ export const Desk = () => {
   const fetchFacets = async () => {
     const want = facetsFor();
     const seq = ++facetSeq.current;
+    facetsAbort.current?.abort();
     if (!want) { setFacets(null); setFacetsStale(false); return; }
+    const ctl = new AbortController();
+    facetsAbort.current = ctl;
     setFacetsStale(true);
     try {
-      const counts = await messageFacets(want.q, want.rest);
+      const counts = await messageFacets(want.q, want.rest, ctl.signal);
       if (seq !== facetSeq.current) return;
       setFacets(counts ? { within: want.within, rest: want.rest, counts } : null);
     } catch {
@@ -538,12 +604,80 @@ export const Desk = () => {
     if (matchCount !== null) { setOfferCount(matchCount); return; }
     bulkCount(query).then(setOfferCount).catch(() => setOfferCount(null));
   }, [offerAll, offerCount, query, matchCount]);
-  const where = split.rest ? `${scope.label} › ${split.rest}` : scope.label;
+  const where = addedTo(split.rest, THREAD_STAGE) ? `${scope.label} › ${addedTo(split.rest, THREAD_STAGE)}` : scope.label;
 
   // Grouping the folder — by sender, domain, importance — for processing a
   // kind of mail at once. Only for mail; another kind has its own views.
   const [groupBy, setGroupBy] = useState<string | null>(null);
   const grouping = groupBy !== null && scope.mail && !allItems;
+
+  // Said to a screen reader when the view changes by a key or a button whose
+  // effect is otherwise only visible: clearing, and going back.
+  const [said, setSaid] = useState('');
+
+  // The folder with nothing added: the state you return to between one person
+  // or topic and the next. A conversation view is how the folder is shown,
+  // not something added to it, so it stays.
+  const added = addedTo(split.rest, THREAD_STAGE);
+  const plainQuery = joinScope(scope.term, threaded ? `| ${THREAD_STAGE}` : '');
+  /** What was added goes; the folder, and how it is shown, stay. */
+  const clearAll = () => {
+    if (allItems) { setAllItemsText(''); setAllItemsQuery(''); setSaid('Search cleared'); return; }
+    setQuery(plainQuery);
+    setSaid(`Showing all of ${scope.label}`);
+  };
+  /** The folder, plainly: nothing added and not grouped. */
+  const showPlain = () => {
+    setGroupBy(null);
+    setQuery(plainQuery);
+    setSaid(`Showing all of ${scope.label}`);
+  };
+  const somethingToClear = allItems ? allItemsQuery.trim() !== '' || allItemsText.trim() !== '' : added !== '';
+
+  // Where you were, and a way back to it. The scroll position is recorded as
+  // you leave a view, and put back once its rows are there again.
+  const lastScroll = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const pendingScroll = useRef<number | null>(null);
+  const [groupScroll, setGroupScroll] = useState<number | undefined>(undefined);
+  const groupLabel = GROUPINGS.find(g => g.id === groupBy)?.label.toLowerCase();
+  const history = useViewHistory(
+    { query, groupBy: grouping ? groupBy : null, allItems, allItemsQuery },
+    () => allItems
+      ? (allItemsQuery ? `All Items › ${allItemsQuery}` : 'All Items')
+      : `${where}${grouping ? `, by ${groupLabel}` : ''}`,
+    () => lastScroll.current,
+    (v: Visited) => {
+      setAllItems(v.allItems);
+      setAllItemsQuery(v.allItemsQuery);
+      setAllItemsText(v.allItemsQuery);
+      setGroupBy(v.groupBy);
+      setQuery(v.query);
+      if (v.groupBy) setGroupScroll(v.scroll);
+      else pendingScroll.current = v.scroll;
+      setSaid(`Back to ${v.label}`);
+    },
+  );
+  // A new view starts at the top; the old one's position went with it above.
+  useEffect(() => { lastScroll.current = 0; }, [query, groupBy, allItems, allItemsQuery]);
+  // Back to a long list: the rows load fifty at a time, so the position is
+  // reached by loading until it exists, or until there is no more.
+  useEffect(() => {
+    const want = pendingScroll.current;
+    if (want === null || loading || loadingMore || loadedQuery !== query) return;
+    const el = listRef.current;
+    if (!el) { if (result && result.kind !== 'messages') pendingScroll.current = null; return; }
+    el.scrollTop = want;
+    if (el.scrollTop >= want - 2 || !hasMore || want === 0) { pendingScroll.current = null; return; }
+    void fetchMessages(offset);
+  });
+
+  /** Everything from one sender, in this folder: one person at a time. */
+  const focusOn = (term: string, about: string) => {
+    setGroupBy(null);
+    setQuery(joinScope(scope.mail ? scope.term : 'folder:inbox', [term, threaded ? `| ${THREAD_STAGE}` : ''].filter(Boolean).join(' ')));
+    setSaid(`Showing ${about}`);
+  };
 
   // The last bulk change, with its undo, until the next one or a while passes.
   const [lastBulk, setLastBulk] = useState<{ said: string; undo: unknown } | null>(null);
@@ -578,6 +712,24 @@ export const Desk = () => {
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  /** A message row's accessible name. */
+  const rowName = (msg: any, who: string, unread: boolean, draft: boolean): string => {
+    const state = [draft && 'Draft', unread && !draft && 'Unread', msg.flags?.includes('\\Flagged') && 'Starred']
+      .filter(Boolean).join(', ');
+    const labels = shownLabels(msg.labels);
+    return [
+      state,
+      who,
+      msg.subject || '(No Subject)',
+      labels.length ? `labels ${labels.join(', ')}` : '',
+      formatDate(msg.date),
+    ].filter(Boolean)
+      // A full stop between parts, unless the part already ends a sentence:
+      // "Still wrestling with sleep?" is not followed by a second one.
+      .map((part, i, all) => (i < all.length - 1 && !/[.!?…]$/.test(part) ? `${part}.` : part))
+      .join(' ');
   };
 
   /**
@@ -626,7 +778,34 @@ export const Desk = () => {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     const moving = ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key);
-    const typingHere = (e.target as HTMLElement).closest?.('input, textarea, [contenteditable="true"], [role="dialog"]');
+    const typingHere = (e.target as HTMLElement).closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]');
+    // Getting about: back to where you were, and back to the plain folder.
+    // Alt+← is taken here so it never reaches the browser, whose Back would
+    // leave the application rather than the view.
+    if (!typingHere && !e.metaKey && !e.ctrlKey && !sequencePending()) {
+      if ((e.altKey && e.key === 'ArrowLeft') || (!e.altKey && e.key === 'u')) {
+        e.preventDefault();
+        history.back();
+        return;
+      }
+      if (!e.altKey && e.key === 'Escape') {
+        // The selection first, as everywhere: Escape undoes the last thing
+        // you were in the middle of, then the next.
+        if (selectedCount > 0 || allMatching) { e.preventDefault(); setAllMatching(null); clearSelection(); return; }
+        if (somethingToClear) { e.preventDefault(); clearAll(); return; }
+      }
+      if (!e.altKey && e.key === 'f') {
+        // Everything from the sender of the row you are on.
+        const ref = refOf(document.activeElement);
+        const msg = ref?.kind === 'message' ? messages.find(m => m.id === ref.id) : undefined;
+        if (msg?.from && !msg.flags?.includes('\\Draft')) { e.preventDefault(); focusOn(`from:=${msg.from}`, `everything from ${msg.from}`); return; }
+      }
+      if (!e.altKey && e.key === 'm') {
+        // More like the row you are on.
+        const ref = refOf(document.activeElement);
+        if (ref?.kind === 'message') { e.preventDefault(); setQuery(`similar:${ref.id}`); setSaid('Showing messages like this one'); return; }
+      }
+    }
     if (!typingHere && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (starPending.current !== null) {
         window.clearTimeout(starPending.current);
@@ -718,6 +897,7 @@ export const Desk = () => {
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    lastScroll.current = scrollTop;
     if (scrollHeight - scrollTop <= clientHeight * 1.5) {
       if (hasMore && !loadingMore && !loading) {
         fetchMessages(offset);
@@ -744,16 +924,18 @@ export const Desk = () => {
           const words = split.rest.replace(/\|.*$/, '').trim();
           setAllItems(true); setAllItemsText(words); setAllItemsQuery(words);
         }}
-        onLabel={async q => {
-          setAllItems(false);
+        onLabel={q => settle(
           // A label is mail. Inside a folder it is added, or taken off if it is
           // on; from cards or people it opens that label across all mail.
-          if (!scope.mail) { setQuery(q); return; }
-          if (terms && hasTerm(terms, q)) setQuery(await compose(query, { remove: q }));
-          else setQuery(await compose(query, { add: q }));
-        }}
+          async () => !scope.mail ? q
+            : terms && hasTerm(terms, q) ? compose(query, { remove: q })
+            : compose(query, { add: q }),
+          // Leaving All Items and the new query land together: one step back.
+          () => setAllItems(false),
+        )}
         onFolder={async id => {
-          setAllItems(false);
+          // The folder you are in, again: all of it, nothing added.
+          if (!allItems && id === scope.id) { showPlain(); return; }
           // Coming back from contacts, files or tickets, the query is about a
           // different kind of thing and adding a folder to it produces
           // `in:contacts kind:person folder:inbox` — still contacts, now with
@@ -762,19 +944,19 @@ export const Desk = () => {
           // Drafts likewise: a draft is not a message, and `label:banking`
           // means nothing to one, so Drafts opens on its own rather than as
           // an error about what was added.
-          if (!isMailQuery(query) || id === 'drafts') {
-            setQuery(openingFolderQuery(`folder:${id}`));
-            return;
-          }
-          setQuery(await compose(query, { field: 'folder', term: `folder:${id}` }));
+          await settle(
+            async () => !isMailQuery(query) || id === 'drafts'
+              ? openingFolderQuery(`folder:${id}`)
+              : compose(query, { field: 'folder', term: `folder:${id}` }),
+            () => setAllItems(false),
+          );
         }}
-        onQuery={async q => {
-          setAllItems(false);
+        onQuery={q => settle(async () => {
           // A saved query runs inside the folder, unless it names its own
           // folder or kind — "People" is about contacts wherever you are.
           const own = await queryTerms(q).catch(() => [] as QueryTerm[]);
-          setQuery(namesItsFrame(own) || !scope.mail ? q : joinScope(scope.term, q));
-        }}
+          return namesItsFrame(own) || !scope.mail ? q : joinScope(scope.term, q);
+        }, () => setAllItems(false))}
         annotationQuery={annotationQuery}
         onMove={async (name, to) => {
           try {
@@ -818,6 +1000,9 @@ export const Desk = () => {
           worked only by accident. */}
       <div
         ref={navRef}
+        // The other landmark: the query, its filters and what it found.
+        role="region"
+        aria-label="Desk"
         className="flex-1 flex flex-col min-w-0"
         tabIndex={0}
         onKeyDown={handleKeyDown}
@@ -831,8 +1016,25 @@ export const Desk = () => {
             running={loading}
             errorPosition={allItems ? undefined : failure ? Math.max(0, (failure.position ?? 0) - (scope.term ? scope.term.length + 1 : 0)) : undefined}
             errorMessage={allItems ? undefined : failure?.message}
-            scope={<ScopeChip label={allItems ? 'All Items' : scope.label} icon={allItems ? Search : undefined} />}
+            scope={<>
+              <button
+                type="button"
+                onClick={history.back}
+                disabled={!history.previous}
+                aria-label={history.previous ? `Back to ${history.previous.label}` : 'Back: nowhere to go back to yet'}
+                aria-keyshortcuts="u Alt+ArrowLeft"
+                title={history.previous ? `Back to ${history.previous.label} (u)` : 'Nowhere to go back to yet'}
+                className="shrink-0 flex items-center gap-1 px-2 py-1 border border-border text-xs leading-4
+                           hover:bg-accent/40 disabled:opacity-40 disabled:cursor-default
+                           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <ArrowLeft size={12} aria-hidden /> Back
+              </button>
+              <ScopeChip label={allItems ? 'All Items' : scope.label} icon={allItems ? Search : undefined} />
+            </>}
             placeholder={allItems ? 'Search mail, files, cards, people and events' : undefined}
+            onClear={somethingToClear ? clearAll : undefined}
+            clearLabel={allItems ? 'Clear the search' : `Show all of ${scope.label}`}
           />
           {/* The same query, as pills — the builder. Not a second copy: every
               edit is written back through the composer. Off by default; most
@@ -842,12 +1044,11 @@ export const Desk = () => {
             <QuickFilters
               scope={scope}
               terms={terms}
-              onToggle={async (term, on, remove) => {
+              onToggle={(term, on, remove) => settle(async () => {
                 let next = query;
                 for (const r of remove) next = await compose(next, { remove: r });
-                next = await compose(next, on ? { add: term } : { remove: term });
-                setQuery(next);
-              }}
+                return compose(next, on ? { add: term } : { remove: term });
+              })}
             />
           )}
 
@@ -905,7 +1106,7 @@ export const Desk = () => {
                 ? 'Back to a flat list'
                 : 'Group into conversations, with the tickets and drafts they produced'}
               onClick={async () =>
-                setQuery(await compose(query,
+                settle(compose(query,
                   threaded ? { dropStage: 'timeline' } : { stage: 'timeline' }))
               }
               className={`flex items-center gap-1 px-2 py-1 border ${
@@ -954,7 +1155,7 @@ export const Desk = () => {
           />
         ) : (
         <SelectionBar
-          onNarrow={async (field, values) => setQuery(await compose(query, { field, values }))}
+          onNarrow={(field, values) => settle(compose(query, { field, values }))}
           // Offered only when everything selected is a message, because that
           // is the only kind this action means anything for. A conversation
           // and a ticket do not have a read flag.
@@ -994,9 +1195,16 @@ export const Desk = () => {
           </div>
         )}
 
+        <p role="status" aria-live="polite" className="sr-only">{said}</p>
+        <p id="desk-list-keys" className="sr-only">
+          Up and down move; Enter opens. x selects, s stars, e archives, l labels.
+          f shows everything from the sender, m messages like this one; u goes back;
+          Escape shows all of the folder.
+        </p>
+
         <HiddenNote
           result={result}
-          onShow={async () => setQuery(await compose(query, { field: 'folder', term: 'folder:all' }))}
+          onShow={() => settle(compose(query, { field: 'folder', term: 'folder:all' }))}
         />
 
         {/* Anything that is not a list of messages renders through the shared
@@ -1012,8 +1220,12 @@ export const Desk = () => {
             query={query}
             by={groupBy!}
             labels={mailLabels.map(l => l.name)}
-            onShow={async term => { setGroupBy(null); setQuery(await compose(query, { add: term })); }}
+            // Both at once, so leaving the groups is one step to go back over.
+            onShow={term => settle(compose(query, { add: term }), () => setGroupBy(null))}
             onDone={(said, out) => setLastBulk({ said, undo: out.undo })}
+            onScroll={top => { lastScroll.current = top; }}
+            scrollTo={groupScroll}
+            onScrolled={() => setGroupScroll(undefined)}
           />
         ) : result && result.kind !== 'messages' ? (
           <div className="flex-1 min-h-0">
@@ -1023,7 +1235,7 @@ export const Desk = () => {
               // bubble, so a handler on this div would never fire.
               onScroll={handleScroll}
               result={result}
-              onDrillDown={async (terms, stage) => {
+              onDrillDown={(terms, stage) => settle(async () => {
                 // One composer call per part rather than one assembled string:
                 // the server owns where a term goes and where a stage goes,
                 // and it already knows that a second term for the same field
@@ -1034,8 +1246,8 @@ export const Desk = () => {
                   next = await compose(next, { add: term });
                 }
                 if (stage) next = await compose(next, { stage });
-                setQuery(next);
-              }}
+                return next;
+              })}
             />
           </div>
         ) : (
@@ -1056,12 +1268,13 @@ export const Desk = () => {
                 else clearSelection();
               }}
               title={messages.length > 0 && messages.every(isSelected) ? 'Deselect all' : 'Select all'}
+              aria-label={messages.length > 0 && messages.every(isSelected) ? 'Deselect all' : 'Select all on this page'}
             />
           </div>
-          <button onClick={() => { fetchMessages(0); fetchCounts(); }} className={`p-2 hover:bg-accent  transition-colors ${loading ? 'animate-spin' : ''}`}>
-            <RefreshCw className="w-4 h-4 text-muted-foreground" />
+          <button type="button" aria-label="Refresh" title="Refresh" onClick={() => { fetchMessages(0); fetchCounts(); }} className={`p-2 hover:bg-accent  transition-colors ${loading ? 'animate-spin' : ''}`}>
+            <RefreshCw className="w-4 h-4 text-muted-foreground" aria-hidden />
           </button>
-          <button className="p-2 hover:bg-accent  transition-colors"><MoreVertical className="w-4 h-4 text-muted-foreground" /></button>
+          <button type="button" aria-label="More" title="More" className="p-2 hover:bg-accent  transition-colors"><MoreVertical className="w-4 h-4 text-muted-foreground" aria-hidden /></button>
           <div className="flex-1" />
           {/* The page shows at most 50; the total comes from the server so
               the two numbers are not the same number twice. */}
@@ -1078,9 +1291,11 @@ export const Desk = () => {
             the message list was a stack of plain divs: unreachable by Tab and
             silent to a screen reader. */}
         <div
+          ref={listRef}
           className="flex-1 overflow-auto"
           role="listbox"
           aria-label="Messages"
+          aria-describedby="desk-list-keys"
           aria-multiselectable="true"
           onScroll={handleScroll}
         >
@@ -1127,6 +1342,10 @@ export const Desk = () => {
                 data-sel-label={msg.subject}
                 role="option"
                 aria-selected={selected}
+                // The row's name, said in one breath: what state it is in, who,
+                // what about, its labels, when. Without it a screen reader
+                // reads the whole row, preview text and all, in DOM order.
+                aria-label={rowName(msg, who, isUnread, isDraft)}
                 // What the viewer is showing, which outlives focus — this list
                 // has drawn it as a left bar since before `rowState` named the
                 // idea, and keeps its own denser styling because it also has
@@ -1165,27 +1384,23 @@ export const Desk = () => {
                     : 'hover:bg-accent/40 border-l-4 border-l-transparent'
                 }`}
               >
-                <div className="flex items-center gap-2.5 mr-3 shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => selectToggle(messageRef(msg))}
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`Select ${msg.subject || 'message'}`}
-                  />
+                {/* The row is an option, and an option's contents are not
+                    controls to a screen reader: these are for the mouse, and
+                    each has a key on the row (x, s, f) that the list
+                    describes. What they show is said in the row's name. */}
+                <div className="flex items-center gap-2.5 mr-3 shrink-0" aria-hidden="true">
+                  <RowTarget title={selected ? 'Take out of the selection (x)' : 'Select (x)'}
+                    onClick={() => selectToggle(messageRef(msg))}
+                    className={`flex h-3.5 w-3.5 items-center justify-center border ${selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/60 bg-background'}`}>
+                    {selected && <Check className="h-3 w-3" strokeWidth={3} />}
+                  </RowTarget>
                   {(() => {
                     const starred = msg.flags?.includes('\\Flagged');
                     return (
-                      <button
-                        type="button"
-                        aria-label={starred ? 'Unstar' : 'Star'}
-                        aria-pressed={starred}
-                        title={starred ? 'Unstar (s)' : 'Star (s)'}
-                        onClick={(e) => { e.stopPropagation(); setFlag([msg.id], '\\Flagged', !starred); }}
-                        className="shrink-0"
-                      >
+                      <RowTarget title={starred ? 'Unstar (s)' : 'Star (s)'} className="shrink-0"
+                        onClick={() => setFlag([msg.id], '\\Flagged', !starred)}>
                         <Star className={`w-4 h-4 transition-colors ${starred ? 'fill-yellow-400 text-yellow-500' : 'text-muted-foreground/40 hover:text-yellow-500'}`} />
-                      </button>
+                      </RowTarget>
                     );
                   })()}
                   <div className="w-4 flex items-center justify-center" title={isOpen ? "Currently viewing this message" : undefined}>
@@ -1206,34 +1421,34 @@ export const Desk = () => {
                 </div>
                 <div className="flex-1 truncate flex items-center gap-2 text-foreground/90">
                   {shownLabels(msg.labels).map((l: string) => (
-                    <span key={l} className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border/60">
+                    // A label is a topic to work through: clicking it shows
+                    // every message carrying it in this folder.
+                    <RowTarget key={l} title={`Show everything labelled ${l}`}
+                      onClick={() => focusOn(`label:${/^[^\s"()]+$/.test(l) ? l : `"${l}"`}`, `everything labelled ${l}`)}
+                      className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border/60
+                                 hover:border-primary hover:text-foreground">
                       {l}
-                    </span>
+                    </RowTarget>
                   ))}
                   <span className={`text-sm ${isOpen ? 'font-semibold text-foreground' : isUnread ? 'font-bold' : 'font-medium'}`}>{msg.subject || '(No Subject)'}</span>
-                  <span className="text-sm text-muted-foreground opacity-60">— {msg.body?.substring(0, 100).replace(/\n/g, ' ')}</span>
+                  <span className="text-sm text-muted-foreground">— {msg.body?.substring(0, 100).replace(/\n/g, ' ')}</span>
                 </div>
-                {/* In the flow rather than floated over the date, and
-                    `invisible` rather than removed, so the space is reserved
-                    whether or not the cursor is here. Overlaying it hid the
-                    date on hover; adding it on hover made the row twitch. */}
-                <button
-                  type="button"
-                  title="Find messages like this one"
-                  aria-label="Find messages like this one"
-                  onClick={e => {
-                    e.stopPropagation();
-                    setQuery(`similar:${msg.id}`);
-                  }}
-                  // opacity rather than visibility: `group-hover:visible` does
-                  // not take effect in this build while the opacity variant
-                  // does, and an opacity-0 element still occupies its space,
-                  // which is the property that matters here.
-                  className="ml-2 shrink-0 border border-border p-1 opacity-0 transition-opacity
-                             hover:bg-accent group-hover:opacity-100 focus:opacity-100"
-                >
+                {/* In the flow rather than floated over the date, and faded
+                    rather than removed, so the space is reserved whether or
+                    not the cursor is here: overlaying hid the date on hover,
+                    and adding it on hover made the row twitch. */}
+                {!isDraft && msg.from ? (
+                  <RowTarget title={`Everything from ${msg.from} (f)`}
+                    onClick={() => focusOn(`from:=${msg.from}`, `everything from ${msg.from}`)}
+                    className="ml-2 shrink-0 border border-border p-1 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100">
+                    <UserRound className="h-3 w-3 text-muted-foreground" />
+                  </RowTarget>
+                ) : null}
+                <RowTarget title="Find messages like this one (m)"
+                  onClick={() => setQuery(`similar:${msg.id}`)}
+                  className="ml-2 shrink-0 border border-border p-1 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100">
                   <Sparkles className="h-3 w-3 text-muted-foreground" />
-                </button>
+                </RowTarget>
 
                 <div className={`ml-3 text-xs tabular-nums whitespace-nowrap ${isOpen ? 'font-bold text-primary' : isUnread ? 'font-bold text-primary' : 'text-muted-foreground'}`}>
                   {formatDate(msg.date)}

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sort"
@@ -63,6 +64,13 @@ type threadMsg struct {
 // GetContactResponsiveness calculates communication dynamics, reply latencies,
 // pending reply threads (open loops), role ratios, and hourly distribution for a contact.
 func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
+	return GetContactResponsivenessContext(context.Background(), address)
+}
+
+// GetContactResponsivenessContext is GetContactResponsiveness, stopping when
+// the caller gives up: the card beside a message asks for it each time a
+// message is opened, and the last one is the only one anybody is reading.
+func GetContactResponsivenessContext(ctx context.Context, address string) (*ContactResponsiveness, error) {
 	addr, _ := NormaliseAddress(address)
 	if addr == "" {
 		addr = strings.ToLower(strings.TrimSpace(address))
@@ -81,7 +89,7 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 	}
 
 	var loops int
-	_ = db.QueryRow(`SELECT COUNT(*) FROM annotators WHERE name = ?`, WaitingAnnotator).Scan(&loops)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM annotators WHERE name = ?`, WaitingAnnotator).Scan(&loops)
 
 	resp := &ContactResponsiveness{
 		LoopsJudged:               loops > 0,
@@ -91,7 +99,7 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 	}
 
 	// 1. Role counts (To vs Cc/Bcc)
-	roleRows, err := db.Query(`
+	roleRows, err := db.QueryContext(ctx, `
 		SELECT p.role, COUNT(*)
 		FROM message_participants p
 		WHERE p.address = ? AND `+query.Unbinned("p.message_id")+`
@@ -123,7 +131,7 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 	}
 
 	// 2. Hourly distribution of incoming messages from this contact
-	hourRows, err := db.Query(`
+	hourRows, err := db.QueryContext(ctx, `
 		SELECT m.date
 		FROM messages m
 		JOIN message_participants p ON p.message_id = m.id
@@ -149,7 +157,7 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 	}
 
 	// 3. Conversation threads: query all messages belonging to threads touching this contact
-	rows, err := db.Query(`
+	rows, err := db.QueryContext(ctx, `
 		WITH contact_threads AS (
 			SELECT DISTINCT m.thread_key AS tkey
 			FROM messages m
@@ -240,13 +248,13 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 	// rail cannot disagree. The loop above only times replies.
 	selfs := query.SQLList(mine)
 	contact := query.SQLString(addr)
-	closed, err := nobodyWaiting(contact, selfs)
+	closed, err := nobodyWaiting(ctx, contact, selfs)
 	if err != nil {
 		return nil, err
 	}
 	resp.ClosedByJudgement = closed
 	for _, dir := range []string{query.AwaitingMe, query.AwaitingThem} {
-		pending, err := awaitingThreads(dir, contact, selfs)
+		pending, err := awaitingThreads(ctx, dir, contact, selfs)
 		if err != nil {
 			return nil, err
 		}
@@ -293,16 +301,16 @@ func GetContactResponsiveness(address string) (*ContactResponsiveness, error) {
 // awaitingThreads lists the contact's conversations waiting on dir, newest
 // message first — each as its newest message, which is what a row shows and
 // what opening it opens.
-func awaitingThreads(dir, contact, selfs string) ([]PendingThread, error) {
-	rows, err := db.Query(`
+func awaitingThreads(ctx context.Context, dir, contact, selfs string) ([]PendingThread, error) {
+	rows, err := db.QueryContext(ctx, `
 		SELECT l.thread_key, l.id, l.subject, l.date, COALESCE(l.body, ''), COALESCE(l.html_body, '')
 		FROM messages l
 		WHERE l.thread_key IN (
 			SELECT m.thread_key FROM messages m
 			JOIN message_participants p ON p.message_id = m.id
-			WHERE p.address = ` + contact + `)
-		  AND ` + query.Waiting(dir, "l") + `
-		  AND ` + query.Involves(dir, "l", contact, selfs) + `
+			WHERE p.address = `+contact+`)
+		  AND `+query.Waiting(dir, "l")+`
+		  AND `+query.Involves(dir, "l", contact, selfs)+`
 		GROUP BY l.thread_key
 		ORDER BY l.date DESC`)
 	if err != nil {
@@ -335,15 +343,15 @@ func awaitingThreads(dir, contact, selfs string) ([]PendingThread, error) {
 
 // nobodyWaiting counts the contact's conversations judged to wait on no one,
 // so the card can say what it left out.
-func nobodyWaiting(contact, selfs string) (int, error) {
+func nobodyWaiting(ctx context.Context, contact, selfs string) (int, error) {
 	var n int
-	err := db.QueryRow(`
+	err := db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT l.thread_key) FROM messages l
 		WHERE l.thread_key IN (
 			SELECT m.thread_key FROM messages m
 			JOIN message_participants p ON p.message_id = m.id
-			WHERE p.address = ` + contact + `)
-		  AND ` + query.NobodyWaiting("l") + `
-		  AND ` + query.Involves(query.AwaitingThem, "l", contact, selfs)).Scan(&n)
+			WHERE p.address = `+contact+`)
+		  AND `+query.NobodyWaiting("l")+`
+		  AND `+query.Involves(query.AwaitingThem, "l", contact, selfs)).Scan(&n)
 	return n, err
 }

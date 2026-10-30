@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Play, Loader2 } from 'lucide-react';
+import { Play, Loader2, X } from 'lucide-react';
 import { complete, type Candidate, type Completion } from './api';
 import { Help } from '../Help';
 
@@ -14,6 +14,13 @@ interface EditorProps {
   /** Drawn in front of the box: the folder the query is inside. */
   scope?: React.ReactNode;
   placeholder?: string;
+  /**
+   * Back to the folder with nothing added, when something is. Its name says
+   * where it goes — "Show all of Inbox" — because "Clear" alone does not say
+   * whether the folder goes too.
+   */
+  onClear?: () => void;
+  clearLabel?: string;
 }
 
 /**
@@ -32,6 +39,8 @@ export const Editor = ({
   errorMessage,
   scope,
   placeholder,
+  onClear,
+  clearLabel,
 }: EditorProps) => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [completion, setCompletion] = useState<Completion | null>(null);
@@ -204,6 +213,21 @@ export const Editor = ({
           )}
         </div>
 
+        {onClear && (
+          // Beside the box rather than inside it: an × over the end of a long
+          // query hides the text it is about, and here it can say what it does.
+          <button
+            type="button"
+            onClick={onClear}
+            aria-label={clearLabel}
+            aria-keyshortcuts="Escape"
+            title={`${clearLabel} (Esc, from the list)`}
+            className="flex items-center gap-1 px-2 py-1 border border-border text-xs leading-4
+                       hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <X size={12} aria-hidden /> Clear
+          </button>
+        )}
         <button
           type="button"
           onClick={onRun}

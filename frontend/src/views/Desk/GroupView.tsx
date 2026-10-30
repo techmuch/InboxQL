@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Archive, Eye, Loader2, MailOpen, Tag } from 'lucide-react';
 import { compose } from '../../lib/filters';
 import { bulkApply, type BulkResult } from '../../lib/mail';
@@ -8,6 +8,7 @@ import { runQuery } from './api';
 export const GROUPINGS: { id: string; label: string }[] = [
   { id: 'from', label: 'Sender' },
   { id: 'domain', label: 'Domain' },
+  { id: 'topic', label: 'Topic' },
   { id: 'importance', label: 'Importance' },
   { id: 'sentby', label: 'Kind of sender' },
 ];
@@ -24,6 +25,9 @@ export const groupTerm = (by: string, label: string): string | null => {
     case 'domain': return plain ? `from:*@${label}` : null;
     case 'importance': return `importance:${label}`;
     case 'sentby': return `sentby:${label}`;
+    // Topics are words chosen when reading ("ward council"), so one with a
+    // space is quoted rather than left unreachable.
+    case 'topic': return plain ? `topic:${label}` : /"/.test(label) ? null : `topic:"${label}"`;
   }
   return null;
 };
@@ -36,14 +40,20 @@ interface Group { label: string; value: number }
  * clicks to clear a sender, whatever their count.
  */
 export const GroupView = ({
-  query, by, labels, onShow, onDone,
+  query, by, labels, onShow, onDone, onScroll, scrollTo, onScrolled,
 }: {
   query: string;
   by: string;
   labels: string[];
   onShow: (term: string) => void;
   onDone: (said: string, result: BulkResult) => void;
+  /** Where the list is scrolled to, as it moves — for coming back to it. */
+  onScroll?: (top: number) => void;
+  /** A position to return to once the groups are drawn, then `onScrolled`. */
+  scrollTo?: number;
+  onScrolled?: () => void;
 }) => {
+  const listRef = useRef<HTMLDivElement>(null);
   const [base, setBase] = useState<string | null>(null);
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +97,12 @@ export const GroupView = ({
     }
   };
 
+  useEffect(() => {
+    if (scrollTo === undefined || !groups || !listRef.current) return;
+    listRef.current.scrollTop = scrollTo;
+    onScrolled?.();
+  }, [scrollTo, groups, onScrolled]);
+
   if (error) return <p className="p-4 text-sm text-destructive">{error}</p>;
   if (!groups) {
     return <p className="p-4 text-sm text-muted-foreground flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Grouping…</p>;
@@ -95,7 +111,8 @@ export const GroupView = ({
 
   const max = Math.max(...groups.map(g => g.value));
   return (
-    <div className="flex-1 overflow-auto" role="list" aria-label="Groups">
+    <div ref={listRef} className="flex-1 overflow-auto" role="list" aria-label="Groups"
+      onScroll={e => onScroll?.(e.currentTarget.scrollTop)}>
       {groups.map(g => {
         const term = groupTerm(by, g.label);
         return (
@@ -108,6 +125,7 @@ export const GroupView = ({
             {term ? (
               <div className="flex flex-wrap items-center gap-1 text-xs">
                 <button type="button" onClick={() => onShow(term)}
+                  aria-label={`Show ${g.label}`}
                   className="flex items-center gap-1 border border-border px-2 py-0.5 hover:bg-accent/40">
                   <Eye size={12} /> Show
                 </button>

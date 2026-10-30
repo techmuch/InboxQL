@@ -475,8 +475,11 @@ func handleAccountStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing id parameter", http.StatusBadRequest)
 		return
 	}
-	stats, err := store.GetAccountStats(id)
+	stats, err := store.GetAccountStatsContext(r.Context(), id)
 	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -589,8 +592,11 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 // silly, and the counts have to agree with each other at a single moment or
 // the sidebar contradicts itself.
 func handleFolderCounts(w http.ResponseWriter, r *http.Request) {
-	counts, err := store.FolderCounts(r.URL.Query().Get("accountId"))
+	counts, err := store.FolderCountsContext(r.Context(), r.URL.Query().Get("accountId"))
 	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1173,8 +1179,11 @@ func handleContactResponsiveness(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "address parameter is required")
 		return
 	}
-	resp, err := store.GetContactResponsiveness(addr)
+	resp, err := store.GetContactResponsivenessContext(r.Context(), addr)
 	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "%v", err)
 		return
 	}

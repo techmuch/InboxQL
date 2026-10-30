@@ -154,8 +154,12 @@ func handleBulkCount(w http.ResponseWriter, r *http.Request) {
 // given the additions as rest, each folder with them inside it. A query about
 // something other than mail is a 400, and the rail keeps its plain totals.
 func handleFacets(w http.ResponseWriter, r *http.Request) {
-	f, err := store.MessageFacets(r.URL.Query().Get("q"), r.URL.Query().Get("rest"))
+	f, err := store.MessageFacetsContext(r.Context(), r.URL.Query().Get("q"), r.URL.Query().Get("rest"))
 	if err != nil {
+		// A view somebody has already left has nobody to answer.
+		if r.Context().Err() != nil {
+			return
+		}
 		writeError(w, http.StatusBadRequest, "%v", err)
 		return
 	}

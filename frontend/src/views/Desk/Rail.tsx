@@ -124,15 +124,22 @@ export const Rail = ({
   const within = facets?.within ?? '';
   const find = (rows: FacetCount[] | undefined, name: string) => rows?.find(r => r.name === name);
   const scopedFolders = facets?.folders && facets.folders.length > 0 ? facets.folders : null;
-  const countClass = `text-[10px] font-bold tabular-nums transition-opacity ${facetsStale ? 'opacity-40' : ''}`;
+  // Numbers on their way out are dimmed by colour, like an empty row, so they
+  // stay readable while the new ones load.
+  const countClass = `text-[10px] font-bold tabular-nums transition-colors ${facetsStale ? '!text-muted-foreground font-normal' : ''}`;
 
+  // A row that would show nothing is dimmed by colour, not by opacity: faded
+  // to 40% the name fell to about 2:1 against the rail, which is unreadable
+  // for many people, and the row still works when clicked.
+  const empty = '!text-muted-foreground';
   const rowClass = (active: boolean, extra = '') =>
     `w-full flex items-center gap-4 px-4 py-2 text-sm transition-colors ${
       active ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground/70'
     } ${extra}`;
 
   return (
-    <div className="w-64 flex flex-col pt-4 border-r border-border/50 bg-card/20">
+    // A landmark, so a screen reader can jump between the rail and the mail.
+    <div role="navigation" aria-label="Mailbox" className="w-64 flex flex-col pt-4 border-r border-border/50 bg-card/20">
       <div className="px-4 mb-6">
         <button onClick={openCompose} className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 shadow-sm hover:shadow-md transition-all font-semibold text-[13px]">
           <Plus className="w-4 h-4" /> Compose
@@ -167,8 +174,13 @@ export const Rail = ({
             <div key={item.id} className="flex items-center">
               <button
                 onClick={() => onFolder(item.id)}
-                title={scoped ? `${scoped.total.toLocaleString()} with ${facets!.rest} in ${item.label}` : entryQuery}
-                className={rowClass(folderActive(item.id), isHidden || zero ? 'opacity-40' : '')}
+                // The folder you are in, clicked again, is the way back to all
+                // of it: whatever was added goes, and the title says so.
+                aria-current={folderActive(item.id) ? 'page' : undefined}
+                title={folderActive(item.id)
+                  ? `Show all of ${item.label}, with nothing added`
+                  : scoped ? `${scoped.total.toLocaleString()} with ${facets!.rest} in ${item.label}` : entryQuery}
+                className={rowClass(folderActive(item.id), isHidden ? 'opacity-40' : zero ? empty : '')}
               >
                 <Icon className={`w-4 h-4 ${folderActive(item.id) ? 'text-primary' : 'text-muted-foreground'}`} />
                 <span className="flex-1 text-left">{item.label}</span>
@@ -299,7 +311,7 @@ export const Rail = ({
                   onClick={() => (onLabel ?? onQuery)(q)}
                   title={c ? `${c.total.toLocaleString()} of ${facets!.total.toLocaleString()} in ${within}` : q}
                   aria-pressed={isActive(q)}
-                  className={rowClass(isActive(q), c && c.total === 0 ? 'opacity-40' : '')}
+                  className={rowClass(isActive(q), c && c.total === 0 ? empty : '')}
                 >
                   <Tag className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                   <span className={`flex-1 text-left truncate ${unread > 0 ? 'font-semibold' : ''}`}>
@@ -326,7 +338,7 @@ export const Rail = ({
                     off ? `${a.name} is switched off; these are what it already found` : '',
                   ].filter(Boolean).join(' — ')}
                   aria-pressed={isActive(q)}
-                  className={rowClass(isActive(q), off || (c && c.total === 0) ? 'opacity-40' : '')}
+                  className={rowClass(isActive(q), off ? 'opacity-40' : c && c.total === 0 ? empty : '')}
                 >
                   {/* Sparkles marks a label a model or rule put on, beside the
                       ones a person or the server did. */}

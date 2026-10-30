@@ -74,7 +74,7 @@ describe('Desk mail actions', () => {
   it('stars from the row', async () => {
     render(<Desk />);
     await screen.findByText('Quarterly invoice');
-    fireEvent.click(screen.getAllByLabelText('Star')[0]);
+    fireEvent.click(screen.getAllByTitle('Star (s)')[0]);
     await waitFor(() => expect(posts).toContainEqual({
       url: '/api/messages/flags', body: { ids: ['m1'], flag: '\\Flagged', on: true },
     }));

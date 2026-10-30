@@ -172,8 +172,8 @@ export interface Facets {
 }
 
 /** The rail's counts inside a query; null for a query not about mail. */
-export async function messageFacets(query: string, rest: string): Promise<Facets | null> {
-  const res = await fetch(`/api/messages/facets?${new URLSearchParams({ q: query, rest })}`);
+export async function messageFacets(query: string, rest: string, signal?: AbortSignal): Promise<Facets | null> {
+  const res = await fetch(`/api/messages/facets?${new URLSearchParams({ q: query, rest })}`, signal ? { signal } : undefined);
   if (!res.ok) return null;
   const body = await res.json().catch(() => null);
   return body && typeof body.total === 'number' && Array.isArray(body.labels) ? body : null;

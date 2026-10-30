@@ -69,15 +69,28 @@ func newest(l string) string {
 		" WHERE x.thread_key = " + l + ".thread_key AND " + Unbinned("x.id") + ")"
 }
 
+// judged is true of l when it is the newest message of a conversation the
+// waiting element judged dir.
+//
+// It first asks whether l was ever answered dir at all — an uncorrelated list
+// SQLite builds once from a few hundred judgements — and only then works out
+// whether l is its conversation's newest message and which answer counts.
+// Without that, every message in the mailbox paid for both: `awaiting:me` took
+// 14 seconds on 7,800 messages, and `in:contacts awaiting:me` minutes.
 func judged(dir, l string) string {
-	level := levelOnMe
+	level := levelFor(dir)
+	return "(" + l + ".id IN (" + judgedAs(level) + ") AND " + newest(l) +
+		" AND COALESCE(" + WaitingLevel(l+".id") + ", '') = '" + level + "')"
+}
+
+func levelFor(dir string) string {
 	switch dir {
 	case AwaitingThem:
-		level = levelOnThem
+		return levelOnThem
 	case levelNoOne:
-		level = levelNoOne
+		return levelNoOne
 	}
-	return "(" + newest(l) + " AND COALESCE(" + WaitingLevel(l+".id") + ", '') = '" + level + "')"
+	return levelOnMe
 }
 
 // Waiting is true of l when it is the newest message of a conversation
@@ -107,13 +120,43 @@ func Involves(dir, l, contact, selfs string) string {
 }
 
 // ContactAwaiting is true of contact c when a conversation they are part of
-// waits on dir. Driven from their own messages so the planner starts from an
-// index rather than every conversation.
+// waits on dir — for one waiting on me, one they wrote in.
+//
+// # Why it starts from the judgements
+//
+// It used to be driven from the contact: for every contact, every message of
+// every conversation they were in, then that conversation's newest message
+// and its judgement. On a real mailbox — 10,600 contacts, most of them on
+// newsletters — `in:contacts awaiting:me` ran for minutes, a core apiece, and
+// the rail asks for it.
+//
+// The conversations judged to wait are few: a few hundred judgements, a
+// handful waiting. So the set is built once, from the judgements (see
+// judged), and the contact is looked up in it. CROSS JOIN fixes SQLite's join order, which
+// otherwise starts from every sender row in the mailbox and arrives at the
+// same few conversations last. 0.2 s on the mailbox above.
 func ContactAwaiting(dir, contact, selfs string) string {
-	return "EXISTS (SELECT 1 FROM message_participants cp JOIN messages c0 ON c0.id = cp.message_id" +
-		" JOIN messages l ON l.thread_key = c0.thread_key" +
-		" WHERE cp.address = " + contact + " AND " + Waiting(dir, "l") +
-		" AND " + Involves(dir, "l", contact, selfs) + ")"
+	role := ""
+	if dir == AwaitingMe {
+		role = " AND tp.role = 'from'"
+	}
+	notMe := ""
+	if selfs != "" {
+		notMe = contact + " NOT IN " + selfs + " AND "
+	}
+	return "(" + notMe + contact + " IN (SELECT tp.address FROM (SELECT l.thread_key AS k FROM messages l" +
+		" WHERE " + Waiting(dir, "l") + ") w" +
+		" CROSS JOIN messages t ON t.thread_key = w.k" +
+		" CROSS JOIN message_participants tp ON tp.message_id = t.id" + role +
+		" WHERE " + Unbinned("t.id") + "))"
+}
+
+// judgedAs is every message the waiting element has ever answered level
+// about, at any version and by anyone: a superset that is cheap to find, which
+// judged then narrows to the answer that counts on the newest message.
+func judgedAs(level string) string {
+	return "SELECT an.message_id FROM annotations an JOIN annotators a ON a.id = an.annotator_id" +
+		" WHERE a.name = '" + WaitingAnnotator + "' AND json_extract(an.data_json, '$.level') = '" + level + "'"
 }
 
 // ImportanceAnnotator is the element that judges how much a conversation

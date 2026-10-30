@@ -1,6 +1,10 @@
 package store
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
 
 // The rail's counts are what clicking each row would leave you with: a label
 // within the frame, a folder with the additions inside it.
@@ -80,5 +84,22 @@ func TestFacetsPreviewTheClick(t *testing.T) {
 
 	if _, err := MessageFacets("in:tickets", ""); err == nil {
 		t.Error("a query about cards has no mail facets")
+	}
+}
+
+// A count nobody is waiting for stops: the rail asks again on every change of
+// view, and the abandoned ones must not hold a connection and a core each.
+func TestRailCountsStopWhenAbandoned(t *testing.T) {
+	openQueryFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := MessageFacetsContext(ctx, "folder:inbox", "label:banking"); !errors.Is(err, context.Canceled) {
+		t.Errorf("facets on a cancelled request: err = %v, want context.Canceled", err)
+	}
+	if _, err := FolderCountsContext(ctx, ""); !errors.Is(err, context.Canceled) {
+		t.Errorf("folder counts on a cancelled request: err = %v, want context.Canceled", err)
+	}
+	if _, err := GetAccountStatsContext(ctx, "acct"); !errors.Is(err, context.Canceled) {
+		t.Errorf("account stats on a cancelled request: err = %v, want context.Canceled", err)
 	}
 }

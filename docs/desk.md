@@ -21,7 +21,9 @@ differently.
 
 **Inbox, Starred, Sent, Drafts, All Mail, Spam and Trash** are the mailbox
 itself. One of them is always the folder you are in: choosing another keeps
-what you had added, so *Inbox › banking* becomes *All Mail › banking*. You can hide one you never use; you cannot delete it,
+what you had added, so *Inbox › banking* becomes *All Mail › banking*.
+Clicking the one you are **already in** shows all of it — whatever was added
+goes, and so does grouping. You can hide one you never use; you cannot delete it,
 because it *is* the mail. **Reset** brings hidden ones back.
 
 They are labels, not folders, as in Gmail: a message carries any number of
@@ -103,6 +105,30 @@ What you get back depends on what you asked:
 
 The list loads more as you scroll; there is no page size to choose.
 
+## One person or topic at a time
+
+The Desk is built for working through the inbox in pieces: everything from one
+person, or on one topic, then back to see what is next.
+
+**Focus on one.** Each message row has **Everything from…** (the person icon,
+or **f** on the row you are on), which shows all of that sender's mail in the
+folder. A label on a row shows everything carrying that label. **Group by →
+Sender** or **Topic** lists them all with counts, and each group's **Show**
+opens it.
+
+**Back to all of the folder.** **Clear**, at the end of the query bar, appears
+whenever something is added to the folder and takes it off — it is named for
+where it goes, *Show all of Inbox*. **Escape** in the list does the same, once
+any selection has been cleared. Clicking the folder you are in, in the rail,
+does it too and also turns grouping off. A conversation view stays as it was.
+
+**Back to where you were.** **Back**, in front of the folder, returns to the
+view before this one — its query, its grouping, and how far down you had
+scrolled — and its name says where that is: *Back to Inbox, by sender*. **u**
+or **Alt+←** in the list do the same, and Back again goes further. So the loop
+is: **Group by → Sender**, **Show** someone, deal with their mail, **u**, and
+the group you just finished is gone from the list.
+
 ## Reading
 
 Move through any list with the **↑** and **↓** arrow keys. The row you are on
@@ -169,7 +195,7 @@ how many changed, with **Undo**, which puts back exactly what changed and
 nothing else.
 
 **Group by** (beside Threads) shows the folder in groups — by **Sender**,
-**Domain**, **Importance** or **Kind of sender** — each with its count and
+**Domain**, **Topic**, **Importance** or **Kind of sender** — each with its count and
 **Archive all**, **Mark read** and **Label…** for the whole group, and **Show**
 to open it. Clearing every newsletter from one shop is two clicks.
 
@@ -266,6 +292,10 @@ into a field are never taken, so none of these get in the way of writing.
 | Shift+I, Shift+U | mark it read, or unread |
 | x | select the row you are on, or take it out of the selection |
 | \* a, \* n | select the page, or nothing |
+| f | everything from the sender of the row you are on |
+| m | messages like the row you are on |
+| u, Alt+← | back to the previous view |
+| Escape | clear the selection; then show all of the folder |
 | F1 | the documentation |
 | Ctrl+, | Settings |
 | Ctrl+I | the chat panel |
@@ -279,6 +309,14 @@ all of them.
 
 In the query bar: **Enter** runs the query, **Tab** takes a suggestion, **↑ ↓**
 move through suggestions, **Escape** closes them.
+
+**With a screen reader**, the rail is the *Mailbox* landmark and the rest is
+*Desk*. Each message is one item in a list, named in one breath — *Unread,
+Starred. alice@acme.com. Quarterly report. labels Receipts. 10:09 AM* — and the
+list's description gives its keys. The small buttons drawn on a row (tick,
+star, sender, similar, a label) are for the mouse; each is a key on the row
+instead, so nothing inside a row takes focus. Clearing and going back are
+announced, and **Back** and **Clear** are named for where they go.
 
 ## Everything is a tab
 

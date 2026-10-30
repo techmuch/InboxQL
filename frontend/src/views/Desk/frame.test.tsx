@@ -76,7 +76,7 @@ describe('Desk folder frame', () => {
 
   it('keeps the folder in front of what is typed', async () => {
     render(<Desk />);
-    expect(await screen.findByLabelText('Inside Inbox')).toBeTruthy();
+    expect(await screen.findByText((_, el) => el?.hasAttribute('data-scope-chip') === true && el.textContent?.startsWith('Inside Inbox') === true)).toBeTruthy();
     const box = screen.getByLabelText('Query') as HTMLTextAreaElement;
     await waitFor(() => expect(box.value).toBe(''));
     fireEvent.change(box, { target: { value: 'from:bob' } });
@@ -134,7 +134,7 @@ describe('Desk folder frame', () => {
   it('searches every kind from All Items, and says what it left out', async () => {
     render(<Desk />);
     fireEvent.click(await screen.findByText('All Items'));
-    expect(await screen.findByLabelText('Inside All Items')).toBeTruthy();
+    expect(await screen.findByText((_, el) => el?.hasAttribute('data-scope-chip') === true && el.textContent?.startsWith('Inside All Items') === true)).toBeTruthy();
     const box = screen.getByLabelText('Query');
     fireEvent.change(box, { target: { value: 'acme' } });
     fireEvent.keyDown(box, { key: 'Enter' });

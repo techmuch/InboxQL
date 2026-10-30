@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -2504,22 +2505,29 @@ func GetMailboxSyncState(id string) (*MailboxSyncState, error) {
 }
 
 func GetAccountStats(accountID string) (*account.AccountStats, error) {
+	return GetAccountStatsContext(context.Background(), accountID)
+}
+
+// GetAccountStatsContext is GetAccountStats, stopping when the caller gives
+// up. Each total is a scan of the account's mail, and the status bar asks for
+// them every few seconds.
+func GetAccountStatsContext(ctx context.Context, accountID string) (*account.AccountStats, error) {
 	stats := &account.AccountStats{}
-	err := db.QueryRow("SELECT COUNT(*) FROM messages WHERE account_id = ?", accountID).Scan(&stats.TotalMessages)
+	err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM messages WHERE account_id = ?", accountID).Scan(&stats.TotalMessages)
 	if err != nil {
 		return nil, err
 	}
-	err = db.QueryRow("SELECT COUNT(*) FROM messages WHERE account_id = ? AND flags NOT LIKE '%\\Seen%'", accountID).Scan(&stats.UnreadMessages)
+	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM messages WHERE account_id = ? AND flags NOT LIKE '%\\Seen%'", accountID).Scan(&stats.UnreadMessages)
 	if err != nil {
 		return nil, err
 	}
-	err = db.QueryRow("SELECT COALESCE(SUM(size), 0) FROM messages WHERE account_id = ?", accountID).Scan(&stats.StorageSize)
+	err = db.QueryRowContext(ctx, "SELECT COALESCE(SUM(size), 0) FROM messages WHERE account_id = ?", accountID).Scan(&stats.StorageSize)
 	if err != nil {
 		return nil, err
 	}
 	if stats.TotalMessages > 0 {
 		var lastDate int64
-		err = db.QueryRow("SELECT MAX(date) FROM messages WHERE account_id = ?", accountID).Scan(&lastDate)
+		err = db.QueryRowContext(ctx, "SELECT MAX(date) FROM messages WHERE account_id = ?", accountID).Scan(&lastDate)
 		if err == nil {
 			stats.LastSync = time.UnixMilli(lastDate).Format(time.RFC3339)
 		}

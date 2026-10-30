@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -145,6 +146,12 @@ type FolderCount struct {
 // The sidebar needs all of them at once; six round trips from the browser to
 // render one list would be silly.
 func FolderCounts(accountID string) ([]FolderCount, error) {
+	return FolderCountsContext(context.Background(), accountID)
+}
+
+// FolderCountsContext is FolderCounts, stopping when the caller gives up:
+// the rail asks again after every change of view and every change of mail.
+func FolderCountsContext(ctx context.Context, accountID string) ([]FolderCount, error) {
 	out := make([]FolderCount, len(Folders))
 	errs := make([]error, len(Folders))
 
@@ -153,7 +160,7 @@ func FolderCounts(accountID string) ([]FolderCount, error) {
 		wg.Add(1)
 		go func(i int, folder string) {
 			defer wg.Done()
-			out[i], errs[i] = countFolder(folder, accountID)
+			out[i], errs[i] = countFolderContext(ctx, folder, accountID)
 		}(i, folder)
 	}
 	wg.Wait()
@@ -168,8 +175,12 @@ func FolderCounts(accountID string) ([]FolderCount, error) {
 
 // countFolder totals one folder.
 func countFolder(folder, accountID string) (FolderCount, error) {
+	return countFolderContext(context.Background(), folder, accountID)
+}
+
+func countFolderContext(ctx context.Context, folder, accountID string) (FolderCount, error) {
 	if IsDraftFolder(folder) {
-		total, err := countDrafts(accountID)
+		total, err := countDrafts(ctx, accountID)
 		if err != nil {
 			return FolderCount{}, err
 		}
@@ -193,7 +204,7 @@ func countFolder(folder, accountID string) (FolderCount, error) {
 	}
 
 	count := FolderCount{Folder: folder}
-	err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(CASE WHEN flags NOT LIKE '%\\Seen%' THEN 1 ELSE 0 END), 0) FROM messages`+where, args...).
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(CASE WHEN flags NOT LIKE '%\\Seen%' THEN 1 ELSE 0 END), 0) FROM messages`+where, args...).
 		Scan(&count.Total, &count.Unread)
 	if err != nil {
 		return FolderCount{}, fmt.Errorf("counting %s: %w", folder, err)
@@ -201,7 +212,7 @@ func countFolder(folder, accountID string) (FolderCount, error) {
 	return count, nil
 }
 
-func countDrafts(accountID string) (int, error) {
+func countDrafts(ctx context.Context, accountID string) (int, error) {
 	query := "SELECT COUNT(*) FROM drafts WHERE status != ?"
 	args := []any{DraftStatusSent}
 	if accountID != "" {
@@ -209,7 +220,7 @@ func countDrafts(accountID string) (int, error) {
 		args = append(args, accountID)
 	}
 	var n int
-	err := db.QueryRow(query, args...).Scan(&n)
+	err := db.QueryRowContext(ctx, query, args...).Scan(&n)
 	return n, err
 }
 

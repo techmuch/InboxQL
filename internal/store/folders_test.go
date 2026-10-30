@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"sort"
 	"testing"
 	"time"
@@ -250,7 +251,7 @@ func TestDraftsFolder(t *testing.T) {
 		}
 	}
 
-	if n, err := countDrafts("acct"); err != nil || n != 2 {
+	if n, err := countDrafts(context.Background(), "acct"); err != nil || n != 2 {
 		t.Errorf("countDrafts = %d, %v; want 2, nil", n, err)
 	}
 }

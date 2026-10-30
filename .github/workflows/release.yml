@@ -17,8 +17,39 @@ env:
   NODE_VERSION: "22"
 
 jobs:
+  # A tag is built only when it is the release its commit says it is: the
+  # VERSION file at the tagged commit names the tag. That turns away the
+  # historical tags, renamed year.month.day.n on commits from before VERSION
+  # existed, and a release whose version was never bumped.
+  gate:
+    name: Is this a release
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - id: check
+        shell: bash
+        run: |
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          tag="${ref#v}"
+          file=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || true)
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+          if [ "$file" = "$tag" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "VERSION says $file: building it."
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Not building $ref: VERSION at this commit says '${file:-nothing}'. Historical tags and unbumped commits are not releases."
+          fi
+
   frontend:
     name: Build frontend
+    needs: gate
+    if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -153,9 +184,53 @@ jobs:
 
   publish:
     name: Publish release
-    needs: build
+    needs: [gate, build]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # What changed, from the same entry Help shows; then how to install.
+      - name: Release notes
+        shell: bash
+        run: |
+          version="${{ needs.gate.outputs.version }}"
+          awk -v v="$version" '
+            /^## / { t=$0; sub(/^## /,"",t); sub(/ \{#.*$/,"",t); if (on) exit; on=(t==v); next }
+            on { print }
+          ' docs/release-notes.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "docs/release-notes.md has no entry for $version" >&2
+            exit 1
+          fi
+          cat >> notes.md <<'INSTALL'
+
+          ## Install
+
+          **macOS and Linux**
+
+          ```
+          curl -fsSL https://techmuch.github.io/InboxQL/install.sh | sh
+          ```
+
+          **Windows** (PowerShell)
+
+          ```
+          irm https://techmuch.github.io/InboxQL/install.ps1 | iex
+          ```
+
+          The script verifies the download against `SHA256SUMS`, installs to
+          `~/.iql/bin`, writes `~/.iql/settings.json`, and installs the login
+          service. Already installed? `iql update`.
+
+          Full instructions: https://techmuch.github.io/InboxQL/
+
+          macOS builds are ad-hoc signed, not notarised. The install script
+          downloads with curl, which Gatekeeper does not quarantine; a browser
+          download needs `xattr -d com.apple.quarantine iql`.
+          INSTALL
+          cat notes.md
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
@@ -170,30 +245,8 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
+          name: ${{ needs.gate.outputs.version }}
           files: artifacts/*
           generate_release_notes: true
           draft: false
-          body: |
-            ## Install
-
-            **macOS and Linux**
-
-            ```
-            curl -fsSL https://techmuch.github.io/InboxQL/install.sh | sh
-            ```
-
-            **Windows** (PowerShell)
-
-            ```
-            irm https://techmuch.github.io/InboxQL/install.ps1 | iex
-            ```
-
-            The script verifies the download against `SHA256SUMS`, installs to
-            `~/.iql/bin`, writes `~/.iql/settings.json`, and installs the login
-            service. Already installed? `iql update`.
-
-            Full instructions: https://techmuch.github.io/InboxQL/
-
-            macOS builds are ad-hoc signed, not notarised. The install script
-            downloads with curl, which Gatekeeper does not quarantine; a browser
-            download needs `xattr -d com.apple.quarantine iql`.
+          body_path: notes.md

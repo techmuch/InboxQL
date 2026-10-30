@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { ShellLayout, AppTitle, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile, BUNDLED_THEMES } from 'nexus-shell';
+import { ShellLayout, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile, BUNDLED_THEMES } from 'nexus-shell';
 import { Search, Mail, Server, Shield, Cpu, Eye, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, HardDrive, Wrench } from 'lucide-react';
 import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
@@ -41,7 +41,8 @@ import { WorkLoop } from './views/WorkLoop';
 import { openCompose, openKeys, openNewTask, openPalette } from './lib/appUi';
 import { installKeySequences } from './lib/keySequences';
 import { openDoc, DOCS_TAB } from './lib/docsNav';
-import { version as appVersion } from '../package.json';
+import { appVersion, notesAnchor } from './lib/version';
+import { AppLockup } from './views/AppLockup';
 import 'nexus-shell/style.css';
 import './App.css';
 import { Help } from './views/Help';
@@ -539,7 +540,11 @@ const SettingsView = () => {
         <div className="p-4 border-t border-border mt-auto opacity-50">
           <div className="text-xs font-mono flex items-center justify-between text-muted-foreground">
             <span>InboxQL</span>
-            <span>v{appVersion}</span>
+            <button type="button" onClick={() => openDoc('release-notes', notesAnchor(appVersion))}
+              aria-label={`Version ${appVersion}, release notes`} title="Release notes for this version"
+              className="hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+              v{appVersion}
+            </button>
           </div>
         </div>
       </div>
@@ -918,6 +923,7 @@ function App() {
     cmd('iql.open-docs', 'Documentation', () => openDoc(), 'F1');
     cmd('iql.keyboard', 'Keyboard shortcuts', openKeys);
     cmd('iql.for-agents', 'For agents', () => openDoc('agents'));
+    cmd('iql.release-notes', 'Release notes', () => openDoc('release-notes', notesAnchor(appVersion)));
     cmd('iql.check-updates', 'Check for updates', () => openSetting('updates'));
     // The version on its own answers little; the System section says which
     // version, where the mailbox is and how the server is running.
@@ -971,6 +977,7 @@ function App() {
         item('iql.open-docs', 'Documentation', 'F1'),
         item('iql.keyboard', 'Keyboard shortcuts', '?'),
         item('iql.for-agents', 'For agents'),
+        item('iql.release-notes', 'Release notes'),
         item('iql.check-updates', 'Check for updates'),
         item('nexus.about', 'About InboxQL'),
       ],
@@ -1025,7 +1032,7 @@ function App() {
       <ShellLayout
         // `app-lockup` keeps the QL in InboxQL; see App.css for why a Tailwind
         // class could not do it.
-        title={<AppTitle title="InboxQL" subtitle={`v${appVersion} • Email for Engineers`} className="app-lockup" />}
+        title={<AppLockup />}
         // Chat was a fixture of the shell in 0.1.x, toggled by a built-in
         // command. In 0.2.x it is an ordinary registered panel, so passing no
         // panels left `view.toggleChat` with nothing to toggle. Registering it

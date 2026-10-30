@@ -23,7 +23,7 @@ func releaseServer(t *testing.T, rel update.Release) {
 
 func TestUpdateCheckReportsANewerRelease(t *testing.T) {
 	withHome(t, nil)
-	releaseServer(t, update.Release{Tag: "v99.0.0", URL: "https://example.test/r"})
+	releaseServer(t, update.Release{Tag: "v9999.1.1.1", URL: "https://example.test/r"})
 
 	var out bytes.Buffer
 	if code := Execute([]string{"--json", "update", "--check"}, nil, &out, &bytes.Buffer{}); code != ExitOK {
@@ -31,7 +31,7 @@ func TestUpdateCheckReportsANewerRelease(t *testing.T) {
 	}
 	var got map[string]any
 	json.Unmarshal(out.Bytes(), &got)
-	if got["newer"] != true || got["latest"] != "99.0.0" {
+	if got["newer"] != true || got["latest"] != "9999.1.1.1" {
 		t.Errorf("got %v", got)
 	}
 }
@@ -55,7 +55,7 @@ func TestUpdateRefusesAReleaseWithoutChecksums(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
-	releaseServer(t, update.Release{Tag: "v99.0.0", Assets: []update.Asset{{Name: name, URL: "http://unused"}}})
+	releaseServer(t, update.Release{Tag: "v9999.1.1.1", Assets: []update.Asset{{Name: name, URL: "http://unused"}}})
 
 	var errOut bytes.Buffer
 	code := Execute([]string{"update", "--yes"}, nil, &bytes.Buffer{}, &errOut)
@@ -72,7 +72,7 @@ func TestUpdateWithoutATerminalNeedsYes(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
-	releaseServer(t, update.Release{Tag: "v99.0.0", Assets: []update.Asset{
+	releaseServer(t, update.Release{Tag: "v9999.1.1.1", Assets: []update.Asset{
 		{Name: name, URL: "http://unused"}, {Name: "SHA256SUMS", URL: "http://unused"},
 	}})
 

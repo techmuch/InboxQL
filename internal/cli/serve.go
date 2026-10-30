@@ -20,6 +20,7 @@ import (
 	"github.com/user/inboxql/internal/auth"
 	"github.com/user/inboxql/internal/backups"
 	"github.com/user/inboxql/internal/calsync"
+	"github.com/user/inboxql/internal/docs"
 	"github.com/user/inboxql/internal/llm"
 	"github.com/user/inboxql/internal/machine"
 	"github.com/user/inboxql/internal/serverlock"
@@ -28,19 +29,31 @@ import (
 	"github.com/user/inboxql/internal/tcc"
 )
 
-// Version is the release version, overridable at build time with
+// Version is the release version, year.month.day.n — the second release of
+// October 30, 2026 is 2026.10.30.2. A release build stamps it from the tag:
 //
-//	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=1.2.3"
-var Version = "0.0.113"
+//	go build -ldflags "-X github.com/user/inboxql/internal/cli.Version=2026.10.30.2"
+//
+// The literal is what a plain `go build` reports. It must equal the VERSION
+// file, which scripts/version.sh writes together with it and a test checks:
+// the linker can only stamp a string written as a literal, so it cannot
+// simply read the embedded file.
+var Version = "2026.10.30.1"
 
 func init() {
 	register(&Command{
 		Name:    "version",
 		Summary: "print the InboxQL version",
-		Usage: `iql version [--json]
+		Usage: `iql version [--notes] [--json]
 
 Prints the version, the revision it was built from when available, and the Go
-toolchain used. Include this in bug reports.`,
+toolchain used. Include this in bug reports.
+
+A version is year.month.day.n: 2026.10.30.2 is the second release of
+October 30, 2026.
+
+--notes prints what changed in this release, from the release notes in
+Help → Documentation (and under "notes" with --json).`,
 		Run: runVersion,
 	})
 
@@ -81,6 +94,14 @@ administrator.`,
 }
 
 func runVersion(ctx *Context, args []string) error {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	fs.SetOutput(ctx.Stderr)
+	withNotes := fs.Bool("notes", false, "print what changed in this release")
+	if err := parseArgs(fs, args); err != nil {
+		return Fail(ExitUsage, "invalid flags")
+	}
+	notes, hasNotes := docs.ReleaseNotes(Version)
+
 	revision := ""
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, s := range info.Settings {
@@ -97,7 +118,17 @@ func runVersion(ctx *Context, args []string) error {
 			"go":       runtime.Version(),
 			"platform": runtime.GOOS + "/" + runtime.GOARCH,
 			"fullText": store.FullTextCompiled(),
+			"notes":    notes,
 		})
+	}
+
+	if *withNotes {
+		if !hasNotes {
+			ctx.Printf("iql %s has no release notes: it is not a release, or a build from between releases.\n", Version)
+			return nil
+		}
+		ctx.Printf("iql %s\n\n%s\n", Version, notes)
+		return nil
 	}
 
 	ctx.Printf("iql %s\n", Version)

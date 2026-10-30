@@ -46,6 +46,14 @@ func TestNewer(t *testing.T) {
 		{"0.0.74", "0.0.75", false},
 		{"1.2", "1.2.0", false},
 		{"0.0.76", "dev", true},
+		// Date-named releases, year.month.day.n: newer than every 0.0.x, and
+		// ordered by number, not by text — October is after March.
+		{"v2026.10.30.2", "0.0.113", true},
+		{"0.0.113", "2026.10.30.1", false},
+		{"2026.10.30.2", "2026.10.30.1", true},
+		{"2026.11.1.1", "2026.10.30.9", true},
+		{"2026.10.3.1", "2026.3.10.1", true},
+		{"2026.10.30.1", "2026.10.30.1", false},
 	} {
 		if got := Newer(c.a, c.b); got != c.want {
 			t.Errorf("Newer(%q, %q) = %v, want %v", c.a, c.b, got, c.want)

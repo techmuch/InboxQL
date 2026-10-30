@@ -64,7 +64,7 @@ mailbox by accident: with none to use, it stops and says how to make one.
 | `init` | prepare a mailbox folder: database, key, administrator |
 | `start` | run the server in this terminal (`--addr`, `--open`, `--dev`) |
 | `open` | open the running server in your browser; `--print` just prints the address |
-| `version` | which version, built from what |
+| `version` | which version, built from what; `--notes` for what changed in it |
 | `doctor` | health checks; non-zero when any fail |
 
 ### Asking questions

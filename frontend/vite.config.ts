@@ -2,6 +2,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { readFileSync } from 'node:fs'
+
+// The release version, from the one file it is written in. package.json
+// cannot hold it: npm takes three numbers and a release is four
+// (year.month.day.n).
+const appVersion = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim()
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -9,6 +15,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   server: {
     proxy: {
       '/api': {

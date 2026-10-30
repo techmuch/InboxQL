@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useDevReload } from './devReload';
-import { version as appVersion } from '../../package.json';
+import { appVersion } from './version';
 
 describe('useDevReload', () => {
   beforeEach(() => {

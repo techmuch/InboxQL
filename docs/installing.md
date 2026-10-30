@@ -112,6 +112,12 @@ Either way the update:
 Your mailbox's database is upgraded when the new version first opens it, after
 the backup. The page you started the update from reconnects by itself.
 
+**What changed** is in the [release notes](release-notes.md). Click the
+version under **InboxQL** at the top left to open them at the release you are
+running — a dot beside it after an update means there is something new — or
+run `iql version --notes`. Releases are named for the day they were made:
+`2026.10.30.2` is the second release of October 30, 2026.
+
 **Installed with Homebrew?** Then Homebrew owns the program, and `iql update`
 refuses rather than disagreeing with it. Use `brew upgrade inboxql`.
 

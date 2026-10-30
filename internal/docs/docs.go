@@ -82,6 +82,8 @@ var Guides = []Guide{
 		Summary: "What stays on this machine, when a password is asked for, and backups."},
 	{Slug: "troubleshooting", Group: "Running it", file: "docs/troubleshooting.md",
 		Summary: "When the page will not load, the wrong mailbox opens, or something is slow."},
+	{Slug: "release-notes", Group: "Reference", file: "docs/release-notes.md",
+		Summary: "What changed in each release, newest first, and how releases are named."},
 	{Slug: "command-line", Group: "Reference", file: "docs/command-line.md",
 		Summary: "The iql command: global flags, which mailbox, exit codes, and every command."},
 	// AGENTS.md is addressed to agents and keeps its own heading for them;
@@ -177,7 +179,10 @@ var appLink = regexp.MustCompile(`^#(setting|open)/([A-Za-z0-9-]+)$`)
 
 var md = goldmark.New(
 	goldmark.WithExtensions(extension.GFM, extension.Typographer),
-	goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+	// Attributes let a heading name its own anchor, `## 2026.10.30.2 {#v2026-10-30-2}`:
+	// the automatic one drops the dots, and 2026.1.11.1 and 2026.11.1.1 would
+	// both become 20261111.
+	goldmark.WithParserOptions(parser.WithAutoHeadingID(), parser.WithAttribute()),
 	// The guides are this repository's own files, so raw HTML in them is
 	// trusted; nothing a user or a message wrote is ever rendered here.
 	goldmark.WithRendererOptions(html.WithUnsafe()),

@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import { version as appVersion } from '../../package.json';
+import { appVersion } from './version';
 
 interface VersionResponse {
   version: string;

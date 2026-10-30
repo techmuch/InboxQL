@@ -41,7 +41,7 @@
 .iql-doc ol { list-style: decimal; }
 .iql-doc li { margin: 0.25em 0; }
 .iql-doc li > p { margin: 0; }
-.iql-doc a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.iql-doc a { color: hsl(var(--primary-text, var(--primary))); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
 .iql-doc strong { font-weight: 650; }
 .iql-doc code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86em; background: hsl(var(--muted)); padding: 0.1em 0.35em; }
 .iql-doc pre { background: hsl(var(--muted) / 0.6); border: 1px solid hsl(var(--border)); padding: 0.9em 1.1em; overflow-x: auto; margin: 0 0 1.2em; font-size: 13px; line-height: 1.55; }

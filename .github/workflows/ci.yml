@@ -157,7 +157,7 @@ jobs:
         env:
           CGO_ENABLED: "1"
         run: |
-          version=$(node -p "require('./frontend/package.json').version")
+          version=$(tr -d '[:space:]' < VERSION)
           go build -trimpath -tags "$GO_TAGS" \
             -ldflags "-s -w -X github.com/user/inboxql/internal/cli.Version=$version" \
             -o "${{ matrix.binary }}" ./cmd/iql

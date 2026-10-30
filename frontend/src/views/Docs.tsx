@@ -213,8 +213,8 @@ export const Docs = () => {
 
         <div className="p-3 border-t border-border text-[11px] text-muted-foreground leading-snug">
           These guides describe <span className="font-mono">v{version}</span>, the version running.{' '}
-          <a className="text-primary hover:underline inline-flex items-center gap-0.5" href={SITE_DOCS} target="_blank" rel="noreferrer">
-            Newest on the web <ExternalLink className="h-2.5 w-2.5" />
+          <a className="text-primary underline underline-offset-2 inline-flex items-center gap-0.5" href={SITE_DOCS} target="_blank" rel="noreferrer">
+            Newest on the web <ExternalLink className="h-2.5 w-2.5" aria-hidden />
           </a>
         </div>
       </aside>

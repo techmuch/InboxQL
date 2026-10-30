@@ -160,3 +160,27 @@ header .relative.inline-block > [role="menu"] {
   animation: iql-setting-flash 2s ease-out;
   scroll-margin: 1rem;
 }
+
+/*
+ * The primary colour, as text.
+ *
+ * One colour is asked to do two jobs: fill a button that white text sits on,
+ * and be text itself on the page — the folder you are in, an unread date, a
+ * link-like action. In two of the shell's themes it cannot do both. Measured
+ * against each theme's background, its cards, and the 10–20% primary tint of
+ * a selected row (WCAG asks 4.5:1 for text):
+ *
+ *	dark   234 89% 65%  2.9:1  ->  234 89% 75%  4.7:1
+ *	gt      45 100% 46%  1.7:1  ->   45 100% 26%  4.75:1
+ *	light, tamu: already 10:1 and over, unchanged
+ *
+ * So text gets its own shade where a theme needs one, and buttons keep the
+ * theme's. Scoped under the theme's own element so it outranks the utility it
+ * refines, which is emitted later at a lower specificity.
+ */
+.theme-dark { --primary-text: 234 89% 75%; }
+.theme-gt { --primary-text: 45 100% 26%; }
+[class*="theme-"] .text-primary,
+[class*="theme-"] .hover\:text-primary:hover {
+  color: hsl(var(--primary-text, var(--primary)));
+}

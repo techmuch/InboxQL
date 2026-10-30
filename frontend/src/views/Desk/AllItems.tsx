@@ -3,6 +3,7 @@ import { CalendarDays, FileText, Loader2, Mail, SquareKanban, Users } from 'luci
 import { openContact, openMessage, openTool, previewAttachment } from '../../lib/tabs';
 import { useCalendarNav } from '../../lib/calendarNav';
 import { openCardOnBoard } from '../Board/labels';
+import { shortDate } from '../../lib/dates';
 
 interface Group {
   id: 'mail' | 'files' | 'cards' | 'people' | 'events';
@@ -15,7 +16,7 @@ interface Group {
 
 const ICONS = { mail: Mail, files: FileText, cards: SquareKanban, people: Users, events: CalendarDays };
 
-const when = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '');
+const when = (iso?: string) => shortDate(iso);
 
 /**
  * All Items: the same words across mail, files, cards, people and events,

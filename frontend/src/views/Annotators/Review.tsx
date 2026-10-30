@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
+import { When } from '../When';
 
 interface Level { label: string; describe?: string }
 
@@ -166,7 +167,7 @@ export const ReviewPanel = ({ name, question, levels, onClose }: {
             {/* The question, not the model's answer. */}
             <p className="text-sm font-medium">{question}</p>
             <div className="border border-border bg-muted/20 px-3 py-2">
-              <div className="truncate text-xs text-muted-foreground">{item.from} · {new Date(item.date).toLocaleDateString()}</div>
+              <div className="truncate text-xs text-muted-foreground">{item.from} · <When value={item.date} /></div>
               <div className="truncate text-sm font-medium">{item.subject || '(no subject)'}</div>
               <p className="mt-1 line-clamp-4 whitespace-pre-line text-xs text-muted-foreground">{item.snippet}</p>
             </div>

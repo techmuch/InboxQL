@@ -105,6 +105,11 @@ What you get back depends on what you asked:
 
 The list loads more as you scroll; there is no page size to choose.
 
+**Dates show only what differs from now:** a time for today (**9:08 PM**),
+the day and month earlier this year (**Oct 24**), and the year as well before
+that (**Mar 1, 2025**). Hover over one for the whole date and time. Lists of
+files, people and cards follow the same rule.
+
 ## One person or topic at a time
 
 The Desk is built for working through the inbox in pieces: everything from one

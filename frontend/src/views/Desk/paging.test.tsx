@@ -129,4 +129,26 @@ describe('Desk paging across result kinds', () => {
     await new Promise(r => setTimeout(r, 30));
     expect(offsets.filter(o => o > 0)).toEqual([]);
   });
+
+  it('counts a one-page answer that follows another one-page answer', async () => {
+    // "1-17 of 0": the empty inbox's total stayed after a query found 17.
+    useQueryStore.getState().set('folder:inbox from:nobody');
+    const message = (i: number) => ({ id: `m${i}`, from: 'a@x.com', subject: `Message ${i}`, date: '2026-03-01T10:00:00Z', flags: [], labels: [] });
+    vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      const q = new URL(url, 'http://x').searchParams.get('q') ?? '';
+      let body: unknown = {};
+      if (url.startsWith('/api/query?')) {
+        const rows = q.includes('nobody') ? [] : Array.from({ length: 17 }, (_, i) => message(i));
+        body = { query: q, kind: 'messages', count: rows.length, messages: rows };
+      } else if (url.startsWith('/api/query/terms')) body = { terms: [], stages: [] };
+      else if (url.startsWith('/api/queries')) body = [];
+      return { ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body } as Response;
+    });
+    render(<Desk />);
+    await waitFor(() => expect(screen.getByText(/^0 of 0$/)).toBeTruthy());
+    useQueryStore.getState().set('folder:allmail after:2025-12-28');
+    await screen.findByText('Message 16');
+    await waitFor(() => expect(screen.getByText('1-17 of 17')).toBeTruthy());
+  });
 });

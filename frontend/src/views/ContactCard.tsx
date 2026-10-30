@@ -33,6 +33,8 @@ import { AttachmentSection } from './AttachmentPreview';
 import { ActivityCalendar, type DayCount } from './ActivityCalendar';
 import { activityQuery, activitySummary, activityWindow, dayQuery } from '../lib/contactActivity';
 import { Help } from './Help';
+import { When } from './When';
+import { shortDate } from '../lib/dates';
 
 interface ContactTopic {
   topic: string;
@@ -322,7 +324,7 @@ export const ContactCard = ({ address }: { address: string }) => {
           <Stat label="Received" value={contact.received.toLocaleString()} />
           <Stat
             label="Last seen"
-            value={contact.lastSeen ? new Date(contact.lastSeen).toLocaleDateString() : '—'}
+            value={contact.lastSeen ? shortDate(contact.lastSeen) : '—'}
           />
         </section>
 
@@ -434,7 +436,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                             {t.subject || '(no subject)'}
                           </button>
                           <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
-                            {new Date(t.lastMessageAt).toLocaleDateString()}
+                            <When value={t.lastMessageAt} />
                           </span>
                         </div>
                         {t.snippet && (
@@ -465,7 +467,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                             {t.subject || '(no subject)'}
                           </button>
                           <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
-                            {new Date(t.lastMessageAt).toLocaleDateString()}
+                            <When value={t.lastMessageAt} />
                           </span>
                         </div>
                         {t.snippet && (

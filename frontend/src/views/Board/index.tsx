@@ -13,6 +13,7 @@ import { CardPanel } from './CardPanel';
 import { BoardPicker } from './BoardPicker';
 import { ArchivedDialog, RulesDialog } from './BoardDialogs';
 import { labelClass, useBoardNav } from './labels';
+import { When } from '../When';
 
 const BOARD_KEY = 'iql.board';
 
@@ -584,9 +585,7 @@ const TicketCard = ({
 
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         {due && (
-          <span className={`px-1 ${dueClass}`} title={due.toLocaleString()}>
-            {due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-          </span>
+          <When value={due} dateOnly className={`px-1 ${dueClass}`} />
         )}
         {ticket.priority && <span className="uppercase tracking-wide">{ticket.priority}</span>}
         {ticket.body && <span title="This card has a description"><AlignLeft size={11} /></span>}

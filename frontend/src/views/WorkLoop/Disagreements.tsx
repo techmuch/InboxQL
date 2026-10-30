@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, Loader2 } from 'lucide-react';
 import { openMessageByID } from '../../lib/tabs';
 import { getDisagreements, resolveDisagreement, type Answer, type Choice, type Disagreement } from './api';
+import { When } from '../When';
 
 /** Stable per disagreement, so the two answers do not swap places on a re-render. */
 const flipped = (id: string) => [...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 2 === 1;
@@ -152,7 +153,7 @@ export const Disagreements = ({ onSettled }: { onSettled: () => void }) => {
                 {item.subject || '(no subject)'}
               </h3>
               <p className="truncate text-xs text-muted-foreground">
-                {item.from}{item.date ? ` · ${new Date(item.date).toLocaleDateString()}` : ''}{item.unit === 'sender' ? ` · about ${item.target}` : ''}
+                {item.from}{item.date ? <> · <When value={item.date} /></> : null}{item.unit === 'sender' ? ` · about ${item.target}` : ''}
               </p>
             </div>
             <div className="flex shrink-0 gap-1">

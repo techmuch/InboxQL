@@ -34,6 +34,7 @@ import { addedTo, hasTerm, joinScope, namesItsFrame, splitScope, type Scope } fr
 import {
   canThread, isMailQuery, openingFolderQuery, THREAD_STAGE, useThreadingStore,
 } from '../../lib/threading';
+import { fullDate, shortDate } from '../../lib/dates';
 
 /**
  * Desk — one surface over mail, drafts and tickets.
@@ -593,8 +594,12 @@ export const Desk = () => {
     let cancelled = false;
     bulkCount(query).then(n => { if (!cancelled) setMatchCount(n); }).catch(() => {});
     return () => { cancelled = true; };
+    // The rows themselves are a dependency when they are all there is: a
+    // query whose answer fits on one page, after another that also did,
+    // changes none of the others, and the count kept the old query's total
+    // ("1-17 of 0").
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, result?.kind, hasMore && offset <= 50]);
+  }, [query, result?.kind, hasMore && offset <= 50, hasMore ? 0 : messages.length]);
   const pageSelected = result?.kind === 'messages' && messages.length > 0 && messages.every(isSelected);
   const offerAll = pageSelected && hasMore && !allMatching;
   useEffect(() => { setAllMatching(null); setOfferCount(null); }, [query]);
@@ -705,14 +710,9 @@ export const Desk = () => {
     clearSelection();
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    if (date.toDateString() === now.toDateString()) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  };
+  // Only what differs from now: a time today, day and month this year, the
+  // year as well before that. See lib/dates.
+  const formatDate = (dateStr: string) => shortDate(dateStr);
 
   /** A message row's accessible name. */
   const rowName = (msg: any, who: string, unread: boolean, draft: boolean): string => {
@@ -1451,7 +1451,7 @@ export const Desk = () => {
                 </RowTarget>
 
                 <div className={`ml-3 text-xs tabular-nums whitespace-nowrap ${isOpen ? 'font-bold text-primary' : isUnread ? 'font-bold text-primary' : 'text-muted-foreground'}`}>
-                  {formatDate(msg.date)}
+                  <time dateTime={msg.date} title={fullDate(msg.date)}>{formatDate(msg.date)}</time>
                 </div>
               </div>
             );

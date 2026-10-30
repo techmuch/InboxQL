@@ -10,6 +10,20 @@ and have been renamed this way; each entry gives its old number, so a backup
 named for one (`inboxql-pre-0.0.112-…`) can still be matched to its release.
 `iql update` treats the new names as newer than every old number.
 
+## 2026.10.30.3 {#v2026-10-30-3}
+
+*October 30, 2026*
+
+- **Dates say the year when it is not this one.** A list shows a time for
+  today (**9:08 PM**), the day and month earlier this year (**Oct 24**), and
+  the year as well before that (**Mar 1, 2025**) — so last March and this
+  March are no longer both "Mar 1". Hover over a date for the whole date and
+  time. The Desk, conversations, search results, files, people, cards and
+  the board all follow the same rule, and a screen reader hears the same
+  short form the eye sees.
+- The count above the list could keep the previous search's total ("1–17
+  of 0") when both answers fit on one page; it now says 17 of 17.
+
 ## 2026.10.30.2 {#v2026-10-30-2}
 
 *October 30, 2026*

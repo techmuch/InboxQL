@@ -6,6 +6,8 @@ import { refKey, useSelectionStore } from '../../lib/selection';
 import { ariaCurrent, rowStateClasses, useIsCurrent } from '../../lib/rowState';
 import { ENTRY_CAP, isOpen, useThreadExpansionStore } from '../../lib/threadExpansion';
 import type { Thread, ThreadEntry } from './api';
+import { When } from '../When';
+import { fullDate, shortDate } from '../../lib/dates';
 
 interface ThreadResultProps {
   threads: Thread[];
@@ -120,7 +122,7 @@ const ThreadRow = ({
             <Badge icon={<PenLine size={11} />} n={thread.draftCount} tone="muted" />
           )}
           <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-            {new Date(thread.end).toLocaleDateString()}
+            <When value={thread.end} />
           </span>
         </div>
       </button>
@@ -226,9 +228,10 @@ const Entry = ({ entry }: { entry: ThreadEntry }) => {
       >
         <time
           dateTime={entry.at}
+          title={fullDate(entry.at)}
           className="w-16 shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground"
         >
-          {new Date(entry.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+          {shortDate(entry.at)}
         </time>
 
         <span className="min-w-0 flex-1 truncate">

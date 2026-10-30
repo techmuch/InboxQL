@@ -4,6 +4,7 @@ import { openMessageByID, openQuery, openTool, previewMessageByID, useViewerStor
 import { movedByKeyboard, navRow, useRovingFocus } from '../lib/rovingFocus';
 import { ariaCurrent, useIsCurrent } from '../lib/rowState';
 import { Help } from './Help';
+import { When } from './When';
 
 export interface AttachmentFile {
   key: string;
@@ -275,7 +276,7 @@ const OccurrenceRow = ({ occurrence: o, fileName, openedFrom, previews }: {
           <span className="block truncate font-medium">{o.subject || '(no subject)'}</span>
           <span className="block truncate text-muted-foreground">
             {o.from}
-            {o.date && <> · {new Date(o.date).toLocaleDateString()}</>}
+            {o.date && <> · <When value={o.date} /></>}
             {/* The name it arrived under here, when that is not the
                 name the file is listed under. */}
             {o.filename && o.filename !== fileName && <> · as {o.filename}</>}

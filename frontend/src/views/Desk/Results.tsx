@@ -12,6 +12,7 @@ import { ariaCurrent, rowStateClasses, useIsCurrent } from '../../lib/rowState';
 import { contactName, drillDownTerm, type AttachmentFile, type Contact, type EventRow, type QueryResult } from './api';
 import { fileTypeLabel, formatBytes } from '../AttachmentPreview';
 import { ThreadResult } from './Timeline';
+import { When } from '../When';
 
 interface ResultsProps {
   result: QueryResult;
@@ -206,7 +207,7 @@ const MessageRow = ({ message: m, selected }: { message: any; selected: boolean 
       }`}
     >
       <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
-        {new Date(m.date).toLocaleDateString()}
+        <When value={m.date} />
       </td>
       <td className="px-4 py-1.5 truncate max-w-0">{m.from}</td>
       <td className={`px-4 py-1.5 truncate max-w-0 ${unread ? 'font-medium' : ''}`}>
@@ -295,7 +296,7 @@ const TicketResult = ({ result, onDrillDown, onScroll }: ResultsProps) => {
                 <td className={`px-4 py-1.5 font-mono text-xs whitespace-nowrap ${
                   overdue ? 'text-destructive' : 'text-muted-foreground'
                 }`}>
-                  {t.dueAt ? new Date(t.dueAt).toLocaleDateString() : ''}
+                  <When value={t.dueAt} dateOnly />
                 </td>
                 <td className="px-4 py-1.5 truncate max-w-0">{t.title}</td>
                 <td className="px-4 py-1.5 truncate max-w-0 text-xs text-muted-foreground">
@@ -498,7 +499,7 @@ const FileRow = ({ file: f, onDrillDown }: {
         )}
       </td>
       <td className="px-4 py-2 text-xs text-muted-foreground">
-        {f.lastSeen ? new Date(f.lastSeen).toLocaleDateString() : ''}
+        <When value={f.lastSeen} />
       </td>
     </tr>
   );
@@ -714,7 +715,7 @@ const ContactRow = ({ contact: c, selected }: { contact: Contact; selected: bool
               {c.messages.toLocaleString()}
             </td>
             <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
-              {c.lastSeen ? new Date(c.lastSeen).toLocaleDateString() : ''}
+              <When value={c.lastSeen} />
             </td>
           </tr>
   );

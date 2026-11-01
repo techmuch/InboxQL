@@ -64,6 +64,13 @@
   /* Unread, as a mark. A theme may name its own; otherwise it is the primary
      as text, which is legible in every theme (see --primary-text below). */
   --color-unread: hsl(var(--unread, var(--primary-text, var(--primary))));
+  /* A row ticked for a bulk action, and one that is also open in the viewer.
+     A tint of the theme's own colour, a little deeper in Dark, where a 10%
+     tint of indigo on near-black does not read as a fill at all. A theme may
+     name its own --selected hue or --selected-alpha. Measured with text on
+     it in every theme: 4.5:1 or better (see --primary-text below). */
+  --color-selected: hsl(var(--selected, var(--primary)) / var(--selected-alpha, 0.1));
+  --color-selected-strong: hsl(var(--selected, var(--primary)) / var(--selected-strong-alpha, 0.15));
 }
 
 :root {
@@ -194,7 +201,7 @@ header .relative.inline-block > [role="menu"] {
  * theme's. Scoped under the theme's own element so it outranks the utility it
  * refines, which is emitted later at a lower specificity.
  */
-.theme-dark { --primary-text: 234 89% 75%; color-scheme: dark; }
+.theme-dark { --primary-text: 234 89% 75%; color-scheme: dark; --selected-alpha: 0.2; --selected-strong-alpha: 0.25; }
 .theme-gt { --primary-text: 45 100% 26%; }
 [class*="theme-"] .text-primary,
 [class*="theme-"] .hover\:text-primary:hover {

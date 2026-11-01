@@ -1394,11 +1394,11 @@ export const Desk = () => {
                 }}
                 className={`flex items-center px-4 py-2 border-b border-border/50 cursor-pointer transition-all group relative ${
                   selected && isOpen
-                    ? 'bg-primary/20 ring-1 ring-inset ring-primary/50 border-l-4 border-l-primary z-[1]'
+                    ? 'bg-selected-strong ring-1 ring-inset ring-primary/50 border-l-4 border-l-primary z-[1]'
                     : selected
-                    ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30 border-l-4 border-l-primary/60 z-[1]'
+                    ? 'bg-selected hover:bg-selected-strong ring-1 ring-inset ring-primary/30 border-l-4 border-l-primary/60 z-[1]'
                     : isOpen
-                    ? 'bg-primary/15 ring-1 ring-inset ring-primary/40 border-l-4 border-l-primary z-[1]'
+                    ? 'bg-selected ring-1 ring-inset ring-primary/40 border-l-4 border-l-primary z-[1]'
                     : 'hover:bg-accent/40 border-l-4 border-l-transparent'
                 }`}
               >

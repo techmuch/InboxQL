@@ -15,10 +15,10 @@ describe('rowStateClasses', () => {
     const selected = rowStateClasses({ selected: true, current: false });
     const current = rowStateClasses({ selected: false, current: true });
 
-    expect(selected).toContain('bg-primary/10');
+    expect(selected.split(' ')).toContain('bg-selected');
     // Current has no fill, so a selection of exactly one row cannot be misread
     // as a preview.
-    expect(current).not.toContain('bg-primary/10');
+    expect(current).not.toMatch(/\bbg-selected/);
     expect(current).toContain('ring-2');
   });
 
@@ -35,7 +35,7 @@ describe('rowStateClasses', () => {
     expect(both).toContain('ring-2');
     expect(both).not.toContain('ring-1');
     // And it still fills, because it really is selected.
-    expect(both).toContain('bg-primary/15');
+    expect(both.split(' ')).toContain('bg-selected-strong');
   });
 
   it('leaves a plain row to its hover', () => {

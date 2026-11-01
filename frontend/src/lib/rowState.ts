@@ -80,13 +80,13 @@ export const useIsCurrent = (kind: ViewerKind, id: string | null | undefined): b
  */
 export function rowStateClasses({ selected, current }: RowState): string {
   if (current && selected) {
-    return 'bg-primary/15 dark:bg-primary/25 ring-2 ring-inset ring-primary';
+    return 'bg-selected-strong ring-2 ring-inset ring-primary';
   }
   if (current) {
     return 'ring-2 ring-inset ring-primary hover:bg-accent/40';
   }
   if (selected) {
-    return 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30';
+    return 'bg-selected hover:bg-selected-strong ring-1 ring-inset ring-primary/30';
   }
   return 'hover:bg-accent/40';
 }

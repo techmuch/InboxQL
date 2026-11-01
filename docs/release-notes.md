@@ -10,6 +10,16 @@ and have been renamed this way; each entry gives its old number, so a backup
 named for one (`inboxql-pre-0.0.112-…`) can still be matched to its release.
 `iql update` treats the new names as newer than every old number.
 
+## 2026.10.31.2 {#v2026-10-31-2}
+
+*October 31, 2026*
+
+- **Selected rows are one colour everywhere, in every theme.** A row ticked
+  for a bulk action, or open in the viewer, is now tinted the same way in
+  the Desk list and every other result list, a little deeper in Dark where a
+  light tint did not show. Text on a selected row was measured in all four
+  themes and reads at 4.7:1 or better.
+
 ## 2026.10.31.1 {#v2026-10-31-1}
 
 *October 31, 2026*

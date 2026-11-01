@@ -243,4 +243,17 @@ describe('Desk focus and return', () => {
     expect(current()).toBe('folder:inbox');
     expect((screen.getByLabelText('Group by') as HTMLSelectElement).value).toBe('');
   });
+
+  it('drops a selection when the view changes, so nothing off screen can be acted on', async () => {
+    render(<Desk />);
+    const row = (await screen.findByText('Message 0')).closest('[role="option"]') as HTMLElement;
+    fireEvent.click(row, { metaKey: true });
+    expect(Object.keys(useSelectionStore.getState().refs)).toHaveLength(1);
+    expect(screen.getByText(/1 message selected/)).toBeTruthy();
+    // Another folder: the message ticked here is not on screen there.
+    fireEvent.click(screen.getByRole('button', { name: /^Drafts/ }));
+    await waitFor(() => expect(current()).toMatch(/^folder:drafts/));
+    await waitFor(() => expect(Object.keys(useSelectionStore.getState().refs)).toHaveLength(0));
+    expect(screen.queryByText(/1 message selected/)).toBeNull();
+  });
 });

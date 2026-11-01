@@ -200,7 +200,7 @@ export const TimeGrid = ({ days, occurrences, calendars, selected, onSelect, onC
                       key={o.eventId + o.start}
                       role="button"
                       tabIndex={0}
-                      aria-label={`${o.summary}, ${fmtTime(start)} to ${fmtTime(end)}`}
+                      aria-label={`${o.summary}, ${fmtTime(start)} to ${fmtTime(end)}${declined ? ', declined' : ''}`}
                       onClick={ev => { ev.stopPropagation(); onSelect(o); }}
                       onKeyDown={ev => { if (ev.key === 'Enter') onSelect(o); }}
                       onPointerDown={ev => startDrag(ev, o, 'move')}
@@ -212,10 +212,17 @@ export const TimeGrid = ({ days, occurrences, calendars, selected, onSelect, onC
                         top, height,
                         left: `calc(${(col / cols) * 100}% + 2px + ${leftShift}px)`,
                         width: `calc(${100 / cols}% - 4px)`,
-                        background: o.proposed || unanswered
-                          ? `repeating-linear-gradient(45deg, ${colourOf(o)}, ${colourOf(o)} 6px, ${colourOf(o)}cc 6px, ${colourOf(o)}cc 12px)`
-                          : colourOf(o),
-                        opacity: declined ? 0.45 : undefined,
+                        // Declined, when shown at all: an outline in the
+                        // calendar's colour with ordinary text. Faded white
+                        // on a pale fill was about 2:1 and could not be read.
+                        background: declined
+                          ? 'hsl(var(--card))'
+                          : o.proposed || unanswered
+                            ? `repeating-linear-gradient(45deg, ${colourOf(o)}, ${colourOf(o)} 6px, ${colourOf(o)}cc 6px, ${colourOf(o)}cc 12px)`
+                            : colourOf(o),
+                        color: declined ? 'hsl(var(--muted-foreground))' : undefined,
+                        border: declined ? `1px dashed ${colourOf(o)}` : undefined,
+                        boxShadow: declined ? 'none' : undefined,
                         textDecoration: declined ? 'line-through' : undefined,
                       }}
                       title={o.proposed ? 'Proposed — not yet approved' : unanswered ? 'You have not answered this invitation' : undefined}

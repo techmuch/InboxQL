@@ -38,6 +38,13 @@ type Message struct {
 	// parsed and thrown away on both the import and the IMAP path.
 	Names map[string]string `json:"names,omitempty"`
 
+	// FromName and Preview are for a list of messages, filled in by
+	// store.ForList: who sent it, as a person would say it, and its first
+	// words without what only a mail client or a tracker would read. Empty
+	// everywhere else.
+	FromName string `json:"fromName,omitempty"`
+	Preview  string `json:"preview,omitempty"`
+
 	// Labels are the message's mail labels: inbox, sent, trash and the
 	// user's own. On save, nil means "work them out from Mailbox and the
 	// sender"; a non-nil slice, even an empty one, is what the server said.

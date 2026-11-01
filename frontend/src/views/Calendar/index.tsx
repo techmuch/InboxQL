@@ -27,6 +27,17 @@ const cardsShownAtFirst = (): boolean => {
 };
 
 /**
+ * Whether meetings you declined are drawn. Off unless asked for, as in
+ * Google Calendar: on a calendar fed by work invitations most of a week can
+ * be declined, and a grid of struck-through blocks hides the meetings you
+ * are going to.
+ */
+const DECLINED_KEY = 'iql.calendar.declined';
+const declinedShownAtFirst = (): boolean => {
+  try { return localStorage.getItem(DECLINED_KEY) === 'on'; } catch { return false; }
+};
+
+/**
  * The Calendar tab.
  *
  * Every calendar in one place — your own, the invitations that came by mail,
@@ -102,6 +113,7 @@ export const Calendar = () => {
   const [selectedOcc, setSelectedOcc] = useState<Occurrence | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [cardsShown, setCardsShown] = useState(cardsShownAtFirst);
+  const [declinedShown, setDeclinedShown] = useState(declinedShownAtFirst);
   const [dueCards, setDueCards] = useState<Occurrence[]>([]);
 
   const [from, to] = useMemo(() => rangeFor(view, anchor), [view, anchor]);
@@ -161,7 +173,11 @@ export const Calendar = () => {
     ...calendars.map(c => [c.id, { color: c.color, writable: c.writable }] as const),
     [CARDS_CALENDAR, { color: CARDS_COLOUR, writable: true }] as const,
   ]), [calendars]);
-  const shown = useMemo(() => [...occurrences, ...dueCards], [occurrences, dueCards]);
+  const declinedCount = useMemo(() => occurrences.filter(o => o.myStatus === 'declined').length, [occurrences]);
+  const shown = useMemo(() => [
+    ...(declinedShown ? occurrences : occurrences.filter(o => o.myStatus !== 'declined')),
+    ...dueCards,
+  ], [occurrences, dueCards, declinedShown]);
   const colourOf = useCallback((o: Occurrence) => o.color || calMap.get(o.calendarId)?.color || '#2563eb', [calMap]);
   const defaultCalendar = calendars.find(c => c.writable && c.primary) ?? calendars.find(c => c.writable);
 
@@ -322,6 +338,33 @@ export const Calendar = () => {
 
   const days = view === 'day' ? [startOfDay(anchor)] : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i));
   const attention = changes.filter(c => c.state === 'proposed' || c.state === 'conflict' || c.state === 'failed');
+  // A proposal for a day already gone is still yours to decide, but it is not
+  // what needs deciding now.
+  const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
+  const isPast = (c: Change) => {
+    const at = c.payload.event?.Start ? new Date(c.payload.event.Start) : null;
+    return c.state === 'proposed' && at !== null && !Number.isNaN(at.getTime()) && at < startOfToday;
+  };
+  const past = attention.filter(isPast);
+  const upcoming = attention.filter(c => !isPast(c));
+  const renderChange = (c: Change) => (
+        <li key={c.id} className={c.eventId && c.eventId === selected ? '-mx-1 bg-primary/10 px-1 ring-1 ring-primary' : ''}>
+          <button onClick={() => void showChange(c)} disabled={!c.eventId} title={c.eventId ? 'Show it on the calendar' : c.payload.summary}
+            className="block w-full truncate text-left hover:text-primary hover:underline disabled:no-underline disabled:hover:text-inherit">
+            {c.payload.summary ?? c.op}
+          </button>
+          {whenOf(c) && <p className="text-[10px] tabular-nums">{whenOf(c)}</p>}
+          <p className="text-[10px] text-muted-foreground">
+            {c.state === 'proposed' ? `proposed by ${c.origin}` : c.state === 'conflict' ? 'changed elsewhere first' : `failed: ${c.error ?? ''}`}
+          </p>
+          {c.state === 'proposed' && (
+            <div className="mt-1 flex gap-1">
+              <button onClick={() => approveChange(c.id).then(refresh).catch(e => setError(e.message))} className="bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">Approve</button>
+              <button onClick={() => rejectChange(c.id).then(refresh).catch(e => setError(e.message))} className="border border-border px-2 py-0.5 text-[11px] hover:bg-accent">Reject</button>
+            </div>
+          )}
+        </li>
+  );
 
   return (
     <div data-calendar-root tabIndex={-1} className="flex h-full bg-background text-foreground overflow-hidden outline-none">
@@ -362,6 +405,20 @@ export const Calendar = () => {
                 <span className={`truncate ${cardsShown ? '' : 'text-muted-foreground'}`}>Cards due</span>
               </label>
             </li>
+            <li className="group flex items-center gap-2">
+              <label className="flex flex-1 cursor-pointer items-center gap-2 py-0.5" title="Meetings you said you will not attend">
+                <input type="checkbox" className="sr-only" checked={declinedShown}
+                  onChange={() => {
+                    const on = !declinedShown;
+                    setDeclinedShown(on);
+                    try { localStorage.setItem(DECLINED_KEY, on ? 'on' : 'off'); } catch { /* per-viewer */ }
+                  }} />
+                <span aria-hidden className={`h-3 w-3 shrink-0 border border-dashed border-muted-foreground ${declinedShown ? 'bg-muted-foreground/40' : ''}`} />
+                <span className={`truncate ${declinedShown ? '' : 'text-muted-foreground'}`}>
+                  Declined meetings{declinedCount ? <span className="ml-1 tabular-nums">({declinedCount})</span> : null}
+                </span>
+              </label>
+            </li>
           </ul>
           <button onClick={() => { requestSettingsSection('calendars'); openTool('settings', 'Settings'); }}
             className="mt-2 flex items-center gap-1.5 text-[11px] text-primary hover:underline">
@@ -376,25 +433,21 @@ export const Calendar = () => {
           <div className="border-t border-border px-3 py-2">
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-600">Waiting for you · {attention.length}</p>
             <ul className="space-y-2 text-xs">
-              {attention.map(c => (
-                <li key={c.id} className={c.eventId && c.eventId === selected ? '-mx-1 bg-primary/10 px-1 ring-1 ring-primary' : ''}>
-                  <button onClick={() => void showChange(c)} disabled={!c.eventId} title={c.eventId ? 'Show it on the calendar' : c.payload.summary}
-                    className="block w-full truncate text-left hover:text-primary hover:underline disabled:no-underline disabled:hover:text-inherit">
-                    {c.payload.summary ?? c.op}
-                  </button>
-                  {whenOf(c) && <p className="text-[10px] tabular-nums">{whenOf(c)}</p>}
-                  <p className="text-[10px] text-muted-foreground">
-                    {c.state === 'proposed' ? `proposed by ${c.origin}` : c.state === 'conflict' ? 'changed elsewhere first' : `failed: ${c.error ?? ''}`}
-                  </p>
-                  {c.state === 'proposed' && (
-                    <div className="mt-1 flex gap-1">
-                      <button onClick={() => approveChange(c.id).then(refresh).catch(e => setError(e.message))} className="bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">Approve</button>
-                      <button onClick={() => rejectChange(c.id).then(refresh).catch(e => setError(e.message))} className="border border-border px-2 py-0.5 text-[11px] hover:bg-accent">Reject</button>
-                    </div>
-                  )}
-                </li>
-              ))}
+              {upcoming.map(renderChange)}
             </ul>
+            {/* Proposals for days already gone are kept, not rejected for
+                you, but out of the way: folded, with one way to clear them. */}
+            {past.length > 0 && (
+              <details className="mt-2 text-xs">
+                <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Past dates · {past.length}</summary>
+                <button
+                  onClick={() => Promise.all(past.map(c => rejectChange(c.id))).then(refresh).catch(e => setError(e.message))}
+                  className="mt-1 border border-border px-2 py-0.5 text-[11px] hover:bg-accent">
+                  Reject all {past.length}
+                </button>
+                <ul className="mt-2 space-y-2">{past.map(renderChange)}</ul>
+              </details>
+            )}
           </div>
         )}
       </aside>

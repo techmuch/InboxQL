@@ -3,7 +3,7 @@ import { CommandPalette, commandRegistry } from 'nexus-shell';
 import { Loader2, Send, X } from 'lucide-react';
 import { sendNew, undoSend, useSendingStore } from '../lib/sending';
 import { useAppUi } from '../lib/appUi';
-import type { MailtoDraft } from '../lib/emailLinks';
+import type { ComposeStart } from '../lib/replies';
 import { BINDINGS } from '../lib/keySequences';
 import { openQuery } from '../lib/tabs';
 import { matchesSetting, matchesWords, openSetting, SECTION_LABEL, SETTINGS, type SettingEntry } from '../lib/settingsIndex';
@@ -95,7 +95,11 @@ const SendingToast = () => {
  * New message. Send holds it for a few seconds, with Undo, then sends it;
  * Save draft keeps it in Drafts.
  */
-const ComposeDialog = ({ initial, onClose }: { initial: MailtoDraft | null; onClose: () => void }) => {
+const ComposeDialog = ({ initial, onClose }: { initial: ComposeStart | null; onClose: () => void }) => {
+  // A reply joins the original's conversation and goes from the account it
+  // arrived on; the dialog says which of the three it is.
+  const inReplyTo = initial?.inReplyTo;
+  const heading = initial?.kind === 'reply' ? 'Reply' : initial?.kind === 'forward' ? 'Forward' : 'New message';
   const [accounts, setAccounts] = useState<{ id: string; name: string; email?: string }[]>([]);
   const [accountId, setAccountId] = useState('');
   const [to, setTo] = useState(initial?.to ?? '');
@@ -110,16 +114,16 @@ const ComposeDialog = ({ initial, onClose }: { initial: MailtoDraft | null; onCl
   useEffect(() => {
     fetch('/api/accounts').then(r => r.json()).then((a: any[]) => {
       setAccounts(a ?? []);
-      if (a?.length) setAccountId(a[0].id);
+      if (a?.length) setAccountId(a.find(x => x.id === initial?.accountId)?.id ?? a[0].id);
     }).catch(() => {});
-  }, []);
+  }, [initial?.accountId]);
 
   const save = async () => {
     setBusy(true); setError(null);
     try {
       const r = await fetch('/api/drafts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountId, to: [to], cc: [cc], subject, body }),
+        body: JSON.stringify({ accountId, to: [to], cc: [cc], subject, body, inReplyTo }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? 'could not save');
@@ -129,14 +133,14 @@ const ComposeDialog = ({ initial, onClose }: { initial: MailtoDraft | null; onCl
   const send = async () => {
     setBusy(true); setError(null);
     try {
-      await sendNew({ accountId, to: [to], cc: [cc], subject, body });
+      await sendNew({ accountId, to: [to], cc: [cc], subject, body, inReplyTo });
       onClose();
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
 
   if (done) {
     return (
-      <Shell title="New message" onClose={onClose}>
+      <Shell title={heading} onClose={onClose}>
         <p className="text-sm">{done}</p>
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={() => openQuery('folder:drafts')} className="border border-border px-3 py-1.5 text-sm hover:bg-accent">Open drafts</button>
@@ -147,7 +151,7 @@ const ComposeDialog = ({ initial, onClose }: { initial: MailtoDraft | null; onCl
   }
 
   return (
-    <Shell title="New message" onClose={onClose}>
+    <Shell title={heading} onClose={onClose}>
       {accounts.length === 0 ? (
         <p className="text-sm text-muted-foreground">Add a mail account in Settings → Mail Accounts first.</p>
       ) : (

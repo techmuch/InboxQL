@@ -27,12 +27,16 @@ events look different on purpose:
 | Looks | Means |
 |---|---|
 | striped | an invitation you have not answered, or a proposal waiting for you |
-| faded and struck through | you declined it |
+| outlined and struck through | you declined it — shown only when **Declined meetings** is on |
 | no colour block in the month view | an all-day event |
 
 **Cards due** is the board's due dates, drawn as all-day entries: click one to
 open the card, drag it to another day to change when it is due, and hide them
 like any calendar. See [Your board](tickets.md#on-the-calendar).
+
+**Declined meetings** are hidden unless you turn them on in the same list. On
+a calendar fed by work invitations most of a week can be declined, and the
+meetings you are going to are what the grid is for.
 
 ## An event's card
 
@@ -164,7 +168,8 @@ An AI agent driving InboxQL can read the calendar and find times, and it can
 invitation. A proposal changes nothing and tells nobody: it shows on the
 calendar, striped, and under **Waiting for you**, until you **Approve** or
 **Reject** it. Each one there says when it would be; click it to go to that
-day with the event open beside it. From a terminal, `iql calendar approve <id>` — which works only
+day with the event open beside it. Proposals for days already gone are folded
+under **Past dates**, with **Reject all** to clear them. From a terminal, `iql calendar approve <id>` — which works only
 at a terminal, typed by a person.
 
 ## On the command line

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -428,6 +429,15 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	// The compiled SQL is for `explain`, not for every response.
 	res.SQL, res.Args = "", nil
+
+	// A page of messages is a list somebody reads: who, said as a person
+	// would, and a preview without the trackers. A failure leaves the
+	// addresses and the raw body, which the list falls back to.
+	if len(res.Messages) > 0 {
+		if err := store.ForList(r.Context(), res.Messages); err != nil && r.Context().Err() == nil {
+			log.Printf("[query] names and previews for the list: %v", err)
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)

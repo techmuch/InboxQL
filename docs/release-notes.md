@@ -10,6 +10,33 @@ and have been renamed this way; each entry gives its old number, so a backup
 named for one (`inboxql-pre-0.0.112-…`) can still be matched to its release.
 `iql update` treats the new names as newer than every old number.
 
+## 2026.10.31.1 {#v2026-10-31-1}
+
+*October 31, 2026*
+
+- **Reply and Forward work in the message viewer.** Both buttons did
+  nothing. Reply now opens a reply to the sender, quoting them, from the
+  account the message arrived on and in the same conversation; Forward opens
+  the message with who sent it, when and to whom above it (its text — the
+  attachments do not travel with it).
+- **The list says who, in words.** Senders show as the name they go by —
+  "Navy Federal Credit Union", not "notice@email.navyfedera…" — with the
+  address on hover; the name you gave a contact comes first.
+- **Previews you can read.** The line after the subject no longer shows
+  `&zwnj; &zwnj;` padding, long tracking links or leaked stylesheet text.
+- **A selection stays where you made it.** Ticking a message and then
+  opening another folder used to keep it selected, offering Trash and
+  Archive for a message no longer on screen; changing the view now clears it.
+- **Menus close when you choose, and work from the keyboard.** They used to
+  stay open under the pointer and could not be opened without a mouse
+  (nexus-shell 0.2.15).
+- **Declined meetings are hidden by default** — turn on **Declined meetings**
+  under Calendars to see them, now outlined and readable. Proposals for days
+  already gone fold under **Past dates**, with **Reject all**.
+- The message viewer fits the message instead of a fixed-height box, its date
+  reads like the others (**Oct 28, 2026, 11:56 PM**), and two buttons that did
+  nothing are gone.
+
 ## 2026.10.30.3 {#v2026-10-30-3}
 
 *October 30, 2026*

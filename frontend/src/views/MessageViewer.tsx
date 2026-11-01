@@ -1,7 +1,7 @@
 import { Avatar } from './Avatar';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Archive, AlertOctagon, Trash, Mail, MoreVertical,
+  Archive, AlertOctagon, Trash, Mail,
   CornerUpLeft, CornerUpRight, Inbox, FileText,
   Globe, Code, Copy, Check, Tag, MailOpen, X, Undo2, Send,
 } from 'lucide-react';
@@ -23,6 +23,8 @@ import { useViewerStore, openContact, openAttachmentByKey, openQuery, type Viewe
 import { previewPlaces, useAttachmentTargetStore } from '../lib/attachmentTarget';
 import { cidParts, hasRemoteContent, installLinkHandlers, openInNewTab, prepareHtml, type LinkHover } from '../lib/emailLinks';
 import { openComposeWith } from '../lib/appUi';
+import { forward, replyTo } from '../lib/replies';
+import { fullDate } from '../lib/dates';
 import { Help } from './Help';
 
 /**
@@ -432,7 +434,6 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
             <LabelPicker ids={[message.id]} current={[labels]} compact />
           </>;
         })()}
-        <button className="p-2 hover:bg-accent text-muted-foreground"><MoreVertical className="w-4 h-4" /></button>
       </div>
 
       <div className="flex-1 overflow-auto p-8 max-w-5xl mx-auto w-full">
@@ -497,7 +498,12 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
                 )}
               </div>
               <div className="text-xs text-muted-foreground shrink-0">
-                {message.date ? `${isDraft ? 'Edited ' : ''}${new Date(message.date).toLocaleString()}` : ''}
+                {message.date && (
+                  <time dateTime={message.date} title={fullDate(message.date)}>
+                    {isDraft ? 'Edited ' : ''}
+                    {new Date(message.date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                  </time>
+                )}
               </div>
             </div>
             <RecipientList
@@ -511,10 +517,16 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
                 here: where you are when you notice a label is wrong. */}
             {!isDraft && message.id && <LabelChips messageId={message.id} />}
           </div>
-          <div className="flex gap-2 shrink-0">
-            {!isDraft && <button className="p-2 hover:bg-accent transition-colors" title="Reply"><CornerUpLeft className="w-4 h-4" /></button>}
-            <button className="p-2 hover:bg-accent transition-colors"><MoreVertical className="w-4 h-4" /></button>
-          </div>
+          {/* Reply where the eye already is. The ⋮ beside it opened nothing
+              and is gone; everything it might have held is in the toolbar. */}
+          {!isDraft && (
+            <div className="flex gap-2 shrink-0">
+              <button type="button" className="p-2 hover:bg-accent transition-colors" title="Reply" aria-label="Reply"
+                onClick={() => openComposeWith(replyTo(message))}>
+                <CornerUpLeft className="w-4 h-4" aria-hidden />
+              </button>
+            </div>
+          )}
         </div>
 
         {!isDraft && message.id && <InvitationCard messageId={message.id} />}
@@ -562,16 +574,6 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
         {/* View Mode Content */}
         {viewMode === 'html' && (
           <div className="mt-2 space-y-3">
-            <div className="flex items-center justify-between text-xs px-3 py-1.5 rounded bg-blue-500/10 border border-blue-500/25 text-blue-700 dark:text-blue-300">
-              <span className="flex items-center gap-1.5 font-medium">
-                <Globe className="w-3.5 h-3.5" />
-                HTML Rendered View
-              </span>
-              {message.htmlBody && (
-                <span className="text-[10px] opacity-75 font-mono">sandboxed iframe</span>
-              )}
-            </div>
-
             {message.htmlBody && hasRemote && !remoteOk && (
               <div className="flex items-center justify-between gap-3 text-xs px-3 py-1.5 rounded border border-border bg-muted/40 text-muted-foreground">
                 <span>Images from the web are hidden, so the sender can’t tell you opened this.</span>
@@ -582,7 +584,7 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
               </div>
             )}
             {message.htmlBody ? (
-              <div className="border border-blue-500/20 bg-white dark:bg-zinc-950 rounded overflow-hidden shadow-sm">
+              <div className="border border-border bg-white dark:bg-zinc-950 rounded overflow-hidden">
                 {/* Scripts stay off: the frame shares this page's origin, so a
                     script in a message could read the mailbox. Links are
                     handled from out here instead; see lib/emailLinks. */}
@@ -590,19 +592,23 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
                   srcDoc={htmlDoc}
                   sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                   title="HTML Message"
-                  className="w-full min-h-[500px] border-0"
+                  className="w-full min-h-[120px] border-0"
                   style={{ display: 'block' }}
                   onLoad={(e) => {
                     setLinkHover(null);
                     try {
                       const doc = e.currentTarget.contentWindow?.document;
                       if (doc) installLinkHandlers(doc, { openWeb: openInNewTab, openMail: openComposeWith, onHover: setLinkHover });
-                      if (doc?.body) {
-                        const height = doc.body.scrollHeight;
-                        if (height > 0) {
-                          e.currentTarget.style.height = `${height + 40}px`;
-                        }
-                      }
+                      // As tall as the message, no taller: a fixed 500px box
+                      // left most short mail floating in empty space. Measured
+                      // again as images arrive, which change the height.
+                      const frame = e.currentTarget;
+                      const fit = () => {
+                        const height = doc?.documentElement?.scrollHeight ?? doc?.body?.scrollHeight ?? 0;
+                        if (height > 0) frame.style.height = `${height + 16}px`;
+                      };
+                      fit();
+                      doc?.querySelectorAll('img').forEach(img => { if (!img.complete) img.addEventListener('load', fit, { once: true }); });
                     } catch {
                       // cross-origin / sandboxed fallback
                     }
@@ -695,11 +701,13 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
           </div>
         ) : (
           <div className="mt-12 flex gap-3">
-            <button className="px-6 py-2 border border-border flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
-              <CornerUpLeft className="w-4 h-4" /> Reply
+            <button type="button" onClick={() => openComposeWith(replyTo(message))}
+              className="px-6 py-2 border border-border flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
+              <CornerUpLeft className="w-4 h-4" aria-hidden /> Reply
             </button>
-            <button className="px-6 py-2 border border-border flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
-              <CornerUpRight className="w-4 h-4" /> Forward
+            <button type="button" onClick={() => openComposeWith(forward(message))}
+              className="px-6 py-2 border border-border flex items-center gap-2 hover:bg-accent text-sm transition-colors font-medium">
+              <CornerUpRight className="w-4 h-4" aria-hidden /> Forward
             </button>
             {/* Beside Reply and Forward because that is where you are when you
                 want it: reading something and wanting the rest of it. */}

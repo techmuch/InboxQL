@@ -665,6 +665,20 @@ export const Desk = () => {
   );
   // A new view starts at the top; the old one's position went with it above.
   useEffect(() => { lastScroll.current = 0; }, [query, groupBy, allItems, allItemsQuery]);
+
+  // A selection belongs to the view it was made in. Carried into another, it
+  // offered Trash and Archive for messages no longer on screen — a message
+  // ticked in Sent, then the Inbox opened, still said "1 message selected".
+  // The first run is the view opening, with whatever selection was made
+  // before; only a change of view clears it.
+  const viewKey = `${query}\u0000${groupBy ?? ''}\u0000${allItems}\u0000${allItemsQuery}`;
+  const shownView = useRef(viewKey);
+  useEffect(() => {
+    if (shownView.current === viewKey) return;
+    shownView.current = viewKey;
+    setAllMatching(null);
+    clearSelection();
+  }, [viewKey, clearSelection]);
   // Back to a long list: the rows load fifty at a time, so the position is
   // reached by loading until it exists, or until there is no more.
   useEffect(() => {
@@ -1325,7 +1339,9 @@ export const Desk = () => {
             const isDraft = msg.flags?.includes('\\Draft');
             const who = isDraft
               ? (msg.to?.length ? `To: ${msg.to.join(', ')}` : 'No recipient')
-              : (msg.from || '(No Sender)');
+              // The name the sender goes by, when the server knows it; the
+              // address is a hover away.
+              : (msg.fromName || msg.from || '(No Sender)');
             const isOpen = msg.id === openMessageId;
             const selected = isSelected(msg);
             return (
@@ -1417,7 +1433,8 @@ export const Desk = () => {
                       Draft
                     </span>
                   )}
-                  <span className={`truncate ${isDraft && !msg.to?.length ? 'italic text-muted-foreground' : ''}`}>{who}</span>
+                  <span className={`truncate ${isDraft && !msg.to?.length ? 'italic text-muted-foreground' : ''}`}
+                    title={!isDraft && msg.fromName ? msg.from : undefined}>{who}</span>
                 </div>
                 <div className="flex-1 truncate flex items-center gap-2 text-foreground/90">
                   {shownLabels(msg.labels).map((l: string) => (
@@ -1431,7 +1448,7 @@ export const Desk = () => {
                     </RowTarget>
                   ))}
                   <span className={`text-sm ${isOpen ? 'font-semibold text-foreground' : isUnread ? 'font-bold' : 'font-medium'}`}>{msg.subject || '(No Subject)'}</span>
-                  <span className="text-sm text-muted-foreground">— {msg.body?.substring(0, 100).replace(/\n/g, ' ')}</span>
+                  <span className="text-sm text-muted-foreground">— {msg.preview ?? msg.body?.substring(0, 100).replace(/\n/g, ' ')}</span>
                 </div>
                 {/* In the flow rather than floated over the date, and faded
                     rather than removed, so the space is reserved whether or

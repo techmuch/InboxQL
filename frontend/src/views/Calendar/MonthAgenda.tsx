@@ -47,7 +47,7 @@ export const MonthGrid = ({ anchor, occurrences, colourOf, selected, onSelect, o
               <button
                 key={o.eventId + o.start}
                 onClick={() => onSelect(o)}
-                className={`flex w-full items-center gap-1 truncate px-1 text-left text-[11px] hover:bg-accent ${selected === o.eventId ? 'bg-accent' : ''} ${o.myStatus === 'declined' ? 'line-through opacity-50' : ''}`}
+                className={`flex w-full items-center gap-1 truncate px-1 text-left text-[11px] hover:bg-accent ${selected === o.eventId ? 'bg-accent' : ''} ${o.myStatus === 'declined' ? 'line-through text-muted-foreground' : ''}`}
                 title={o.summary}
               >
                 <span className="h-2 w-2 shrink-0" style={{ background: colourOf(o) }} />
@@ -102,7 +102,7 @@ export const Agenda = ({ occurrences, colourOf, selected, onSelect }: {
                   <span className="w-32 shrink-0 text-xs text-muted-foreground tabular-nums">
                     {o.allDay ? 'All day' : `${fmtTime(new Date(o.start))} – ${fmtTime(new Date(o.end))}`}
                   </span>
-                  <span className={`flex-1 truncate ${o.myStatus === 'declined' ? 'line-through opacity-50' : ''}`}>{o.summary}</span>
+                  <span className={`flex-1 truncate ${o.myStatus === 'declined' ? 'line-through text-muted-foreground' : ''}`}>{o.summary}</span>
                   {o.proposed && <span className="text-[10px] uppercase tracking-wider text-amber-600">proposed</span>}
                   {o.myStatus === 'needs-action' && <span className="text-[10px] uppercase tracking-wider text-amber-600">not answered</span>}
                   {o.location && <span className="max-w-[12rem] truncate text-xs text-muted-foreground">{o.location}</span>}

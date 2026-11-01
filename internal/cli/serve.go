@@ -38,7 +38,7 @@ import (
 // file, which scripts/version.sh writes together with it and a test checks:
 // the linker can only stamp a string written as a literal, so it cannot
 // simply read the embedded file.
-var Version = "2026.10.30.3"
+var Version = "2026.10.31.1"
 
 func init() {
 	register(&Command{

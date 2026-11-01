@@ -209,7 +209,7 @@ const MessageRow = ({ message: m, selected }: { message: any; selected: boolean 
       <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
         <When value={m.date} />
       </td>
-      <td className="px-4 py-1.5 truncate max-w-0">{m.from}</td>
+      <td className="px-4 py-1.5 truncate max-w-0" title={m.fromName ? m.from : undefined}>{m.fromName || m.from}</td>
       <td className={`px-4 py-1.5 truncate max-w-0 ${unread ? 'font-medium' : ''}`}>
         {m.subject || <span className="text-muted-foreground">(no subject)</span>}
       </td>

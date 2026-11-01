@@ -30,7 +30,7 @@ import {
   type ContactResponsiveness,
 } from './Desk/api';
 import { AttachmentSection } from './AttachmentPreview';
-import { ActivityCalendar, type DayCount } from './ActivityCalendar';
+import { ActivityCalendar, HeatLegend, type DayCount } from './ActivityCalendar';
 import { activityQuery, activitySummary, activityWindow, dayQuery } from '../lib/contactActivity';
 import { Help } from './Help';
 import { When } from './When';
@@ -344,6 +344,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                 />
               </div>
             )}
+            {activity.length > 0 && <HeatLegend />}
           </section>
         )}
 
@@ -359,21 +360,21 @@ export const ContactCard = ({ address }: { address: string }) => {
             {/* Latency & Role Grid */}
             <div className="grid grid-cols-3 gap-px border border-border bg-border">
               <div className="bg-card p-3">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Your Turnaround</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Your Turnaround</div>
                 <div className="font-mono text-lg font-semibold tabular-nums mt-0.5">
                   {formatDurationSecs(responsiveness.myMedianReplySecs)}
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-0.5">Median time to reply to them</div>
               </div>
               <div className="bg-card p-3">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Their Turnaround</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Their Turnaround</div>
                 <div className="font-mono text-lg font-semibold tabular-nums mt-0.5">
                   {formatDurationSecs(responsiveness.theirMedianReplySecs)}
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-0.5">Median time to reply to you</div>
               </div>
               <div className="bg-card p-3">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Addressing Role</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Addressing Role</div>
                 <div className="font-mono text-lg font-semibold tabular-nums mt-0.5">
                   {responsiveness.toCount + responsiveness.ccCount > 0
                     ? `${Math.round(responsiveness.toRatio * 100)}% Direct`
@@ -485,7 +486,7 @@ export const ContactCard = ({ address }: { address: string }) => {
               <div className="space-y-1.5 pt-2 border-t border-border">
                 <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                   <span>Active hours (incoming messages by UTC hour)</span>
-                  <span className="font-mono text-[10px]">00:00 — 23:00</span>
+                  <span className="font-mono text-[11px]">00:00 — 23:00</span>
                 </div>
                 <div className="flex items-end gap-1 h-12 pt-2 bg-muted/20 px-2 rounded-xs border border-border/50">
                   {(() => {
@@ -503,7 +504,7 @@ export const ContactCard = ({ address }: { address: string }) => {
                               cnt > 0 ? 'bg-primary/70 hover:bg-primary' : 'bg-transparent'
                             }`}
                           />
-                          <div className="absolute bottom-full mb-1 hidden group-hover:block z-10 bg-popover text-popover-foreground border border-border px-1.5 py-0.5 text-[10px] rounded-xs shadow-sm whitespace-nowrap pointer-events-none">
+                          <div className="absolute bottom-full mb-1 hidden group-hover:block z-10 bg-popover text-popover-foreground border border-border px-1.5 py-0.5 text-[11px] rounded-xs shadow-sm whitespace-nowrap pointer-events-none">
                             {String(hour).padStart(2, '0')}:00 — {cnt} {cnt === 1 ? 'msg' : 'msgs'}
                           </div>
                         </div>
@@ -807,7 +808,7 @@ const PictureControls = ({ address }: { address: string }) => {
 
 const Stat = ({ label, value }: { label: string; value: string }) => (
   <div className="bg-card p-3">
-    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</div>
+    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{label}</div>
     <div className="font-mono text-lg tabular-nums">{value}</div>
   </div>
 );

@@ -152,7 +152,7 @@ export const TimeGrid = ({ days, occurrences, calendars, selected, onSelect, onC
         <div className="relative flex" style={{ height: 24 * HOUR_PX }}>
           <div className="w-14 shrink-0 relative">
             {Array.from({ length: 24 }, (_, h) => (
-              <div key={h} className="absolute right-2 -translate-y-1/2 text-[10px] text-muted-foreground" style={{ top: h * HOUR_PX }}>
+              <div key={h} className="absolute right-2 -translate-y-1/2 text-[11px] text-muted-foreground" style={{ top: h * HOUR_PX }}>
                 {h === 0 ? '' : new Date(2000, 0, 1, h).toLocaleTimeString(undefined, { hour: 'numeric' })}
               </div>
             ))}

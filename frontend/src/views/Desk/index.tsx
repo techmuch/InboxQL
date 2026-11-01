@@ -1054,7 +1054,11 @@ export const Desk = () => {
               edit is written back through the composer. Off by default; most
               work is done with the rail and the filters. */}
           {builder && !allItems && <Pills query={query} onChange={setQuery} />}
-          {!allItems && (
+          {/* Filters and tools share a row: three stacked bars put the first
+              message two inches down, and the tools are used far less often
+              than the filters, so they sit at the far end and wrap beneath
+              the filters only when the pane is narrow. */}
+          {!allItems && <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
             <QuickFilters
               scope={scope}
               terms={terms}
@@ -1064,9 +1068,8 @@ export const Desk = () => {
                 return compose(next, on ? { add: term } : { remove: term });
               })}
             />
-          )}
 
-          {!allItems && <div className="flex items-center gap-2 text-xs">
+          <div role="group" aria-label="Query tools" className="ml-auto flex flex-wrap items-center gap-1.5 text-xs">
             <button
               type="button"
               aria-pressed={builder}
@@ -1142,8 +1145,9 @@ export const Desk = () => {
                 </select>
               </label>
             )}
+          </div>
             {result && result.kind !== 'messages' && (
-              <span className="ml-auto text-muted-foreground font-mono">
+              <span className="text-xs text-muted-foreground font-mono">
                 {result.kind === 'count'
                   ? `${(result.total ?? 0).toLocaleString()} matching`
                   : `${result.count} ${resultNoun(result.kind)}`}
@@ -1395,8 +1399,6 @@ export const Desk = () => {
                     ? 'bg-primary/10 hover:bg-primary/15 dark:bg-primary/20 dark:hover:bg-primary/25 ring-1 ring-inset ring-primary/30 border-l-4 border-l-primary/60 z-[1]'
                     : isOpen
                     ? 'bg-primary/15 ring-1 ring-inset ring-primary/40 border-l-4 border-l-primary z-[1]'
-                    : isUnread
-                    ? 'bg-accent/20 hover:bg-accent/40 border-l-4 border-l-transparent'
                     : 'hover:bg-accent/40 border-l-4 border-l-transparent'
                 }`}
               >
@@ -1419,17 +1421,23 @@ export const Desk = () => {
                       </RowTarget>
                     );
                   })()}
-                  <div className="w-4 flex items-center justify-center" title={isOpen ? "Currently viewing this message" : undefined}>
+                  {/* Open beats unread here: the eye says where the viewer
+                      is, and the bold sender still says unread. The mark is a
+                      shape as well as a colour, so unread does not rest on
+                      weight alone, which is hard to see at a glance. */}
+                  <div className="w-4 flex items-center justify-center" title={isOpen ? "Currently viewing this message" : isUnread ? 'Unread' : undefined}>
                     {isOpen ? (
                       <Eye 
                         className="w-3.5 h-3.5 text-primary shrink-0 animate-in fade-in" 
                       />
+                    ) : isUnread ? (
+                      <span data-unread-mark className="h-2 w-2 bg-unread" />
                     ) : null}
                   </div>
                 </div>
-                <div className={`w-48 truncate mr-4 text-sm flex items-center gap-2 ${isOpen ? 'font-bold text-foreground' : isUnread ? 'font-bold' : selected ? 'font-semibold text-foreground' : 'text-foreground/70'}`}>
+                <div className={`w-48 truncate mr-4 text-sm flex items-center gap-2 ${isUnread ? 'font-semibold text-foreground' : isOpen || selected ? 'text-foreground' : 'text-foreground/75'}`}>
                   {isDraft && (
-                    <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                    <span className="shrink-0 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400">
                       Draft
                     </span>
                   )}
@@ -1442,12 +1450,12 @@ export const Desk = () => {
                     // every message carrying it in this folder.
                     <RowTarget key={l} title={`Show everything labelled ${l}`}
                       onClick={() => focusOn(`label:${/^[^\s"()]+$/.test(l) ? l : `"${l}"`}`, `everything labelled ${l}`)}
-                      className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border/60
+                      className="shrink-0 px-1.5 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground border border-border/60
                                  hover:border-primary hover:text-foreground">
                       {l}
                     </RowTarget>
                   ))}
-                  <span className={`text-sm ${isOpen ? 'font-semibold text-foreground' : isUnread ? 'font-bold' : 'font-medium'}`}>{msg.subject || '(No Subject)'}</span>
+                  <span className={`text-sm ${isUnread ? 'font-semibold text-foreground' : 'text-foreground/85'}`}>{msg.subject || '(No Subject)'}</span>
                   <span className="text-sm text-muted-foreground">— {msg.preview ?? msg.body?.substring(0, 100).replace(/\n/g, ' ')}</span>
                 </div>
                 {/* In the flow rather than floated over the date, and faded
@@ -1467,7 +1475,7 @@ export const Desk = () => {
                   <Sparkles className="h-3 w-3 text-muted-foreground" />
                 </RowTarget>
 
-                <div className={`ml-3 text-xs tabular-nums whitespace-nowrap ${isOpen ? 'font-bold text-primary' : isUnread ? 'font-bold text-primary' : 'text-muted-foreground'}`}>
+                <div className={`ml-3 text-xs tabular-nums whitespace-nowrap ${isUnread ? 'font-semibold text-primary' : 'text-muted-foreground'}`}>
                   <time dateTime={msg.date} title={fullDate(msg.date)}>{formatDate(msg.date)}</time>
                 </div>
               </div>

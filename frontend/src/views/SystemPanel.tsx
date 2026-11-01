@@ -585,7 +585,7 @@ const MachineSettingsEditor = ({ onChanged, canRestart, onRestart, mode }: {
   const Tag = ({ name }: { name: string }) => {
     const applies = fieldInfo(name)?.applies;
     return (
-      <span className={`ml-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${applies === 'now' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
+      <span className={`ml-2 px-1.5 py-0.5 text-[11px] uppercase tracking-wider ${applies === 'now' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
         {applies === 'now' ? 'applies now' : 'after restart'}
       </span>
     );
@@ -747,7 +747,7 @@ const MailboxSwitch = ({ current, onDone }: { current: string; onDone: (r: Setti
   return (
     <div>
       <span className="font-medium">Mailbox</span>
-      <span className="ml-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wider bg-muted text-muted-foreground">after restart</span>
+      <span className="ml-2 px-1.5 py-0.5 text-[11px] uppercase tracking-wider bg-muted text-muted-foreground">after restart</span>
       <div className="mt-1 flex items-center gap-2">
         <span className="flex-1 font-mono text-xs break-all">{current}</span>
         {!open && (

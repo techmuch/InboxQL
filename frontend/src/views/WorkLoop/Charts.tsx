@@ -50,7 +50,7 @@ export const DailyBars = ({ days }: { days: WorkDay[] }) => {
       ) : (
         <div id={tableId} className="relative">
           <div className="flex items-stretch gap-2">
-            <div className="flex w-8 flex-col justify-between text-right text-[10px] tabular-nums text-muted-foreground" aria-hidden>
+            <div className="flex w-8 flex-col justify-between text-right text-[11px] tabular-nums text-muted-foreground" aria-hidden>
               <span>{max}</span><span>0</span>
             </div>
             <ol className="relative flex h-32 flex-1 items-end gap-[2px] border-b border-border" aria-label="Conversations stored per day">
@@ -77,7 +77,7 @@ export const DailyBars = ({ days }: { days: WorkDay[] }) => {
               ))}
             </ol>
           </div>
-          <div className="ml-10 mt-1 flex justify-between text-[10px] text-muted-foreground" aria-hidden>
+          <div className="ml-10 mt-1 flex justify-between text-[11px] text-muted-foreground" aria-hidden>
             <span>{dayLabel(days[0].day)}</span><span>{dayLabel(days[days.length - 1].day)}</span>
           </div>
         </div>

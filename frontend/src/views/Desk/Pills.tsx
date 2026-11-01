@@ -227,7 +227,7 @@ const PillEditor = ({
             >
               <span>{o.value}</span>
               {o.detail && (
-                <span className="ml-auto text-[10px] text-muted-foreground truncate">{o.detail}</span>
+                <span className="ml-auto text-[11px] text-muted-foreground truncate">{o.detail}</span>
               )}
             </li>
           ))}

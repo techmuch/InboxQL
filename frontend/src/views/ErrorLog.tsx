@@ -144,7 +144,7 @@ export const ErrorLog = () => {
 
         {/* Two controls that look alike and are not. This one hides rows that
             exist; the one beside it decides whether they are written at all. */}
-        <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           showing
           <select
             value={minLevel}
@@ -158,7 +158,7 @@ export const ErrorLog = () => {
           </select>
         </label>
 
-        <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground"
+        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
           title="What gets recorded at all. Debug is loud — a sync writes thousands of lines a minute.">
           recording
           <select
@@ -175,7 +175,7 @@ export const ErrorLog = () => {
         {jobFilter && (
           <button
             onClick={() => setJobFilter(null)}
-            className="flex items-center gap-1.5 text-[10px] border border-border px-2 py-1 hover:bg-accent"
+            className="flex items-center gap-1.5 text-[11px] border border-border px-2 py-1 hover:bg-accent"
             title="Show errors from every operation"
           >
             <Filter className="w-3 h-3" />
@@ -233,7 +233,7 @@ export const ErrorLog = () => {
         <div className="flex-1 overflow-auto">
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-muted/60 backdrop-blur-sm">
-              <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+              <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
                 <th className="px-4 py-2 font-bold w-44">When</th>
                 <th className="px-4 py-2 font-bold w-16">Level</th>
                 <th className="px-4 py-2 font-bold w-24">Category</th>
@@ -252,7 +252,7 @@ export const ErrorLog = () => {
                         Everything here used to be a failure; most of it is now
                         a record of ordinary work, and painting it all red
                         would make the failures harder to find. */}
-                    <span className={`px-2 py-0.5 font-bold uppercase text-[10px] ${levelClass(e.level)}`}>
+                    <span className={`px-2 py-0.5 font-bold uppercase text-[11px] ${levelClass(e.level)}`}>
                       {e.level ?? 'error'}
                     </span>
                   </td>

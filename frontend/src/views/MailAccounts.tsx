@@ -212,7 +212,7 @@ const AccountCard = ({ account: a, stats, live, onChanged, onEdit, onRemove }: {
           <div className="flex items-center gap-2">
             <span className={`h-2.5 w-2.5 shrink-0 ${dot}`} aria-hidden />
             <span className="text-lg font-bold">{a.name}</span>
-            {a.auth === 'google' && <span className="border border-border px-1.5 text-[10px] text-muted-foreground">Signed in with Google</span>}
+            {a.auth === 'google' && <span className="border border-border px-1.5 text-[11px] text-muted-foreground">Signed in with Google</span>}
           </div>
           <div className="text-sm text-muted-foreground">{a.email}</div>
           <div className={`mt-1 text-xs ${status.tone === 'bad' ? 'text-destructive' : 'text-muted-foreground'}`}>{status.text}</div>
@@ -292,7 +292,7 @@ const VerdictView = ({ verdict }: { verdict: Verdict }) => (
           <div className="min-w-0">
             <span className="font-semibold">{name}: </span>
             {c.ok ? 'signed in.' : c.skipped ? c.advice : c.advice}
-            {c.detail && !c.ok && <div className="mt-0.5 break-words font-mono text-[10px] text-muted-foreground">{c.detail}</div>}
+            {c.detail && !c.ok && <div className="mt-0.5 break-words font-mono text-[11px] text-muted-foreground">{c.detail}</div>}
           </div>
         </div>
       );

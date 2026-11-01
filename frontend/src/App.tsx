@@ -523,7 +523,7 @@ const SettingsView = () => {
           ))}
           {matchingSettings.length > 0 && (
             <div className="mt-3 border-t border-border pt-2">
-              <p className="px-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Settings</p>
+              <p className="px-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Settings</p>
               {matchingSettings.map(st => (
                 <button
                   key={st.id}
@@ -531,7 +531,7 @@ const SettingsView = () => {
                   className="w-full px-4 py-1.5 text-left text-xs hover:bg-accent"
                 >
                   <span className="text-foreground">{st.label}</span>
-                  <span className="block text-[10px] text-muted-foreground">{SECTION_LABEL[st.section]}</span>
+                  <span className="block text-[11px] text-muted-foreground">{SECTION_LABEL[st.section]}</span>
                 </button>
               ))}
             </div>

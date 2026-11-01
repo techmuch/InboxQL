@@ -44,7 +44,7 @@ export const AppLockup = () => {
     <div className="app-lockup flex items-center space-x-3 select-none">
       <div className="min-w-0">
         <h1 className="text-xs font-black uppercase tracking-wider text-foreground font-mono truncate">InboxQL</h1>
-        <p className="flex items-center text-[9px] text-muted-foreground font-semibold truncate">
+        <p className="flex items-center text-[11px] text-muted-foreground font-semibold truncate">
           <button
             type="button"
             onClick={open}

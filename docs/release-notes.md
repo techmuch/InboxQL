@@ -28,14 +28,37 @@ named for one (`inboxql-pre-0.0.112-…`) can still be matched to its release.
   opening another folder used to keep it selected, offering Trash and
   Archive for a message no longer on screen; changing the view now clears it.
 - **Menus close when you choose, and work from the keyboard.** They used to
-  stay open under the pointer and could not be opened without a mouse
-  (nexus-shell 0.2.15).
+  stay open under the pointer and could not be opened without a mouse.
 - **Declined meetings are hidden by default** — turn on **Declined meetings**
   under Calendars to see them, now outlined and readable. Proposals for days
   already gone fold under **Past dates**, with **Reject all**.
 - The message viewer fits the message instead of a fixed-height box, its date
   reads like the others (**Oct 28, 2026, 11:56 PM**), and two buttons that did
   nothing are gone.
+- **The Light theme has a colour.** Its accent was near-black — a black
+  Compose button, a black selected folder — where Dark used indigo. Light is
+  indigo now too, with contrast to spare for text and buttons.
+- **Unread stands out.** Unread messages carry a small mark beside the star
+  and a heavier sender and subject; read ones are lighter. In an inbox that
+  is mostly unread, every row used to look the same.
+- **One toolbar row less.** The quick filters and the query tools (Builder,
+  Save, Explain, Threads, Group by) share a row, so the list starts higher.
+- **Nothing is smaller than 11px.** Counts, badges and chips had drifted to 9
+  and 10px.
+- **Dark means the Dark theme.** Some colours followed your Mac's appearance
+  rather than the theme you chose, so a dark Mac on the Light theme got dark
+  menus and pale text in places. They follow the theme now.
+- **Calmer board labels.** Labels are tinted with a bar of their colour at
+  the edge, instead of solid blocks that outshouted the card titles.
+- **The activity heatmap is one colour,** darker on busier days, with a key.
+  It used to run teal to orange, which read as a warning on busy days.
+- **Better topics on the dashboard.** "Re", "Fwd", "New", "Your" and other
+  words any subject could start with are no longer counted as topics; "Re"
+  and "Fwd" were on the ignore list but never matched it.
+- A saved query named like a folder says how it differs — **Inbox ·
+  conversations** — and the empty strip down the left edge of the window is
+  gone. The Work loop uses more of a wide screen.
+- Built on nexus-shell 0.2.16.
 
 ## 2026.10.30.3 {#v2026-10-30-3}
 

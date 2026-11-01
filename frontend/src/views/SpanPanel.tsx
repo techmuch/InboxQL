@@ -97,7 +97,7 @@ export const SpanPanel = ({
           <Tag className="h-3.5 w-3.5" />
           Extracted values
         </span>
-        <span className="font-mono text-[10px] opacity-75">
+        <span className="font-mono text-[11px] opacity-75">
           {/* Said plainly: these are pieces of this message, not a model's
               summary of it. That is the whole claim of the engine. */}
           every value below is a piece of this message
@@ -186,7 +186,7 @@ export const SpanPanel = ({
                 : 'rounded border border-border bg-muted/10 px-4 py-3'
             }
           >
-            <div className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            <div className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
               {isAttachment && <Paperclip className="h-3 w-3" />}
               {f.label || f.field}
               {/* An invoice arrives as a PDF more often than as a body, so

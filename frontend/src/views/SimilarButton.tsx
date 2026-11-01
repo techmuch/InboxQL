@@ -101,7 +101,7 @@ export const SimilarButton = ({ messageId }: { messageId: string }) => {
 
           {dist && (
             <>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                 How alike?
               </p>
               <ul className="space-y-0.5">
@@ -130,14 +130,14 @@ export const SimilarButton = ({ messageId }: { messageId: string }) => {
                           {n === 0 ? 'nothing' : `${n} message${n === 1 ? '' : 's'}`}
                         </span>
                         {Math.abs(b - dist.threshold) < 0.001 && (
-                          <span className="relative text-[10px] text-primary">default</span>
+                          <span className="relative text-[11px] text-primary">default</span>
                         )}
                       </button>
                     </li>
                   );
                 })}
               </ul>
-              <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
                 Higher is more alike. The usable range depends on the embedding model, which is
                 why the counts are here rather than a bare number.
               </p>

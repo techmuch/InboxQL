@@ -104,7 +104,9 @@ export const WorkLoop = () => {
 
   return (
     <div className="h-full overflow-auto p-6">
-      <div className="mx-auto max-w-5xl space-y-5">
+      {/* Wide enough for its tables and charts side by side on a large
+          screen; prose inside keeps its own measure. */}
+      <div className="mx-auto max-w-7xl space-y-5">
         <header className="space-y-3">
           <div>
             <h1 className="flex items-center gap-2 text-xl font-semibold">Work loop <Help topic="work-loop" /></h1>

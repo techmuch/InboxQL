@@ -387,8 +387,8 @@ const ListHeader = ({
           {column.title}
         </h2>
       )}
-      {column.kind === 'closed' && <span className="text-[10px] uppercase tracking-wide text-green-700 dark:text-green-400">finished</span>}
-      {column.kind === 'proposed' && <span className="text-[10px] uppercase tracking-wide text-muted-foreground">to accept</span>}
+      {column.kind === 'closed' && <span className="text-[11px] uppercase tracking-wide text-green-700 dark:text-green-400">finished</span>}
+      {column.kind === 'proposed' && <span className="text-[11px] uppercase tracking-wide text-muted-foreground">to accept</span>}
       <span className="text-xs text-muted-foreground font-mono tabular-nums">{column.total}</span>
       <button type="button" aria-label={`${column.title} list actions`} aria-expanded={menu}
         onClick={() => { setMenu(m => !m); setDeleting(false); }}
@@ -576,7 +576,7 @@ const TicketCard = ({
       {(ticket.labels?.length ?? 0) > 0 && (
         <div className="flex flex-wrap gap-1">
           {ticket.labels!.map(l => (
-            <span key={l} className={`px-1.5 text-[10px] font-medium leading-4 ${labelClass(colorOf.get(l))}`}>{l}</span>
+            <span key={l} className={`px-1.5 text-[11px] font-medium leading-4 ${labelClass(colorOf.get(l))}`}>{l}</span>
           ))}
         </div>
       )}

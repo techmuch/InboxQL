@@ -89,9 +89,17 @@ and **From systems**, and **Waiting on me**. Cards, files, people and events
 have their own. Each adds a term you could have typed — `importance:low`,
 `sentby:system` — and clicking it again takes it off.
 
+On the same row, at its far end, are the query tools: **Builder**, **Save**,
+**Explain**, **Threads** and **Group by**. On a narrow window they wrap below
+the filters.
+
 **Builder** shows the query as **pills**, one per term, to edit by hand; it is
 off unless you turn it on. The [query language](query-language.md) guide
 covers what you can write.
+
+In a list of messages, an **unread** one has a small mark beside its star
+and its sender and subject in a heavier weight; a read one is lighter. The
+message open in the viewer shows an eye in place of the mark.
 
 What you get back depends on what you asked:
 

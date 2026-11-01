@@ -249,7 +249,7 @@ const RulingMenu = ({ menu, onClose, onRule }: {
       style={{ position: 'fixed', left: menu.x, top: menu.y }}
       className="z-50 min-w-56 border border-border bg-popover py-1 shadow-lg"
     >
-      <div className="px-3 pb-1 pt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+      <div className="px-3 pb-1 pt-0.5 text-[11px] uppercase tracking-wider text-muted-foreground">
         {l.unit === 'thread' ? `${l.annotator} · this conversation` : l.annotator}
       </div>
       {items}

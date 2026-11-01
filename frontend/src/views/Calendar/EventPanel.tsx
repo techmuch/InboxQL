@@ -134,14 +134,14 @@ export const EventPanel = ({ occurrence, onClose, onEdit, onDelete, onChanged }:
               <li className="flex items-center gap-2">
                 <Avatar address={ev.organizer} size={20} />
                 <button onClick={() => openContact(ev.organizer!)} className="flex-1 truncate text-left hover:underline">{ev.organizer}</button>
-                <span className="text-[10px] text-muted-foreground">organizer</span>
+                <span className="text-[11px] text-muted-foreground">organizer</span>
               </li>
             )}
             {ev.attendees.filter(a => a.address !== ev.organizer).map(a => (
               <li key={a.address} className="flex items-center gap-2">
                 <Avatar address={a.address} name={a.name} size={20} />
                 <button onClick={() => openContact(a.address)} className="flex-1 truncate text-left hover:underline" title={a.address}>{a.name || a.address}</button>
-                <span className={`text-[10px] ${a.status === 'accepted' ? 'text-emerald-600' : a.status === 'declined' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                <span className={`text-[11px] ${a.status === 'accepted' ? 'text-emerald-600' : a.status === 'declined' ? 'text-destructive' : 'text-muted-foreground'}`}>
                   {a.status === 'accepted' ? <Check className="inline h-3 w-3" /> : STATUS_WORD[a.status] ?? a.status}{a.role === 'optional' ? ' · optional' : ''}
                 </span>
               </li>

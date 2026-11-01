@@ -59,7 +59,11 @@ func TestDashboardWidgetsAreQueries(t *testing.T) {
 	// showed them, so the same question had two answers depending on where it
 	// was asked — "re:" and "fwd:" led the list in one place and were absent
 	// in the other. "your" is in the seeded default list.
-	for _, ignored := range []string{"your", "re:", "fwd:", "the"} {
+	//
+	// Checked without the colon, as the grouping writes them: the word is
+	// stripped of punctuation, and this test once asked for "re:", which can
+	// never appear, so it passed while "re" led the chart.
+	for _, ignored := range []string{"your", "re", "fwd", "the", "re:", "fwd:"} {
 		if labels[ignored] {
 			t.Errorf("topics included the ignored word %q: %v", ignored, labels)
 		}

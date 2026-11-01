@@ -209,8 +209,11 @@ const MessageRow = ({ message: m, selected }: { message: any; selected: boolean 
       <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
         <When value={m.date} />
       </td>
-      <td className="px-4 py-1.5 truncate max-w-0" title={m.fromName ? m.from : undefined}>{m.fromName || m.from}</td>
-      <td className={`px-4 py-1.5 truncate max-w-0 ${unread ? 'font-medium' : ''}`}>
+      <td className={`px-4 py-1.5 truncate max-w-0 ${unread ? 'font-semibold' : 'text-foreground/75'}`} title={m.fromName ? m.from : undefined}>{m.fromName || m.from}</td>
+      {/* Unread as the Desk list shows it: a mark and weight, and said in
+          words first for a screen reader, which reads the cells in order. */}
+      <td className={`px-4 py-1.5 truncate max-w-0 ${unread ? 'font-semibold' : 'text-foreground/85'}`}>
+        {unread && <><span aria-hidden="true" data-unread-mark className="mr-2 inline-block h-2 w-2 bg-unread align-middle" /><span className="sr-only">Unread: </span></>}
         {m.subject || <span className="text-muted-foreground">(no subject)</span>}
       </td>
     </tr>
@@ -788,8 +791,8 @@ const EventResult = ({ events, onScroll }: { events: EventRow[]; onScroll?: (e: 
               <td className="px-4 py-1.5 truncate max-w-0">
                 <span className="mr-2 inline-block h-2 w-2" style={{ background: e.color || '#2563eb' }} />
                 <span className={e.myStatus === 'declined' ? 'line-through opacity-60' : ''}>{e.summary}</span>
-                {e.proposed && <span className="ml-2 text-[10px] uppercase text-amber-600">proposed</span>}
-                {e.myStatus === 'needs-action' && <span className="ml-2 text-[10px] uppercase text-amber-600">not answered</span>}
+                {e.proposed && <span className="ml-2 text-[11px] uppercase text-amber-600">proposed</span>}
+                {e.myStatus === 'needs-action' && <span className="ml-2 text-[11px] uppercase text-amber-600">not answered</span>}
                 {e.location && <span className="ml-2 text-xs text-muted-foreground">{e.location}</span>}
               </td>
               <td className="px-4 py-1.5 text-xs text-muted-foreground">{e.calendarName}</td>

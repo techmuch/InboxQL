@@ -170,17 +170,17 @@ export const Starters = () => {
                   </span>
                   {/* Said before it is chosen, not discovered after. */}
                   {s.slow ? (
-                    <span className="font-mono text-[10px] text-amber-600 dark:text-amber-400">
+                    <span className="font-mono text-[11px] text-amber-600 dark:text-amber-400">
                       ~20s a message
                     </span>
                   ) : (
-                    <span className="flex items-center gap-0.5 font-mono text-[10px] text-emerald-600 dark:text-emerald-400">
+                    <span className="flex items-center gap-0.5 font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
                       <Zap className="h-2.5 w-2.5" /> instant
                     </span>
                   )}
                   {busy && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
                   {s.installed && !s.enabled && !busy && (
-                    <span className="font-mono text-[10px] text-muted-foreground">off</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">off</span>
                   )}
                 </div>
 

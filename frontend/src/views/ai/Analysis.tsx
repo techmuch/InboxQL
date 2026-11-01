@@ -216,7 +216,7 @@ export const Analysis = () => {
 
 const Fact = ({ term, children }: { term: string; children: React.ReactNode }) => (
   <div className="grid grid-cols-[7rem_1fr] gap-4 py-2">
-    <dt className="font-bold uppercase tracking-wider text-muted-foreground text-[10px] pt-0.5">{term}</dt>
+    <dt className="font-bold uppercase tracking-wider text-muted-foreground text-[11px] pt-0.5">{term}</dt>
     <dd className="leading-relaxed text-muted-foreground">{children}</dd>
   </div>
 );

@@ -44,7 +44,7 @@ export const InvitationCard = ({ messageId }: { messageId: string }) => {
           <div key={ev.id} className="border border-border bg-card p-4" aria-label="Invitation">
             <div className="flex items-start gap-3">
               <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center border border-border bg-background">
-                <span className="text-[10px] uppercase text-destructive">{start.toLocaleDateString(undefined, { month: 'short' })}</span>
+                <span className="text-[11px] uppercase text-destructive">{start.toLocaleDateString(undefined, { month: 'short' })}</span>
                 <span className="text-lg font-semibold leading-none">{start.getDate()}</span>
               </div>
               <div className="min-w-0 flex-1">

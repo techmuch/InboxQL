@@ -250,7 +250,7 @@ const CustomNode = ({ data, selected }: any) => {
     <div className={`px-4 py-2 border-2 ${bgClass} ${borderClass} min-w-[150px]`}>
       {data.type !== 'START' && <Handle type="target" position={Position.Left} className="w-2 h-2 bg-muted-foreground border-background" />}
       <div className="font-bold text-sm text-foreground">{data.label}</div>
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1">{data.type}</div>
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground mt-1">{data.type}</div>
       {data.type !== 'END' && <Handle type="source" position={Position.Right} className="w-2 h-2 bg-muted-foreground border-background" />}
     </div>
   );
@@ -339,7 +339,7 @@ const FlowEditor = ({ initialNodes, initialEdges, onSave, onBack, currentAgent, 
         <div className="flex items-center gap-4">
           <span
             title="Saving stores the graph definition only; there is no runtime to execute it yet"
-            className="hidden md:flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 border border-amber-500/40 bg-amber-500/10 px-2 py-1"
+            className="hidden md:flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 border border-amber-500/40 bg-amber-500/10 px-2 py-1"
           >
             <AlertTriangle className="w-3 h-3" /> Design preview — not executable
           </span>

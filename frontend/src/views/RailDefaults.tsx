@@ -101,7 +101,7 @@ export const RailDefaults = () => {
                 <span className="font-medium text-sm">{r.title}</span>
                 <span className="font-mono text-[11px] text-muted-foreground">{r.query}</span>
                 {r.present && (
-                  <span className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
+                  <span className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
                     <Check className="h-3 w-3" /> in the rail
                   </span>
                 )}

@@ -126,7 +126,7 @@ export const Rail = ({
   const scopedFolders = facets?.folders && facets.folders.length > 0 ? facets.folders : null;
   // Numbers on their way out are dimmed by colour, like an empty row, so they
   // stay readable while the new ones load.
-  const countClass = `text-[10px] font-bold tabular-nums transition-colors ${facetsStale ? '!text-muted-foreground font-normal' : ''}`;
+  const countClass = `text-[11px] font-bold tabular-nums transition-colors ${facetsStale ? '!text-muted-foreground font-normal' : ''}`;
 
   // A row that would show nothing is dimmed by colour, not by opacity: faded
   // to 40% the name fell to about 2:1 against the rail, which is unreadable
@@ -184,7 +184,7 @@ export const Rail = ({
               >
                 <Icon className={`w-4 h-4 ${folderActive(item.id) ? 'text-primary' : 'text-muted-foreground'}`} />
                 <span className="flex-1 text-left">{item.label}</span>
-                {badge ? <span className={scoped ? countClass : 'text-[10px] font-bold tabular-nums'}>{badge.toLocaleString()}</span> : null}
+                {badge ? <span className={scoped ? countClass : 'text-[11px] font-bold tabular-nums'}>{badge.toLocaleString()}</span> : null}
               </button>
               {arranging && onToggleFolder && (
                 // Hidden, never deleted. These are the mailbox; the question is
@@ -228,6 +228,11 @@ export const Rail = ({
 
         {saved.map((q, i) => {
           const Icon = ICONS[q.icon ?? ''] ?? Bookmark;
+          // A saved query named like a folder above it reads as the folder
+          // twice. Say what it adds, in the name itself so a screen reader
+          // hears the difference too: threads, or simply that it is saved.
+          const clash = shown.some(f => f.label.toLowerCase() === q.title.trim().toLowerCase());
+          const differs = clash ? (/\|\s*timeline\b/.test(q.query) ? 'conversations' : 'saved') : null;
           return (
             <div key={q.name ?? q.title} className="flex items-center">
               <button
@@ -238,7 +243,10 @@ export const Rail = ({
                 className={rowClass(isActive(q.query))}
               >
                 <Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                <span className="flex-1 text-left truncate">{q.title}</span>
+                <span className="flex-1 text-left truncate">
+                  {q.title}
+                  {differs && <span className="text-muted-foreground"> · {differs}</span>}
+                </span>
               </button>
               {arranging && (
                 <div className="flex items-center shrink-0">
@@ -320,7 +328,7 @@ export const Rail = ({
                   {c ? (
                     c.total > 0 && <span className={countClass}>{c.total.toLocaleString()}</span>
                   ) : l.unread > 0 && (
-                    <span className="text-[10px] font-bold tabular-nums">{l.unread.toLocaleString()}</span>
+                    <span className="text-[11px] font-bold tabular-nums">{l.unread.toLocaleString()}</span>
                   )}
                 </button>
               );
@@ -347,8 +355,8 @@ export const Rail = ({
                   {/* Switched off still appears, because its results are still
                       there and still queryable. Hiding it would contradict what
                       the switch means. */}
-                  {off && <span className="text-[9px] font-mono text-muted-foreground">off</span>}
-                  <span className={c ? `${countClass} text-muted-foreground` : 'text-[10px] font-bold tabular-nums text-muted-foreground'}>
+                  {off && <span className="text-[11px] font-mono text-muted-foreground">off</span>}
+                  <span className={c ? `${countClass} text-muted-foreground` : 'text-[11px] font-bold tabular-nums text-muted-foreground'}>
                     {(c ? c.total : a.progress!.matched).toLocaleString()}
                   </span>
                 </button>
@@ -363,7 +371,7 @@ export const Rail = ({
 
 const Heading = ({ label, action, help }: { label: string; action?: React.ReactNode; help?: string }) => (
   <div className="flex items-center gap-1 px-4 pt-4 pb-1">
-    <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+    <span className="flex-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
       {label}
     </span>
     {action}
@@ -373,7 +381,7 @@ const Heading = ({ label, action, help }: { label: string; action?: React.ReactN
 
 /** The line that says what a section's numbers are counted inside. */
 const Scoped = ({ text, title }: { text: string; title: string }) => (
-  <p className="px-4 pb-1 text-[10px] text-muted-foreground truncate" title={title}>{text}</p>
+  <p className="px-4 pb-1 text-[11px] text-muted-foreground truncate" title={title}>{text}</p>
 );
 
 // Kept so the unused-import check does not hide a row that still wants one.

@@ -314,7 +314,7 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
       <div className="h-12 border-b border-border flex items-center px-4 gap-2 shrink-0 bg-background/80 backdrop-blur-md">
         <span className="text-xs text-muted-foreground truncate flex-1 flex items-center gap-2">
           {isDraft && (
-            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400">
+            <span className="shrink-0 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400">
               Draft
             </span>
           )}
@@ -337,7 +337,7 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
             })()
           )}
           {selectedCount > 1 && (
-            <span className="shrink-0 px-2 py-0.5 text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20 rounded animate-in fade-in">
+            <span className="shrink-0 px-2 py-0.5 text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 rounded animate-in fade-in">
               1 of {selectedCount} selected
             </span>
           )}
@@ -384,7 +384,7 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
             >
               <Tag className="w-3.5 h-3.5" />
               <span>Values</span>
-              <span className="font-mono text-[10px] opacity-70">{markCount}</span>
+              <span className="font-mono text-[11px] opacity-70">{markCount}</span>
             </button>
           )}
           <button
@@ -442,10 +442,10 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
         </h1>
         <div className="mb-6 flex flex-wrap items-center gap-1.5 min-h-[1.25rem]">
           {!isDraft && (message.labels ?? []).includes('inbox') && (
-            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary border border-primary/20">Inbox</span>
+            <span className="px-1.5 py-0.5 text-[11px] font-medium bg-primary/10 text-primary border border-primary/20">Inbox</span>
           )}
           {!isDraft && shownLabels(message.labels).map((l: string) => (
-            <span key={l} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border/60">
+            <span key={l} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground border border-border/60">
               <button type="button" className="hover:underline" title={`Show everything labelled ${l}`}
                 onClick={() => openQuery(labelQuery(l))}>{l}</button>
               <button type="button" aria-label={`Remove label ${l}`} title={`Remove ${l}`}
@@ -642,7 +642,7 @@ export const MessageViewer = ({ only }: { only?: ViewerKind } = {}) => {
                 <FileText className="w-3.5 h-3.5" />
                 Plain Text View
               </span>
-              <span className="text-[10px] opacity-75 font-mono">utf-8 text</span>
+              <span className="text-[11px] opacity-75 font-mono">utf-8 text</span>
             </div>
             <div className="p-6 rounded border border-emerald-500/20 bg-emerald-500/[0.04] dark:bg-emerald-950/20 prose prose-sm dark:prose-invert max-w-none font-sans leading-relaxed whitespace-pre-wrap text-foreground/90">
               {message.body || <span className="italic text-muted-foreground">No text content available.</span>}

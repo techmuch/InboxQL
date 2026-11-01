@@ -279,7 +279,7 @@ export const BrowserStoragePanel = () => {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 bg-card border border-border shadow-sm">
-          <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-1">
+          <div className="text-[11px] uppercase font-bold text-muted-foreground tracking-wider mb-1">
             Total Entries
           </div>
           <div className="text-2xl font-bold tabular-nums">
@@ -291,7 +291,7 @@ export const BrowserStoragePanel = () => {
         </div>
 
         <div className="p-4 bg-card border border-border shadow-sm">
-          <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-1">
+          <div className="text-[11px] uppercase font-bold text-muted-foreground tracking-wider mb-1">
             Storage Consumed
           </div>
           <div className="text-2xl font-bold tabular-nums">
@@ -303,7 +303,7 @@ export const BrowserStoragePanel = () => {
         </div>
 
         <div className="p-4 bg-card border border-border shadow-sm">
-          <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-1">
+          <div className="text-[11px] uppercase font-bold text-muted-foreground tracking-wider mb-1">
             Origin Quota
           </div>
           <div className="text-2xl font-bold tabular-nums">
@@ -386,14 +386,14 @@ export const BrowserStoragePanel = () => {
                       {item.key}
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                      <span className={`px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider ${
                         item.type === 'localStorage'
                           ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
                           : 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20'
                       }`}>
                         {item.type === 'localStorage' ? 'local' : 'session'}
                       </span>
-                      <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-muted text-muted-foreground">
+                      <span className="px-1.5 py-0.5 text-[11px] font-semibold bg-muted text-muted-foreground">
                         {item.categoryLabel}
                       </span>
                     </div>
@@ -438,7 +438,7 @@ export const BrowserStoragePanel = () => {
                       {item.description}
                     </p>
                     <div className="relative">
-                      <div className="flex justify-between items-center bg-muted/60 px-3 py-1 border border-b-0 border-border text-[10px] uppercase font-bold text-muted-foreground tracking-wider font-mono">
+                      <div className="flex justify-between items-center bg-muted/60 px-3 py-1 border border-b-0 border-border text-[11px] uppercase font-bold text-muted-foreground tracking-wider font-mono">
                         <span>{item.isJSON ? 'Formatted JSON' : 'Raw Text Value'}</span>
                         <span>{item.raw.length} characters</span>
                       </div>

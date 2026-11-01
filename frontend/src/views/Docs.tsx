@@ -195,7 +195,7 @@ export const Docs = () => {
           ) : (
             groups.map(g => (
               <div key={g.group} className="mb-3">
-                <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{g.group}</p>
+                <p className="px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{g.group}</p>
                 {g.guides.map(guide => (
                   <button
                     key={guide.slug}
@@ -249,7 +249,7 @@ export const Docs = () => {
             {page.headings.length > 2 && (
               <nav className="hidden xl:block w-52 shrink-0" aria-label="On this page">
                 <div className="sticky top-0">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On this page</p>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">On this page</p>
                   <ul className="space-y-1 text-xs">
                     {page.headings.map(h => (
                       <li key={h.id} className={h.level === 3 ? 'pl-3' : ''}>
@@ -288,7 +288,7 @@ const SearchResults = ({ hits, active, loading, onChoose }: {
             onClick={() => onChoose(h)}
             className={`w-full text-left px-4 py-2 border-b border-border/40 ${i === active ? 'bg-primary/10' : 'hover:bg-accent'}`}
           >
-            <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">{h.section.title}</span>
+            <span className="block text-[11px] uppercase tracking-wider text-muted-foreground">{h.section.title}</span>
             <span className="block text-xs font-semibold">{h.section.heading || h.section.title}</span>
             <span className="block text-[11px] text-muted-foreground leading-snug mt-0.5">
               {h.snippet.map((p, j) => p.mark

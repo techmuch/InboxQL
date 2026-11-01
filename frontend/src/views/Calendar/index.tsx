@@ -84,7 +84,7 @@ const MiniMonth = ({ anchor, onPick }: { anchor: Date; onPick: (d: Date) => void
         <button onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month" className="p-0.5 hover:bg-accent"><ChevronRight className="h-3.5 w-3.5" /></button>
       </div>
       <div className="grid grid-cols-7 text-center">
-        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i} className="py-0.5 text-[10px] text-muted-foreground">{d}</span>)}
+        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i} className="py-0.5 text-[11px] text-muted-foreground">{d}</span>)}
         {monthGrid(month).map(d => (
           <button
             key={d.toISOString()}
@@ -353,8 +353,8 @@ export const Calendar = () => {
             className="block w-full truncate text-left hover:text-primary hover:underline disabled:no-underline disabled:hover:text-inherit">
             {c.payload.summary ?? c.op}
           </button>
-          {whenOf(c) && <p className="text-[10px] tabular-nums">{whenOf(c)}</p>}
-          <p className="text-[10px] text-muted-foreground">
+          {whenOf(c) && <p className="text-[11px] tabular-nums">{whenOf(c)}</p>}
+          <p className="text-[11px] text-muted-foreground">
             {c.state === 'proposed' ? `proposed by ${c.origin}` : c.state === 'conflict' ? 'changed elsewhere first' : `failed: ${c.error ?? ''}`}
           </p>
           {c.state === 'proposed' && (
@@ -378,7 +378,7 @@ export const Calendar = () => {
         <MiniMonth anchor={anchor} onPick={d => setAnchor(d)} />
 
         <div className="border-t border-border px-3 py-2">
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Calendars</p>
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Calendars</p>
           <ul className="space-y-0.5 text-xs">
             {calendars.map(c => (
               <li key={c.id} className="group flex items-center gap-2">
@@ -431,7 +431,7 @@ export const Calendar = () => {
 
         {attention.length > 0 && (
           <div className="border-t border-border px-3 py-2">
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-600">Waiting for you · {attention.length}</p>
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-amber-600">Waiting for you · {attention.length}</p>
             <ul className="space-y-2 text-xs">
               {upcoming.map(renderChange)}
             </ul>

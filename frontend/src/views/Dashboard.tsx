@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, BarChart2, Check, ChevronLeft, ChevronRight, Gauge, Layout, Mail, Users, X } from 'lucide-react';
-import { ActivityCalendar } from './ActivityCalendar';
+import { ActivityCalendar, HeatLegend } from './ActivityCalendar';
 import { Help } from './Help';
 import { openQuery } from '../lib/tabs';
 import { useQueryStore, queryTerms, compose, type QueryTerm } from '../lib/filters';
@@ -195,21 +195,21 @@ export const Dashboard = () => {
         <div className="flex flex-1 gap-2 overflow-auto no-scrollbar">
           {pills.length === 0 && <span className="text-[11px] text-muted-foreground">everything in {scope.label} — click a chart to narrow it</span>}
           {pills.map(t => (
-            <span key={t.start} className="px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-mono flex items-center gap-1 shadow-sm whitespace-nowrap">
+            <span key={t.start} className="px-2 py-0.5 bg-primary text-primary-foreground text-[11px] font-mono flex items-center gap-1 shadow-sm whitespace-nowrap">
               {t.text}
               <button aria-label={`Remove ${t.text}`} onClick={() => removeTerm(t.text)}><X className="w-2.5 h-2.5" /></button>
             </span>
           ))}
         </div>
         {pills.length > 0 && (
-          <button onClick={clearAdded} className="flex items-center gap-1 text-[10px] font-semibold text-primary hover:bg-primary/20 bg-primary/10 px-2.5 py-1 whitespace-nowrap">
+          <button onClick={clearAdded} className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:bg-primary/20 bg-primary/10 px-2.5 py-1 whitespace-nowrap">
             <X className="w-2.5 h-2.5" /> Clear
           </button>
         )}
         {/* The filters are a query, so they can go somewhere they can be
             edited and saved rather than only cleared. */}
         <button onClick={() => openQuery(query)}
-          className="text-[10px] font-semibold text-primary hover:bg-primary/20 bg-primary/10 px-2.5 py-1 whitespace-nowrap">
+          className="text-[11px] font-semibold text-primary hover:bg-primary/20 bg-primary/10 px-2.5 py-1 whitespace-nowrap">
           Open in Desk
         </button>
       </div>
@@ -242,6 +242,7 @@ export const Dashboard = () => {
               </div>
             )}
           </div>
+          {calendar.length > 0 && <HeatLegend />}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -256,12 +257,12 @@ export const Dashboard = () => {
                 return (
                   <button key={d.label} disabled={!d.term} onClick={() => d.term && toggleTerm(d.term)}
                     className={`w-full flex items-center gap-2.5 p-1.5 transition-all ${on ? 'bg-primary/10 ring-1 ring-primary' : 'hover:bg-accent'}`}>
-                    <div className="w-7 h-7 bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary">
+                    <div className="w-7 h-7 bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary">
                       {d.label[0]?.toUpperCase() || '?'}
                     </div>
                     <div className="flex-1 min-w-0 text-left">
                       <div className="text-xs font-semibold truncate leading-tight">{d.label}</div>
-                      <div className="text-[9px] text-muted-foreground uppercase tracking-tighter">{d.value} messages</div>
+                      <div className="text-[11px] text-muted-foreground uppercase tracking-tighter">{d.value} messages</div>
                     </div>
                     {on && <Check className="w-2.5 h-2.5 text-primary" />}
                   </button>
@@ -278,7 +279,7 @@ export const Dashboard = () => {
             </div>
             {/* Two kinds share the card, and they open different mail: say which. */}
             {words && (
-              <p className="text-[10px] text-muted-foreground mb-3">
+              <p className="text-[11px] text-muted-foreground mb-3">
                 <i>Italic</i> ones are the first word of subjects where no topic was extracted; a click finds subjects containing it.
               </p>
             )}
@@ -288,9 +289,9 @@ export const Dashboard = () => {
                 return (
                   <button key={d.label} disabled={!d.term} onClick={() => d.term && toggleTerm(d.term)}
                     title={d.kind === 'word' ? `The first word of ${d.value} subjects — ${d.term}` : `Extracted topic — ${d.term}`}
-                    className={`px-2.5 py-1 text-[10px] font-semibold flex items-center gap-1.5 transition-all ${d.kind === 'word' ? 'italic' : ''} ${on ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted hover:bg-primary/10 hover:text-primary'}`}>
+                    className={`px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1.5 transition-all ${d.kind === 'word' ? 'italic' : ''} ${on ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted hover:bg-primary/10 hover:text-primary'}`}>
                     <span className="truncate max-w-[100px]">{d.label}</span>
-                    <span className={`text-[9px] ${on ? 'text-primary-foreground/70' : 'opacity-50 font-mono'}`}>{d.value}</span>
+                    <span className={`text-[11px] ${on ? 'text-primary-foreground/70' : 'opacity-50 font-mono'}`}>{d.value}</span>
                   </button>
                 );
               })}

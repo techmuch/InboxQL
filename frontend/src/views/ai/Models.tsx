@@ -595,7 +595,7 @@ const Field = ({ label, hint, children }: { label: string; hint?: string; childr
         having to mint and thread an id through every caller. The hint stays
         outside it, or it would be read out as part of the field's name. */}
     <label className="block space-y-1">
-      <span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <span className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
       {children}

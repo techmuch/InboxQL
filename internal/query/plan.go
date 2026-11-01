@@ -832,7 +832,8 @@ func groupKey(field string, opt Options) (group, error) {
 		// The word is trimmed of the punctuation around it — `Don,`,
 		// `Ordered:`, `[owner/repo]` — so it reads as a word and its click,
 		// `subject:word`, finds what it counted.
-		expr := "COALESCE(mt.topic, LOWER(TRIM(SUBSTR(m.subject, 1, INSTR(m.subject || ' ', ' ') - 1), '[](){}<>:;,.!?\"''')))"
+		word := "LOWER(TRIM(SUBSTR(m.subject, 1, INSTR(m.subject || ' ', ' ') - 1), '[](){}<>:;,.!?\"'''))"
+		expr := "COALESCE(mt.topic, " + word + ")"
 		g := group{
 			expr: expr,
 			join: "LEFT JOIN message_topics mt ON mt.message_id = m.id",
@@ -842,12 +843,21 @@ func groupKey(field string, opt Options) (group, error) {
 			having: "(m.subject != '' OR mt.topic IS NOT NULL) AND " + expr + " != ''",
 		}
 
+		// A subject's first word is a topic only if it is not a word any
+		// subject could start with: "re", "your" and "new" are not what
+		// anyone files mail under. Only the placeholder is filtered — a topic
+		// an annotator chose stands, whatever it is.
+		g.having += " AND (mt.topic IS NOT NULL OR " + word + " NOT IN (" + placeholders(len(subjectStopwords)) + "))"
+		for _, w := range subjectStopwords {
+			g.havingArgs = append(g.havingArgs, w)
+		}
+
 		// The ignore list belongs to the language, not to one consumer of it.
 		if opt.IgnoredTopicWords != nil {
 			if words := opt.IgnoredTopicWords(); len(words) > 0 {
 				g.having += " AND " + expr + " NOT IN (" + placeholders(len(words)) + ")"
 				for _, w := range words {
-					g.havingArgs = append(g.havingArgs, strings.ToLower(strings.TrimSpace(w)))
+					g.havingArgs = append(g.havingArgs, TopicWord(w))
 				}
 			}
 		}
@@ -1327,4 +1337,23 @@ func (p *pipeline) buildContactTopics() (*Plan, error) {
 
 	return &Plan{SQL: sql, Args: args, Kind: PlanTopics, Limit: limit, Ordered: true,
 		Entity: EntityContact, GroupField: "topic"}, nil
+}
+
+// TopicWord is a word as the topic grouping compares it: lowered, with the
+// punctuation around it gone. The ignore list was seeded `re:,fwd:` while the
+// grouping strips the colon, so those two entries never matched anything.
+func TopicWord(w string) string {
+	return strings.ToLower(strings.Trim(strings.TrimSpace(w), "[](){}<>:;,.!?\"'"))
+}
+
+// subjectStopwords are first words of subjects that say nothing about what
+// the mail is: reply and forward markers, articles, pronouns, and the
+// openers of every kind of bulk mail.
+var subjectStopwords = []string{
+	"re", "fw", "fwd", "aw", "wg", "tr",
+	"a", "an", "the", "and", "or", "of", "to", "in", "on", "at", "by", "for", "with", "from", "about",
+	"i", "you", "your", "we", "our", "my", "it", "its", "it's", "this", "that", "these", "there", "here",
+	"is", "are", "was", "be", "do", "don't", "can", "will", "has", "have", "get", "got",
+	"new", "now", "just", "last", "final", "only", "more", "all", "how", "what", "why", "when", "who",
+	"hi", "hello", "hey", "dear", "thanks", "thank", "please", "reminder", "important", "action",
 }

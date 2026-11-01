@@ -303,7 +303,7 @@ const BackupList = ({
               <td className="py-2 pr-3">
                 {REASON[b.reason]}
                 {b.reason === 'update' && b.version && <span className="text-muted-foreground"> to {b.version}</span>}
-                {b.name === newest && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-primary">newest</span>}
+                {b.name === newest && <span className="ml-1.5 text-[11px] uppercase tracking-wide text-primary">newest</span>}
               </td>
               <td className="py-2 pr-3 tabular-nums">{formatBytes(b.bytes + (b.extraBytes ?? 0))}</td>
               <td className="py-2 pr-3 text-xs text-muted-foreground">

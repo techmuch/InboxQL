@@ -400,7 +400,7 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
           </div>
 
           <div className="border border-border">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/40 border-b border-border text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/40 border-b border-border text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
               <span className="w-3" /><span className="w-3.5" /><span className="w-3.5" />
               <span className="flex-1">Mailbox</span>
               <span className="w-20 text-right">Messages</span>
@@ -438,7 +438,7 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name || a.id}</option>)}
               {accounts.length === 0 && <option value="">No accounts — add one first</option>}
             </select>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground">
               Imported mail is deleted if this account is removed. For an archive you
               want to keep, use a dedicated account rather than a live mailbox.
             </p>
@@ -472,7 +472,7 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
                 Everything
               </label>
             </div>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground">
               A limit spans the whole import, not each mailbox.
             </p>
           </div>
@@ -493,7 +493,7 @@ export const ImportPanel = ({ accounts }: { accounts: any[] }) => {
               Dry run — report what would happen, import nothing
             </label>
             {attachments && (
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground">
                 Attachment files are stored outside the database. A plain backup will
                 not contain them — use <code>iql backup --include-attachments</code>.
               </p>
@@ -718,7 +718,7 @@ const Metric = ({ label, value, tone }: { label: string; value: number; tone?: '
     <div className={`text-lg font-bold tabular-nums ${tone === 'bad' ? 'text-destructive' : ''}`}>
       {value.toLocaleString()}
     </div>
-    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
   </div>
 );
 
@@ -729,7 +729,7 @@ const StatusBadge = ({ status }: { status: Job['status'] }) => {
     : status === 'cancelled' || status === 'interrupted' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
     : 'bg-primary/10 text-primary';
   return (
-    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${tone}`}>
+    <span className={`px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${tone}`}>
       {status}
     </span>
   );

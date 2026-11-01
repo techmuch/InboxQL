@@ -22,6 +22,16 @@
 @import "tailwindcss/utilities.css";
 
 /*
+ * `dark:` means the dark theme, not the operating system's preference.
+ *
+ * Tailwind v4's default is the media query, so a person on the dark theme with
+ * a light Mac got the light half of every `dark:` pair — selected rows,
+ * calendar chips, label text — and one on Light with a dark Mac got the dark
+ * half on a white page. The shell marks its dark theme `theme-dark` on the root.
+ */
+@custom-variant dark (&:where(.theme-dark, .theme-dark *));
+
+/*
  * The theme's colours, named for Tailwind.
  *
  * nexus-shell defines them as variables (`--primary: 234 89% 65%`), switched
@@ -51,6 +61,9 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+  /* Unread, as a mark. A theme may name its own; otherwise it is the primary
+     as text, which is legible in every theme (see --primary-text below). */
+  --color-unread: hsl(var(--unread, var(--primary-text, var(--primary))));
 }
 
 :root {
@@ -58,7 +71,9 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
+  /* The theme's, not the system's: native controls — a select's list, a
+     scrollbar — were drawn dark on the Light theme on a dark Mac. */
+  color-scheme: light;
   color: rgba(255, 255, 255, 0.87);
   background-color: #242424;
 
@@ -172,13 +187,14 @@ header .relative.inline-block > [role="menu"] {
  *
  *	dark   234 89% 65%  2.9:1  ->  234 89% 75%  4.7:1
  *	gt      45 100% 46%  1.7:1  ->   45 100% 26%  4.75:1
- *	light, tamu: already 10:1 and over, unchanged
+ *	light   243 75% 55%  7.4:1 on white, 5.3:1 on a 20% tint (nexus-shell 0.2.16)
+ *	tamu: already 10:1 and over, unchanged
  *
  * So text gets its own shade where a theme needs one, and buttons keep the
  * theme's. Scoped under the theme's own element so it outranks the utility it
  * refines, which is emitted later at a lower specificity.
  */
-.theme-dark { --primary-text: 234 89% 75%; }
+.theme-dark { --primary-text: 234 89% 75%; color-scheme: dark; }
 .theme-gt { --primary-text: 45 100% 26%; }
 [class*="theme-"] .text-primary,
 [class*="theme-"] .hover\:text-primary:hover {

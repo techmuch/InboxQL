@@ -112,17 +112,17 @@ export const Windows = () => {
                 <span className="font-mono font-bold text-sm">{w.name}</span>
                 {/* Which row is the window you are reading this in. Without it
                     the names are labels nobody can map to a screen. */}
-                {isMe && <span className="text-[10px] font-bold uppercase text-primary">this window</span>}
+                {isMe && <span className="text-[11px] font-bold uppercase text-primary">this window</span>}
                 {w.connected
-                  ? <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                  ? <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
                       <RadioTower className="w-3 h-3" /> live
                     </span>
-                  : <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400"
+                  : <span className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400"
                       title="Open, but its command channel is not connected — it cannot be sent anything">
                       <Radio className="w-3 h-3" /> no channel
                     </span>}
                 {w.title && <span className="text-[11px] text-muted-foreground truncate">{w.title}</span>}
-                <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+                <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
                   seen {ago(w.lastSeen)}
                 </span>
               </div>
@@ -137,7 +137,7 @@ export const Windows = () => {
                 <div className="mt-1 flex flex-wrap gap-1">
                   {w.showing.tabs.map(t => (
                     <span key={t}
-                      className={`px-1.5 py-0.5 text-[10px] font-mono ${
+                      className={`px-1.5 py-0.5 text-[11px] font-mono ${
                         t === w.showing.active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
                       }`}>
                       {t}

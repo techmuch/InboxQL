@@ -20,6 +20,34 @@ const localDay = (day: string): Date => {
 };
 
 /**
+ * One hue, light to dark: more mail is more ink. The old four were a
+ * diverging set — teal through orange — which says "below or above a
+ * midpoint", and a count of mail has no midpoint; its warm end read as a
+ * warning. Each theme gets its own steps, running away from the background so
+ * the busiest day stands out in both.
+ */
+const heatColors = (dark: boolean): string[] => dark
+  ? ['#312e81', '#4338ca', '#6366f1', '#a5b4fc']
+  : ['#c7d2fe', '#818cf8', '#4f46e5', '#312e81'];
+
+/**
+ * The key to the heatmap's shades. Without one, a shade is only "darker than
+ * that one". The words carry it; the swatches are decoration beside them.
+ */
+export const HeatLegend = () => {
+  const { theme } = useThemeStore();
+  return (
+    <div className="flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
+      <span>Less mail</span>
+      <span aria-hidden="true" className="flex gap-0.5">
+        {heatColors(theme === 'dark').map(c => <span key={c} className="h-2.5 w-2.5" style={{ background: c }} />)}
+      </span>
+      <span>More</span>
+    </div>
+  );
+};
+
+/**
  * Mail per day as a heatmap: the dashboard's Communication Intensity and a
  * contact card's How often they write. One component so the two cannot drift
  * apart in colour or in how they look in the dark theme.
@@ -42,11 +70,11 @@ export const ActivityCalendar = ({ data, from, to, onDay }: {
     from,
     to,
     emptyColor: dark ? '#27272a' : '#f4f4f5',
-    colors: ['#61cdbb', '#97e3d5', '#e8c1a0', '#f47560'],
+    colors: heatColors(dark),
     dayBorderWidth: 2,
     dayBorderColor: dark ? '#18181b' : '#ffffff',
     theme: {
-      text: { fill: dark ? '#a1a1aa' : '#71717a', fontSize: 10, fontWeight: 600 },
+      text: { fill: dark ? '#a1a1aa' : '#71717a', fontSize: 11, fontWeight: 600 },
       tooltip: { container: { background: dark ? '#18181b' : '#ffffff', color: dark ? '#fafafa' : '#18181b' } },
     },
     onClick: onDay ? (datum: { day: string }) => onDay(datum.day) : undefined,

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agents and AI · Settings · InboxQL redesign</title>
+<meta name="description" content="Where text may go, which agents may act, and what they read for, with accuracy.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="settings:agents" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html" aria-current="page">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title"><div class="page-head"><div class="grow"><h1 id="page-title">Agents and AI</h1></div></div>
+<div class="settings"><nav class="setnav" aria-label="Settings sections"><form role="search" onsubmit="return false"><label for="setq" class="sr-only">Find a setting</label><input id="setq" placeholder="Find a setting…  ⌘F"></form><ul><li><a href="settings.html">Overview</a></li><li><a href="settings-accounts.html">You and your accounts</a></li><li><a href="settings-agents.html" aria-current="page">Agents and AI</a></li><li><a href="settings-reading.html">Reading and appearance</a></li><li><a href="settings-data.html">Your data<span class="chip warn" title="needs attention">1<span class="sr-only"> needs attention</span></span></a></li><li><a href="settings-computer.html">This computer<span class="chip warn" title="needs attention">1<span class="sr-only"> needs attention</span></span></a></li></ul></nav><div><p class="muted" style="margin:0 0 1rem"><span class="callout" aria-hidden="true">1</span> <strong>Mail leaves this computer only when an agent reads it.</strong> When you ask in words, or run Claude Code yourself, it sends what it reads to Anthropic under your own account. InboxQL itself sends nothing; its two local models run here.</p><section class="setgroup" aria-labelledby="g-ask"><h2 id="g-ask">Ask in words</h2><div class="card"><div class="set " id="setting-ask-cli"><div><div class="lbl" id="l-ask-cli">Which agent answers</div><p class="desc" id="d-ask-cli">An agent CLI on this computer, run with the iql skill. Detected: Claude Code (signed in) · agy (not found).</p></div><div class="ctl"><fieldset class="seg" aria-labelledby="l-ask-cli"><label><input type="radio" name="cli" checked> Claude Code</label><label><input type="radio" name="cli"> agy</label><label><input type="radio" name="cli"> Off</label></fieldset></div></div><div class="set " id="setting-ask-may"><div><div class="lbl" id="l-ask-may">What it may do</div><p class="desc" id="d-ask-may">Read only: <code>iql query</code>, <code>read</code>, <code>analyze</code>, and pointing your window with <code>iql ui</code>. Anything else it suggests becomes a button for you.</p></div><div class="ctl"><span class="chip">read only</span></div></div><div class="set " id="setting-ask-history"><div><div class="lbl" id="l-ask-history">Keep questions and answers</div><p class="desc" id="d-ask-history">In the mailbox, so a past answer can be reopened and its commands seen. 30 days.</p></div><div class="ctl"><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="l-ask-history"></button></div></div></div></section><section class="setgroup" aria-labelledby="g-provider"><h2 id="g-provider">AI provider</h2><div class="card"><div class="set wide" id="setting-ai-provider"><div><div class="lbl" id="l-ai-provider">Where summaries and drafts are written</div><p class="desc" id="d-ai-provider">None: nothing is summarised or drafted for you, and nothing leaves this computer. On this computer: a local model does it. Remote: the text of a conversation is sent to the provider each time — you are shown where, and asked once, before the first.</p></div><div class="ctl"><fieldset class="seg" aria-labelledby="l-ai-provider"><label><input type="radio" name="prov" checked> None</label><label><input type="radio" name="prov"> On this computer (Ollama)</label><label><input type="radio" name="prov"> Remote…</label></fieldset></div></div><div class="set " id="setting-local-models"><div><div class="lbl" id="l-local-models">Local models</div><p class="desc" id="d-local-models">GLiNER extracts values (800 MB) · Laya judges yes/no (1.2 GB). Both run here and send nothing.</p></div><div class="ctl"><span class="chip good">installed</span><button class="btn">Manage</button></div></div></div></section><section class="setgroup" aria-labelledby="g-assist"><h2 id="g-assist">Assistants</h2><div class="card"><div class="set " id="setting-ai-assistants"><div><div class="lbl" id="l-ai-assistants">Assistants that can use iql</div><p class="desc" id="d-ai-assistants">A short guide installed for each tool, so it follows the rules on sending and changing mail.</p></div><div class="ctl"><span class="small">Claude Code <span class="chip good">installed</span> · Codex <span class="chip">not installed</span></span><button class="btn">Manage</button></div></div><div class="set " id="setting-agent-archive"><div><div class="lbl" id="l-agent-archive">Agents may archive and label</div><p class="desc" id="d-agent-archive">Every change is in Agent activity with Undo. Trash and spam only when you ask in words.</p></div><div class="ctl"><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="l-agent-archive"></button></div></div><div class="set " id="setting-agent-proposals"><div><div class="lbl" id="l-agent-proposals">Agents propose events and cards</div><p class="desc" id="d-agent-proposals">Proposals wait in To review; nothing is added to your calendar or board until you approve.</p></div><div class="ctl"><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="l-agent-proposals"></button></div></div></div></section><section class="setgroup" aria-labelledby="g-el"><h2 id="g-el">What the agent reads for <span class="callout" aria-hidden="true">2</span></h2>
+<p class="small muted" style="margin:-.25rem 0 .5rem">Elements are the things worth knowing about each conversation. Accuracy is measured on your checks; below its target an element is no longer guessed.</p>
+<div style="overflow-x:auto" tabindex="0" role="region" aria-label="Elements table"><table class="grid"><caption class="sr-only">Elements, with accuracy on your checks and their targets</caption>
+<thead><tr><th scope="col">Element</th><th scope="col">Records</th><th scope="col" class="num">Right on your checks</th><th scope="col" class="num">Target</th><th scope="col">On</th></tr></thead><tbody>
+<tr><th scope="row">waiting</th><td>who owes a reply</td><td class="num">41 / 44 · 93%</td><td class="num">95%</td><td><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="e-waiting"></button><span class="sr-only" id="e-waiting">waiting on</span></td></tr>
+<tr><th scope="row">importance</th><td>important to ignorable</td><td class="num">37 / 44 · 84%</td><td class="num">80%</td><td><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="e-importance"></button><span class="sr-only" id="e-importance">importance on</span></td></tr>
+<tr><th scope="row">receipts</th><td>merchant, items, total</td><td class="num">28 / 29 · 97%</td><td class="num">95%</td><td><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="e-receipts"></button><span class="sr-only" id="e-receipts">receipts on</span></td></tr>
+<tr><th scope="row">travel</th><td>flights, hotels, cars</td><td class="num">9 / 9</td><td class="num">95%</td><td><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="e-travel"></button><span class="sr-only" id="e-travel">travel on</span></td></tr>
+<tr><th scope="row">events</th><td>dates to propose</td><td class="num">12 / 14 · 86%</td><td class="num">90%</td><td><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="e-events"></button><span class="sr-only" id="e-events">events on</span></td></tr>
+<tr><th scope="row">tasks</th><td>things to do</td><td class="num">6 / 9 · 67%</td><td class="num">80%</td><td><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="e-tasks"></button><span class="sr-only" id="e-tasks">tasks on</span></td></tr>
+<tr><th scope="row">topics</th><td>what it is about</td><td class="num">—</td><td class="num">—</td><td><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="e-topics"></button><span class="sr-only" id="e-topics">topics on</span></td></tr>
+<tr><th scope="row">sender</th><td>person or system</td><td class="num">—</td><td class="num">—</td><td><button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="e-sender"></button><span class="sr-only" id="e-sender">sender on</span></td></tr>
+</tbody></table></div>
+<p class="small" style="margin-top:.4rem"><a href="#">Edit an element’s instructions</a> · <a href="review.html#checks">3 checks due</a> · <a href="activity.html">Agent activity</a></p></section><section class="notes" aria-labelledby="n-set-ag"><h2 id="n-set-ag">About this screen</h2><p><strong>Purpose.</strong> What leaves this computer, which agents may act and how, and what they read mail for — with how often they are right.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> The first line answers the privacy question before anything else, in words, and changes the moment a remote provider is chosen.</li><li><span class="callout">2</span> Elements show accuracy on your own checks next to their target, so a setting is judged by evidence. Turning one off stops new answers; what it already found stays.</li></ol><h3>What changed from today's app</h3><ul><li>AI Configuration (three tabs), Annotators, Elements and work-loop targets were four places.</li><li>Accuracy, now only in the Work loop’s metrics, sits beside the switch it should inform.</li></ul><h3>Keyboard</h3><table class="doc"><tr><th>Key</th><th>Does</th></tr><tr><td><kbd>Space</kbd></td><td>Toggle a switch</td></tr></table><h3>Screen reader</h3><p>Switches are <code>role="switch"</code> buttons named by their setting. The elements table has a caption and headers; each switch is named for its element.</p></section></div></div></main>
+<aside class="evidence" aria-labelledby="ev-s"><h2 id="ev-s">From the command line</h2>
+  <p class="small muted">Everything on this page can also be done with <code>iql</code>, so a script or an agent can read it — and the change shows here.</p>
+  <ul class="small" style="list-style:none;padding:0;display:grid;gap:.55rem"><li><code>iql --json llm status</code><br><span class="small muted">which provider, local or remote</span></li><li><code>iql --json elements list</code><br><span class="small muted">elements and what is answered</span></li><li><code>iql --json work targets</code><br><span class="small muted">accuracy targets and cost</span></li><li><code>iql skills list</code><br><span class="small muted">assistants with the iql skill</span></li></ul>
+  <h3 style="margin-top:1rem">When changes apply</h3><p class="small">At once. A remote provider is used only after you confirm what will be sent and where.</p>
+  <h3 style="margin-top:1rem">Help</h3><p class="small"><a href="#">Agents guide (AGENTS.md)</a></p></aside>
+</div>
+</body>
+</html>

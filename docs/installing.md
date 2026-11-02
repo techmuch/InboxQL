@@ -149,6 +149,34 @@ You can also set the name in Settings → System → [Site name](#setting/site-n
 one command in a terminal, because a web page asking for an administrator's
 password is exactly what an attack looks like.
 
+## On your phone
+
+InboxQL runs on your computer, and a phone reaches it the way it reaches
+anything else on your own network. [Tailscale](https://tailscale.com) is the
+simple way: it gives your computer a private HTTPS address that only your own
+devices can open.
+
+On the computer, with Tailscale installed and signed in:
+
+```sh
+tailscale serve --bg 8420
+```
+
+Tailscale prints the address — `https://<computer>.<tailnet>.ts.net`. Open it
+in Chrome on the phone (also signed in to Tailscale). InboxQL asks for its
+password there, because the request arrives through a proxy rather than from
+the computer itself; set one with `iql user passwd` if you have not.
+
+Then Chrome's menu → **Install app**. InboxQL gets its own icon and opens in
+its own window, laid out for a phone: the places along the bottom, one screen
+at a time.
+
+- **When the computer is asleep or off the network**, the app still opens and
+  shows what it last loaded, but nothing new arrives until it is back.
+- **Reminders** for important dates appear in the app while it is open. A
+  reminder to a phone whose app is closed is not built yet.
+- `tailscale serve reset` stops sharing it.
+
 ## More than one mailbox
 
 A mailbox is a folder. The one in `~/.iql/settings.json` is this machine's, and

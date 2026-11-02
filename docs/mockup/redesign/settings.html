@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · InboxQL redesign</title>
+<meta name="description" content="The settings overview: what needs attention, then every section with its current state in one line.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="settings" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html" aria-current="page">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title"><div class="page-head"><div class="grow"><h1 id="page-title">Settings</h1></div></div>
+<div class="settings"><nav class="setnav" aria-label="Settings sections"><form role="search" onsubmit="return false"><label for="setq" class="sr-only">Find a setting</label><input id="setq" placeholder="Find a setting…  ⌘F"></form><ul><li><a href="settings.html" aria-current="page">Overview</a></li><li><a href="settings-accounts.html">You and your accounts</a></li><li><a href="settings-agents.html">Agents and AI</a></li><li><a href="settings-reading.html">Reading and appearance</a></li><li><a href="settings-data.html">Your data<span class="chip warn" title="needs attention">1<span class="sr-only"> needs attention</span></span></a></li><li><a href="settings-computer.html">This computer<span class="chip warn" title="needs attention">1<span class="sr-only"> needs attention</span></span></a></li></ul></nav><div>
+<p class="muted" style="margin:0 0 1rem"><span class="callout" aria-hidden="true">1</span> <strong>2 things need you:</strong> a backup is overdue, and an update is ready. Everything else is as you left it.</p>
+<section class="setgroup" aria-labelledby="g-attn"><h2 id="g-attn">Needs attention</h2>
+<ul class="list card">
+  <li class="row" style="grid-template-columns:auto minmax(0,1fr) auto"><span class="chip warn">backup</span><div><span class="who">The weekly backup was missed</span><div class="line" style="white-space:normal">The computer was asleep on Sunday. Last backup Oct 22, 9 days ago. 41 GB free; a backup needs about 4.3 GB.</div></div><span class="meta"><button class="btn primary">Back up now</button></span></li>
+  <li class="row" style="grid-template-columns:auto minmax(0,1fr) auto"><span class="chip warn">update</span><div><span class="who">Version 2026.11.1.1 is ready</span><div class="line" style="white-space:normal">Backs up the mailbox, restarts the server (about 10 seconds) and reopens this window. <a href="#">What’s new</a></div></div><span class="meta"><a class="btn" href="settings-computer.html#setting-updates">Review</a></span></li>
+</ul></section>
+<section class="setgroup" aria-labelledby="g-all"><h2 id="g-all">All settings <span class="callout" aria-hidden="true">2</span></h2><ul class="list card"><li class="row" style="grid-template-columns:minmax(0,1fr) auto"><div><a class="who" href="settings-accounts.html">You and your accounts</a><div class="line" style="white-space:normal">Alex Kim · 2 mail accounts, both live · Google Calendar connected</div></div><span class="meta"><span class="chip good">ok</span></span></li><li class="row" style="grid-template-columns:minmax(0,1fr) auto"><div><a class="who" href="settings-agents.html">Agents and AI</a><div class="line" style="white-space:normal">Claude Code answers questions · 8 elements on · local models installed</div></div><span class="meta"><span class="chip good">ok</span></span></li><li class="row" style="grid-template-columns:minmax(0,1fr) auto"><div><a class="who" href="settings-reading.html">Reading and appearance</a><div class="line" style="white-space:normal">Light theme · text 100% · single-key shortcuts on · reminders on</div></div><span class="meta"><span class="chip good">ok</span></span></li><li class="row" style="grid-template-columns:minmax(0,1fr) auto"><div><a class="who" href="settings-data.html">Your data</a><div class="line" style="white-space:normal">4.2 GB mailbox · <strong>last backup 9 days ago</strong></div></div><span class="meta"><span class="chip warn">needs attention</span></span></li><li class="row" style="grid-template-columns:minmax(0,1fr) auto"><div><a class="who" href="settings-computer.html">This computer</a><div class="line" style="white-space:normal">Version 2026.10.31.2 · running at login · <strong>an update is ready</strong></div></div><span class="meta"><span class="chip warn">needs attention</span></span></li></ul></section>
+<section class="setgroup" aria-labelledby="g-search"><h2 id="g-search">Example: finding a setting <span class="callout" aria-hidden="true">3</span></h2>
+<div class="card" style="padding:.75rem 1rem"><p class="small muted" style="margin:0 0 .4rem">Typing “dark” in Find a setting:</p>
+<ul class="small" style="list-style:none;padding:0;margin:0;display:grid;gap:.3rem">
+<li><a href="settings-reading.html#setting-theme"><strong>Theme</strong></a> — Reading and appearance · currently Light</li>
+<li><a href="settings-reading.html#setting-theme"><strong>Match the system’s light or dark</strong></a> — Reading and appearance · off</li></ul></div></section>
+<section class="notes" aria-labelledby="n-set"><h2 id="n-set">About this screen</h2><p><strong>Purpose.</strong> Settings is a place in the navigation like any other, with one overview. The overview leads with what needs you and says each section’s state in a line, so most visits end here.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> A sentence of state. A healthy install says so; a problem names itself and the fix.</li><li><span class="callout">2</span> Six sections instead of eleven, named for what you are doing (accounts, agents, reading, your data, this computer) rather than for the code behind them. Each line is that section’s current state, not a description of it.</li><li><span class="callout">3</span> <strong>Find a setting</strong> searches labels and keywords, as now, and says where the result lives and its current value. Choosing one opens the section and moves focus to the setting.</li></ol><h3>What changed from today's app</h3><ul><li>Profile, Accounts and Calendars → <em>You and your accounts</em>.</li><li>AI Configuration, Annotators, Elements and the work-loop targets → <em>Agents and AI</em>.</li><li>General (theme, inbox layout, previews, rail) → <em>Reading and appearance</em>, which gains text size, motion and shortcut settings.</li><li>Import, Data management, Maintenance, Storage → <em>Your data</em>.</li><li>System and Logging, and the Windows tab → <em>This computer</em>.</li></ul><h3>Keyboard</h3><table class="doc"><tr><th>Key</th><th>Does</th></tr><tr><td><kbd>⌘,</kbd></td><td>Open Settings</td></tr><tr><td><kbd>⌘F</kbd> in Settings</td><td>Find a setting</td></tr><tr><td><kbd>Esc</kbd></td><td>Back to where you were</td></tr></table><h3>Screen reader</h3><p>Settings has its own navigation landmark (“Settings sections”) after the main Places navigation. A section with something wrong says “needs attention” in its link name, not only with a badge.</p></section></div></div></main>
+<aside class="evidence" aria-labelledby="ev-s"><h2 id="ev-s">From the command line</h2>
+  <p class="small muted">Everything on this page can also be done with <code>iql</code>, so a script or an agent can read it — and the change shows here.</p>
+  <ul class="small" style="list-style:none;padding:0;display:grid;gap:.55rem"><li><code>iql --json doctor</code><br><span class="small muted">the same health checks as “Needs attention”</span></li><li><code>iql --json where</code><br><span class="small muted">which mailbox, and why</span></li><li><code>iql --json update --check</code><br><span class="small muted">is there a newer release</span></li></ul>
+  <h3 style="margin-top:1rem">When changes apply</h3><p class="small">Each setting says when it applies. Most apply at once; a few need a restart and say so.</p>
+  <h3 style="margin-top:1rem">Help</h3><p class="small"><a href="#">Settings guide</a></p></aside>
+</div>
+</body>
+</html>

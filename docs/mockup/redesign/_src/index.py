@@ -1,0 +1,111 @@
+from chrome import *
+
+body = head('Overview', 'The InboxQL redesign: vision, layout, screens and workflows.')
+body += banner('index.html')
+body += '''
+<main id="main" class="main" style="max-width:68rem;margin:0 auto" aria-labelledby="page-title">
+  <p class="crumbs">InboxQL redesign · draft mockups · October 31, 2026</p>
+  <h1 id="page-title">A mailbox you and your agents work through together</h1>
+  <p style="font-size:1.1rem;margin-top:.5rem" class="muted">The person decides; the machine does the reading.</p>
+  <p>Full text: <a href="VISION.md">VISION.md</a> — the vision, seven objectives and seven values these mockups are checked against.</p>
+
+  <section class="section" aria-labelledby="h-obj">
+    <h2 id="h-obj">Objectives, and where each is answered</h2>
+    <table class="doc"><thead><tr><th scope="col">Objective</th><th scope="col">Answered by</th></tr></thead><tbody>
+      <tr><td>1. One subject at a time</td><td><a href="subject.html">Subject page</a>, <a href="workflows.html#w2">W2</a></td></tr>
+      <tr><td>2. What needs me, first</td><td><a href="today.html">Today</a>, <a href="ahead.html">Ahead</a>, <a href="workflows.html#w1">W1</a>, <a href="workflows.html#w9">W9</a></td></tr>
+      <tr><td>3. Agents' work visible and reviewable</td><td><a href="conversation.html">Conversation evidence</a>, <a href="review.html">Review</a>, <a href="activity.html">Activity</a></td></tr>
+      <tr><td>4. The query is the interface</td><td><a href="query.html">Ask</a>, the query in every app bar, <a href="workflows.html#w7">W7</a></td></tr>
+      <tr><td>5. Fewer places</td><td><a href="palette.html">Palette</a>; the map below</td></tr>
+      <tr><td>6. Accessible by construction</td><td>Notes on every screen; the reading column of each workflow</td></tr>
+      <tr><td>7. Calm</td><td>Colour only for state: accent = you/selected, violet = agent, amber = needs a decision, red = conflict</td></tr>
+    </tbody></table>
+  </section>
+
+  <section class="section" aria-labelledby="h-layout">
+    <h2 id="h-layout">The layout</h2>
+    <p>Three fixed parts on every screen, replacing the tab-and-pane workspace. Free-form tabs are gone; there is no expert mode.</p>
+    <p><strong>The evidence panel is resizable.</strong> Drag the divider on its left edge, or Tab to the divider and use <kbd>←</kbd> <kbd>→</kbd> (<kbd>Shift</kbd> for bigger steps, <kbd>Home</kbd>/<kbd>End</kbd> for narrowest and widest). <kbd>Enter</kbd> on the divider, or <kbd>.</kbd> anywhere, hides and shows it; dragging it nearly shut hides it; a double-click resets it. The width is the same on every screen and is remembered. It is a standard window splitter, so a screen reader hears “Resize the evidence panel, separator, 352 pixels wide” and each change. Try it on any screen in these mockups. Below 1100 px the panel moves under the screen and the divider goes away.</p>
+    <div role="img" aria-label="Diagram: app bar with the query across the top; below it three columns: navigation (what needs me and pinned subjects), the subject in the middle, and the evidence on the right."
+         style="display:grid;grid-template-columns:1fr 2.2fr 1.3fr;grid-template-rows:auto 9rem;gap:4px;max-width:44rem;font-size:.85rem">
+      <div class="card" style="grid-column:1/4;padding:.4rem .6rem;background:var(--surface)"><strong>App bar</strong> — the query this screen shows · Go to… · Write · status</div>
+      <div class="card" style="padding:.5rem .6rem;background:var(--surface)"><strong>Needs me</strong><br>Today · To review · Drafts<br><strong>Subjects</strong><br>pinned people, topics, queries</div>
+      <div class="card" style="padding:.5rem .6rem"><strong>The subject</strong><br>Today, a person, a topic, a conversation, a query's results</div>
+      <div class="card" style="padding:.5rem .6rem;background:var(--surface)"><strong>The evidence</strong><br>what the agent concluded and why; facts; files; how the screen was made</div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="h-screens">
+    <h2 id="h-screens">Screens</h2>
+    <table class="doc"><thead><tr><th scope="col">Screen</th><th scope="col">For</th></tr></thead><tbody>
+      <tr><td><a href="today.html">Today</a></td><td>The home screen: replies owed, things to review, new mail by subject, and what is ahead.</td></tr>
+      <tr><td><a href="ahead.html">Ahead</a></td><td>Important dates as countdowns, then this week and next week day by day, or <a href="ahead-months.html">two months</a> as grids with what matters.</td></tr>
+      <tr><td><a href="subject.html">Subject</a></td><td>One person (or topic, label, query): open loops, then everything in one stream; facts and money in the evidence panel.</td></tr>
+      <tr><td><a href="topic.html">Subject: a topic</a></td><td>Kitchen remodel: the next step, open loops, money against the quote, dates, cards and people.</td></tr>
+      <tr><td><a href="q4.html">Subject: a document</a></td><td>Q4 report: versions of the file, what is owed, and the dates up to the deadline.</td></tr>
+      <tr><td><a href="replies.html">Replies I owe</a></td><td>Every conversation waiting on you, deadlines first; waiting on others one tab away.</td></tr>
+      <tr><td><a href="outbox.html">Drafts and outbox</a></td><td>Outgoing mail not yet gone: waiting for your Send, failed with a reason, drafts.</td></tr>
+      <tr><td><a href="inbox.html">Inbox</a></td><td>The inbox as a list, with filters that are query terms and bulk actions.</td></tr>
+      <tr><td><a href="everything.html">Everything</a></td><td>All mail in every account, with where each message is and who moved it.</td></tr>
+      <tr><td><a href="calendar.html">Calendar</a></td><td>The week, with agent proposals placed where they would go.</td></tr>
+      <tr><td><a href="board.html">Board</a></td><td>Lists of cards, proposals first, each card tied to its mail.</td></tr>
+      <tr><td><a href="files.html">Files</a></td><td>One row per distinct file, how often it was sent, and what is known about its contents.</td></tr>
+      <tr><td><a href="people.html">People</a></td><td>A directory with open loops both ways; organisations and systems kept apart.</td></tr>
+      <tr><td><a href="ask.html">Ask in words</a></td><td>A question in plain words, answered by Claude Code or agy on this computer, with the rows, quotes and commands behind the answer.</td></tr>
+      <tr><td><a href="phone-app.html">Phone app</a></td><td>Installed from Chrome, reached over Tailscale, allowed once from the Mac; reminders as Android notifications.</td></tr>
+      <tr><td><a href="help.html">Help</a></td><td>Built-in guides and release notes; <a href="help-here.html"><kbd>?</kbd> on any screen</a> for that screen’s own help; <a href="help-guide.html">guides with examples that run on your mail</a>.</td></tr>
+      <tr><td><a href="settings.html">Settings</a></td><td>An overview that leads with what needs attention, then five sections: <a href="settings-accounts.html">accounts</a>, <a href="settings-agents.html">agents and AI</a>, <a href="settings-reading.html">reading and appearance</a>, <a href="settings-data.html">your data</a>, <a href="settings-computer.html">this computer</a>.</td></tr>
+      <tr><td><a href="conversation.html">Conversation</a></td><td>Reading, with each agent conclusion tied to the words behind it, and correctable.</td></tr>
+      <tr><td><a href="review.html">To review</a></td><td>One queue for mail to send, calendar and card proposals, and blind checks of the agent.</td></tr>
+      <tr><td><a href="compose.html">Reply</a></td><td>Writing beside the conversation; agent drafts leave your decisions as form controls.</td></tr>
+      <tr><td><a href="query.html">Ask</a></td><td>Shown on “Receipts 2026”, a saved query. The query as text, as chips in words, and as results — list, conversations, totals, charts with tables.</td></tr>
+      <tr><td><a href="palette.html">Go to…</a></td><td>The command palette: people, subjects, actions and queries by name.</td></tr>
+      <tr><td><a href="activity.html">Agent activity</a></td><td>Everything agents and rules did, by pass, with cost and Undo.</td></tr>
+      <tr><td><a href="mobile.html">Phone</a></td><td>Today, Review and a Subject at phone width, with a four-place bottom bar.</td></tr>
+      <tr><td><a href="workflows.html">Workflows</a></td><td>Twelve workflows, step by step, with keys and what a screen reader hears.</td></tr>
+    </tbody></table>
+  </section>
+
+  <section class="section" aria-labelledby="h-map">
+    <h2 id="h-map">Where today's places go</h2>
+    <table class="doc"><thead><tr><th scope="col">Today</th><th scope="col">In the redesign</th></tr></thead><tbody>
+      <tr><td>Welcome</td><td>Today</td></tr>
+      <tr><td>Desk (rail, query, results)</td><td>Ask, plus Subjects in the navigation; the inbox is a section of Today</td></tr>
+      <tr><td>Viewer tab</td><td>Conversation, in the middle column — not a tab</td></tr>
+      <tr><td>Analytics dashboard</td><td>“Show as” charts in Ask; each widget becomes a saved query</td></tr>
+      <tr><td>Board</td><td>Cards appear in their subjects and in Review; the Board stays as a place for planning</td></tr>
+      <tr><td>Calendar</td><td>Stays as a place; proposals move to Review; events appear in subjects</td></tr>
+      <tr><td>Intelligence → Waiting for approval, Work loop</td><td>Review (approvals and checks) and Activity (what was done, accuracy)</td></tr>
+      <tr><td>Contact card</td><td>Subject page for a person</td></tr>
+      <tr><td>Files</td><td>Files filter in every subject; Files stays as a place</td></tr>
+      <tr><td>Annotators, Elements, Windows, Log, Settings</td><td><a href="settings.html">Settings</a>: six sections instead of eleven (desktop only)</td></tr>
+    </tbody></table>
+  </section>
+
+  <section class="section" aria-labelledby="h-open">
+    <h2 id="h-open">Decided in review · Nov 1, 2026</h2>
+    <p><strong>Being built:</strong> <a href="plan.html">the implementation plan and tracker</a>.</p>
+    <table class="doc"><thead><tr><th scope="col">Question</th><th scope="col">Decision</th></tr></thead><tbody>
+      <tr><td>Does the inbox keep its own place in the navigation?</td><td><strong>Yes.</strong> <a href="inbox.html">Inbox</a> stays under Mail.</td></tr>
+      <tr><td>Does a topic get its own page?</td><td><strong>Yes, from the start.</strong> <a href="topic.html">Kitchen remodel</a>.</td></tr>
+      <tr><td>Free-form tabs as an expert mode?</td><td><strong>No.</strong> Removed; no expert mode.</td></tr>
+      <tr><td>“Ask in words” in the first build?</td><td><strong>Yes</strong>, answered by an agent CLI the person already uses (Claude Code, agy): <a href="ask.html">Ask in words</a>. A terminal panel is deferred until this has been tried.</td></tr>
+      <tr><td>Is the phone a real target?</td><td><strong>Yes</strong>: <a href="phone-app.html">installed from Chrome, reached over Tailscale</a>, allowed once from the Mac.</td></tr>
+      <tr><td>Do important dates notify you?</td><td><strong>Yes</strong>, in the days leading up to them.</td></tr>
+      <tr><td>Birthdays and anniversaries?</td><td><strong>From contacts</strong> <span class="planned">planned</span>.</td></tr>
+    </tbody></table>
+  </section>
+
+  <section class="notes" aria-labelledby="notes-index">
+    <h2 id="notes-index">How to read these mockups</h2>
+    <ul>
+      <li>Static HTML, made-up people and data; nothing talks to a server. Buttons don't do anything.</li>
+      <li>Each screen has an <strong>About this screen</strong> section below it: purpose, numbered callouts (<span class="callout">1</span>), keyboard, screen reader, and its workflows.</li>
+      <li>Use “Show dark theme” in the banner to check both themes. Narrow the window to see the tablet and phone layouts.</li>
+      <li><span class="planned">planned</span> marks something not built in InboxQL today.</li>
+    </ul>
+  </section>
+</main>
+'''
+body += foot()
+write('index.html', body)

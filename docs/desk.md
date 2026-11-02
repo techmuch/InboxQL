@@ -7,7 +7,7 @@ label, a filter, a few words. Underneath, it is all one query: the Inbox is
 as the terms you could have typed, so the Desk teaches the query language
 simply by being used.
 
-Open it from **Go → Desk**, or press **g** then **d**.
+Open it from **Inbox** or **Everything** in the left-hand pane, or press **g** then **i** (Inbox), **g e** (Everything) or **g m** (wherever you left it). Its rail of folders and labels can be put away with **‹ Hide folders and labels**.
 
 ## The rail
 
@@ -226,7 +226,7 @@ cards — happens inside one kind, where an action means one thing.
 
 ## Conversations
 
-Settings → General → [**Inbox Layout**](#setting/inbox-layout) (or **View → Conversations**) chooses between one row per message,
+Settings → General → [**Inbox Layout**](#setting/inbox-layout) chooses between one row per message,
 newest first, and **one row per conversation**: messages grouped into the
 conversation they belong to, together with any tickets and drafts it produced.
 
@@ -241,20 +241,20 @@ unrelated messages that happen to share a subject are not merged. A client
 that leaves that header out can split one conversation into several, which is
 the safer mistake.
 
-## Viewer tabs
+## Reading
 
-Messages, contacts and files open in viewer tabs. Settings → General →
-[**Viewer Tabs**](#setting/viewer-tabs), or **View → Viewer tabs**, chooses between **one shared tab**, where opening anything
-replaces what was there, and **a tab for each kind**, so opening a file leaves
-the message you were reading where it was.
+The message under the cursor is shown in the evidence panel on the right, so
+moving down the list reads each one in turn. **Enter** opens it on its own,
+with **Back** (or **Esc**) to return to the list where you left it. The panel
+can be widened, narrowed or hidden: drag its edge, or press **.**.
 
 **Attachment Previews** decides where a file you click on opens: **in the
-message**, below its attachment chips; **in the File tab**, on its own, with
+message**, below its attachment chips; **on its own**, with
 every message that carried it; or **both at once**.
 
 ## Writing mail
 
-**Compose**, **File → New message** or **c** opens a new message. **Send**
+**Compose**, **Write** at the top or **c** opens a new message. **Send**
 (or **⌘/Ctrl+Enter**) sends it: a bar at the bottom left counts down a few
 seconds with **Undo**, which brings it back to Drafts, and then says it went.
 **Save draft** keeps it under Drafts; open it there and press **Send** when it
@@ -266,7 +266,7 @@ it, the bar says why and the message waits in Drafts.
 
 ## Waiting for approval
 
-**Intelligence → [Waiting for approval](#open/approvals)** (**g a**) gathers everything waiting
+**[To review](#open/review)** (**g r**) gathers everything waiting
 on you in one place: cards an extractor proposed (**Accept** or **Reject**),
 calendar changes an agent proposed (**Approve** or **Reject**), and mail
 queued in the outbox — typically written by an agent — with **Send** and
@@ -294,7 +294,7 @@ into a field are never taken, so none of these get in the way of writing.
 | g s | Settings |
 | c | new message |
 | t | new task |
-| ? | this list, in the app (**Help → Keyboard shortcuts**) |
+| ? | help for the screen you are on, then every key |
 | ↑ ↓ | move through a list |
 | Enter | open the row |
 | e | archive the selection, or the row you are on |
@@ -331,28 +331,29 @@ star, sender, similar, a label) are for the mouse; each is a key on the row
 instead, so nothing inside a row takes focus. Clearing and going back are
 announced, and **Back** and **Clear** are named for where they go.
 
-## Everything is a tab
+## Places, not tabs
 
-The Desk, Contacts, the Board, Settings and the rest are tabs in one window,
-and you can split and rearrange them. The layout is remembered per browser.
+The Desk, the Calendar, the Board, Settings and the rest are places: one on
+screen at a time, in the middle of the window, with the places listed on the
+left and the evidence on the right. Back returns to where you were.
 
 ### Windows
 
-**View → [Windows](#open/windows)** lists every window you have open on this
+**[Windows](#open/windows)** (Go to… → Windows) lists every window you have open on this
 mailbox: its name, whether it is live, and what it is showing — its query and
-its tabs. Each also says what it was last told and why, which is useful when
+the places it has visited. Each also says what it was last told and why, which is useful when
 an agent has pointed one of them at something, because what it did is
 recorded there. The box on a window's card points it at a query yourself.
 
-![The Windows tab, showing this window and what it is showing](images/windows.webp)
+![Windows, showing this window and what it is showing](images/windows.webp)
 
 ### The Log
 
-**View → [Log](#open/log)** is what InboxQL has been doing — syncs, imports,
+**[Log](#open/log)** (Go to… → Log) is what InboxQL has been doing — syncs, imports,
 annotator runs, model calls, slow queries — newest first, each line with its
 level and the part of the program that wrote it.
 
-![The Log tab, with its showing and recording controls](images/log.webp)
+![The Log, with its showing and recording controls](images/log.webp)
 
 Two controls look alike and are not. **showing** hides lines that were
 recorded; **recording** decides what is written at all. Debug is loud — a sync
@@ -365,7 +366,7 @@ The same lines are a query, which is where questions get asked:
 
 ### The Dashboard
 
-**Go → Dashboard** (**Ctrl+Shift+D**) charts the folder you are in: how
+**Dashboard** (Go to… → Dashboard, **Ctrl+Shift+D**) charts the folder you are in: how
 much arrived each day of a year, who writes most, what it is about, how much
 of it matters, and whether people or systems sent it. It charts the Desk's
 query, so the folder stands in front as a chip — *Inbox ›* — with a picker to

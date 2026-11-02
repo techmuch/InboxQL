@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ahead · two months · InboxQL redesign</title>
+<meta name="description" content="Ahead over two months: important dates, then November and December as grids with a list of what matters.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="next:2mo OR is:important" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html" aria-current="page">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav>
+<main id="main" class="main" aria-labelledby="page-title">
+  <div class="page-head">
+    <div class="grow">
+      <p class="crumbs"><a href="today.html">Today</a> · Saturday, October 31</p>
+      <h1 id="page-title">Ahead · two months</h1>
+      <p class="muted" style="margin-top:.3rem"><span class="callout" aria-hidden="true">1</span>
+        November is busier than usual in its first two weeks, then quiet: you travel <strong>Nov 25 – 29</strong>.
+        December has <strong>2 important dates</strong> and a lead time starting on the 3rd.</p>
+    </div>
+  </div>
+  <nav class="tabs" aria-label="How far ahead"><a href="ahead.html" aria-keyshortcuts="w">Two weeks <kbd>w</kbd></a><a href="ahead-months.html" aria-current="page" aria-keyshortcuts="m">Two months <kbd>m</kbd></a><span style="flex:1"></span><span class="small muted" style="align-self:center">Weeks start Monday · <a href="#">change</a></span></nav>
+
+  <section class="section" aria-labelledby="h-imp">
+    <header><h2 id="h-imp" class="grow">Important dates</h2><a class="small" href="ahead.html#h-imp">Manage</a></header>
+    <ul class="countdowns" aria-label="Important dates, soonest first"><li class="cd soon compact" aria-label="Q4 report to the board, Tue, Nov 10, in 10 days. Within its lead time."><span class="n" aria-hidden="true">10 <small>days</small></span><span class="what" aria-hidden="true">Q4 report to the board</span><span class="when" aria-hidden="true">Tue, Nov 10</span></li><li class="cd  compact" aria-label="Flight to Denver, Wed, Nov 25, in 25 days"><span class="n" aria-hidden="true">25 <small>days</small></span><span class="what" aria-hidden="true">Flight to Denver</span><span class="when" aria-hidden="true">Wed, Nov 25 · Lumen Air LA 418, 7:05 AM</span></li><li class="cd  compact" aria-label="Passport expires, Thu, Jan 14, 2027, in 75 days"><span class="n" aria-hidden="true">75 <small>days</small></span><span class="what" aria-hidden="true">Passport expires</span><span class="when" aria-hidden="true">Thu, Jan 14, 2027</span></li><li class="cd  compact" aria-label="Anniversary, Sat, Dec 12, in 42 days"><span class="n" aria-hidden="true">42 <small>days</small></span><span class="what" aria-hidden="true">Anniversary</span><span class="when" aria-hidden="true">Sat, Dec 12</span></li></ul>
+  </section>
+
+  <section class="section" aria-labelledby="h-oct">
+    <header><h2 id="h-oct" class="grow">This month <span class="muted">· October, 1 day left</span></h2></header>
+    <p class="card small" style="padding:.45rem .85rem">Today: Trunk-or-treat at 6:00 PM. Nothing else — <a href="ahead.html">see this week</a>.</p>
+  </section>
+
+  <section class="section" aria-labelledby="h-nov">
+    <header><h2 id="h-nov" class="grow">November <span class="callout" aria-hidden="true">2</span></h2><a class="small" href="#">Open in Calendar</a></header>
+    <p class="small" style="margin:0 0 .5rem">31 events (38 h booked), 4 things due, 1 trip, 1 important date. Busiest week: Nov 2–8 (14 h). Quietest: Nov 23–29, while you are away.</p>
+    <div style="overflow-x:auto" tabindex="0" role="region" aria-label="November 2026 grid"><table class="month"><caption class="sr-only">November 2026</caption><thead><tr><th scope="col"><abbr title="Monday">Mon</abbr></th><th scope="col"><abbr title="Tuesday">Tue</abbr></th><th scope="col"><abbr title="Wednesday">Wed</abbr></th><th scope="col"><abbr title="Thursday">Thu</abbr></th><th scope="col"><abbr title="Friday">Fri</abbr></th><th scope="col"><abbr title="Saturday">Sat</abbr></th><th scope="col"><abbr title="Sunday">Sun</abbr></th></tr></thead><tbody><tr><td class="out"><span class="dn"><span aria-hidden="true">26</span><span class="sr-only">Mon Oct 26</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">27</span><span class="sr-only">Tue Oct 27</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">28</span><span class="sr-only">Wed Oct 28</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">29</span><span class="sr-only">Thu Oct 29</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">30</span><span class="sr-only">Fri Oct 30</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">31</span><span class="sr-only">Sat Oct 31</span></span></td><td><span class="dn"><span aria-hidden="true">1</span><span class="sr-only">Sun Nov 1</span></span><span class="ev" title="Clocks back">Clocks back</span><span class="ev" title="Ward council">Ward council</span></td></tr><tr><td><span class="dn"><span aria-hidden="true">2</span><span class="sr-only">Mon Nov 2</span></span><span class="ev agent" title="Cabinets">Cabinets</span><span class="ev" title="Reply Rafael">Reply Rafael</span><span class="more">+1</span></td><td><span class="dn"><span aria-hidden="true">3</span><span class="sr-only">Tue Nov 3</span></span><span class="ev" title="Election Day">Election Day</span><span class="ev" title="Q4 call">Q4 call</span><span class="more">+1</span></td><td><span class="dn"><span aria-hidden="true">4</span><span class="sr-only">Wed Nov 4</span></span><span class="ev agent" title="Delivery">Delivery</span><span class="ev" title="Youth">Youth</span></td><td><span class="dn"><span aria-hidden="true">5</span><span class="sr-only">Thu Nov 5</span></span><span class="ev" title="Dentist">Dentist</span><span class="ev" title="Conference">Conference</span></td><td><span class="dn"><span aria-hidden="true">6</span><span class="sr-only">Fri Nov 6</span></span><span class="ev" title="Q4 numbers due">Q4 numbers due</span><span class="ev" title="Lunch">Lunch</span></td><td><span class="dn"><span aria-hidden="true">7</span><span class="sr-only">Sat Nov 7</span></span><span class="ev" title="Carpool?">Carpool?</span></td><td><span class="dn"><span aria-hidden="true">8</span><span class="sr-only">Sun Nov 8</span></span><span class="ev" title="Ward council">Ward council</span></td></tr><tr><td><span class="dn"><span aria-hidden="true">9</span><span class="sr-only">Mon Nov 9</span></span></td><td class="imp"><span class="dn"><span aria-hidden="true">10</span><span class="sr-only">Tue Nov 10</span></span><span class="ev imp" title="Q4 report">Q4 report</span></td><td><span class="dn"><span aria-hidden="true">11</span><span class="sr-only">Wed Nov 11</span></span><span class="ev" title="Veterans Day">Veterans Day</span></td><td><span class="dn"><span aria-hidden="true">12</span><span class="sr-only">Thu Nov 12</span></span></td><td><span class="dn"><span aria-hidden="true">13</span><span class="sr-only">Fri Nov 13</span></span><span class="ev" title="Book club">Book club</span></td><td><span class="dn"><span aria-hidden="true">14</span><span class="sr-only">Sat Nov 14</span></span></td><td><span class="dn"><span aria-hidden="true">15</span><span class="sr-only">Sun Nov 15</span></span><span class="ev" title="Ward council">Ward council</span></td></tr><tr><td><span class="dn"><span aria-hidden="true">16</span><span class="sr-only">Mon Nov 16</span></span></td><td><span class="dn"><span aria-hidden="true">17</span><span class="sr-only">Tue Nov 17</span></span><span class="ev" title="Inspection due">Inspection due</span></td><td><span class="dn"><span aria-hidden="true">18</span><span class="sr-only">Wed Nov 18</span></span></td><td class="imp"><span class="dn"><span aria-hidden="true">19</span><span class="sr-only">Thu Nov 19</span></span><span class="ev imp" title="Ruth’s birthday">Ruth’s birthday</span><span class="ev" title="Dentist cleaning">Dentist cleaning</span></td><td><span class="dn"><span aria-hidden="true">20</span><span class="sr-only">Fri Nov 20</span></span></td><td><span class="dn"><span aria-hidden="true">21</span><span class="sr-only">Sat Nov 21</span></span></td><td><span class="dn"><span aria-hidden="true">22</span><span class="sr-only">Sun Nov 22</span></span><span class="ev" title="Ward council">Ward council</span></td></tr><tr><td><span class="dn"><span aria-hidden="true">23</span><span class="sr-only">Mon Nov 23</span></span></td><td><span class="dn"><span aria-hidden="true">24</span><span class="sr-only">Tue Nov 24</span></span></td><td class="imp"><span class="dn"><span aria-hidden="true">25</span><span class="sr-only">Wed Nov 25</span></span><span class="ev imp" title="Fly to Denver">Fly to Denver</span></td><td><span class="dn"><span aria-hidden="true">26</span><span class="sr-only">Thu Nov 26</span></span><span class="ev" title="Thanksgiving">Thanksgiving</span></td><td><span class="dn"><span aria-hidden="true">27</span><span class="sr-only">Fri Nov 27</span></span></td><td><span class="dn"><span aria-hidden="true">28</span><span class="sr-only">Sat Nov 28</span></span></td><td><span class="dn"><span aria-hidden="true">29</span><span class="sr-only">Sun Nov 29</span></span><span class="ev" title="Fly home">Fly home</span></td></tr><tr><td><span class="dn"><span aria-hidden="true">30</span><span class="sr-only">Mon Nov 30</span></span><span class="ev agent" title="Registration">Registration</span></td><td class="out"><span class="dn"><span aria-hidden="true">1</span><span class="sr-only">Tue Dec 1</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">2</span><span class="sr-only">Wed Dec 2</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">3</span><span class="sr-only">Thu Dec 3</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">4</span><span class="sr-only">Fri Dec 4</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">5</span><span class="sr-only">Sat Dec 5</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">6</span><span class="sr-only">Sun Dec 6</span></span></td></tr></tbody></table></div>
+    <h3 style="margin-top:1rem">What matters in November <span class="callout" aria-hidden="true">3</span></h3>
+    <ul class="items card" style="padding:.6rem .85rem;margin-top:.6rem"><li><span class="t">Tue 10</span><span class="k">Due</span><span ><span class="imp">Q4 report to the board</span></span></li><li><span class="t">Tue 17</span><span class="k">Due</span><span >Kitchen rough-in inspection<span class="chip">card</span></span></li><li><span class="t">Thu 19</span><span class="k">Birthday</span><span ><span class="imp">Grandma Ruth turns 84</span><span class="chip">from contacts</span></span></li><li><span class="t">Wed 25</span><span class="k">Trip</span><span ><span class="imp">Fly to Denver, Lumen Air LA 418, 7:05 AM</span></span></li><li><span class="t">Thu 26</span><span class="k">Holiday</span><span >Thanksgiving</span></li><li><span class="t">Sun 29</span><span class="k">Trip</span><span >Fly home, LA 421, 4:40 PM</span></li><li><span class="t">Mon 30</span><span class="k">Due</span><span >Car registration renewal<span class="chip agent">agent found in mail</span></span></li></ul>
+  </section>
+
+  <section class="section" aria-labelledby="h-dec">
+    <header><h2 id="h-dec" class="grow">December</h2><a class="small" href="#">Open in Calendar</a></header>
+    <p class="small" style="margin:0 0 .5rem">18 events so far (21 h), 1 thing due, 2 important dates. Calendars usually fill in later: last December ended with 34 events.</p>
+    <div style="overflow-x:auto" tabindex="0" role="region" aria-label="December 2026 grid"><table class="month"><caption class="sr-only">December 2026</caption><thead><tr><th scope="col"><abbr title="Monday">Mon</abbr></th><th scope="col"><abbr title="Tuesday">Tue</abbr></th><th scope="col"><abbr title="Wednesday">Wed</abbr></th><th scope="col"><abbr title="Thursday">Thu</abbr></th><th scope="col"><abbr title="Friday">Fri</abbr></th><th scope="col"><abbr title="Saturday">Sat</abbr></th><th scope="col"><abbr title="Sunday">Sun</abbr></th></tr></thead><tbody><tr><td class="out"><span class="dn"><span aria-hidden="true">30</span><span class="sr-only">Mon Nov 30</span></span></td><td><span class="dn"><span aria-hidden="true">1</span><span class="sr-only">Tue Dec 1</span></span></td><td><span class="dn"><span aria-hidden="true">2</span><span class="sr-only">Wed Dec 2</span></span></td><td class="imp"><span class="dn"><span aria-hidden="true">3</span><span class="sr-only">Thu Dec 3</span></span><span class="ev imp" title="Start passport">Start passport</span></td><td><span class="dn"><span aria-hidden="true">4</span><span class="sr-only">Fri Dec 4</span></span></td><td><span class="dn"><span aria-hidden="true">5</span><span class="sr-only">Sat Dec 5</span></span></td><td><span class="dn"><span aria-hidden="true">6</span><span class="sr-only">Sun Dec 6</span></span><span class="ev" title="Ward council">Ward council</span></td></tr><tr><td><span class="dn"><span aria-hidden="true">7</span><span class="sr-only">Mon Dec 7</span></span></td><td><span class="dn"><span aria-hidden="true">8</span><span class="sr-only">Tue Dec 8</span></span></td><td><span class="dn"><span aria-hidden="true">9</span><span class="sr-only">Wed Dec 9</span></span><span class="ev" title="Choir">Choir</span></td><td><span class="dn"><span aria-hidden="true">10</span><span class="sr-only">Thu Dec 10</span></span></td><td><span class="dn"><span aria-hidden="true">11</span><span class="sr-only">Fri Dec 11</span></span></td><td class="imp"><span class="dn"><span aria-hidden="true">12</span><span class="sr-only">Sat Dec 12</span></span><span class="ev imp" title="Anniversary">Anniversary</span></td><td><span class="dn"><span aria-hidden="true">13</span><span class="sr-only">Sun Dec 13</span></span><span class="ev" title="Ward council">Ward council</span></td></tr><tr><td><span class="dn"><span aria-hidden="true">14</span><span class="sr-only">Mon Dec 14</span></span></td><td><span class="dn"><span aria-hidden="true">15</span><span class="sr-only">Tue Dec 15</span></span><span class="ev" title="Q4 close">Q4 close</span></td><td><span class="dn"><span aria-hidden="true">16</span><span class="sr-only">Wed Dec 16</span></span></td><td><span class="dn"><span aria-hidden="true">17</span><span class="sr-only">Thu Dec 17</span></span></td><td><span class="dn"><span aria-hidden="true">18</span><span class="sr-only">Fri Dec 18</span></span><span class="ev" title="School ends">School ends</span></td><td><span class="dn"><span aria-hidden="true">19</span><span class="sr-only">Sat Dec 19</span></span></td><td><span class="dn"><span aria-hidden="true">20</span><span class="sr-only">Sun Dec 20</span></span><span class="ev" title="Ward council">Ward council</span></td></tr><tr><td><span class="dn"><span aria-hidden="true">21</span><span class="sr-only">Mon Dec 21</span></span></td><td><span class="dn"><span aria-hidden="true">22</span><span class="sr-only">Tue Dec 22</span></span></td><td><span class="dn"><span aria-hidden="true">23</span><span class="sr-only">Wed Dec 23</span></span></td><td><span class="dn"><span aria-hidden="true">24</span><span class="sr-only">Thu Dec 24</span></span><span class="ev" title="Christmas Eve">Christmas Eve</span></td><td><span class="dn"><span aria-hidden="true">25</span><span class="sr-only">Fri Dec 25</span></span><span class="ev" title="Christmas">Christmas</span></td><td><span class="dn"><span aria-hidden="true">26</span><span class="sr-only">Sat Dec 26</span></span></td><td><span class="dn"><span aria-hidden="true">27</span><span class="sr-only">Sun Dec 27</span></span><span class="ev" title="Ward council">Ward council</span></td></tr><tr><td><span class="dn"><span aria-hidden="true">28</span><span class="sr-only">Mon Dec 28</span></span></td><td><span class="dn"><span aria-hidden="true">29</span><span class="sr-only">Tue Dec 29</span></span></td><td><span class="dn"><span aria-hidden="true">30</span><span class="sr-only">Wed Dec 30</span></span></td><td><span class="dn"><span aria-hidden="true">31</span><span class="sr-only">Thu Dec 31</span></span><span class="ev" title="New Year’s Eve">New Year’s Eve</span></td><td class="out"><span class="dn"><span aria-hidden="true">1</span><span class="sr-only">Fri Jan 1</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">2</span><span class="sr-only">Sat Jan 2</span></span></td><td class="out"><span class="dn"><span aria-hidden="true">3</span><span class="sr-only">Sun Jan 3</span></span></td></tr></tbody></table></div>
+    <h3 style="margin-top:1rem">What matters in December</h3>
+    <ul class="items card" style="padding:.6rem .85rem;margin-top:.6rem"><li><span class="t">Thu 3</span><span class="k">Lead</span><span ><span class="imp">Start renewing your passport (expires Jan 14)</span></span></li><li><span class="t">Sat 12</span><span class="k">Date</span><span ><span class="imp">Anniversary</span></span></li><li><span class="t">Tue 15</span><span class="k">Due</span><span >Q4 close<span class="chip">card</span></span></li><li><span class="t">Fri 18</span><span class="k">Event</span><span >Last day of school before the break</span></li><li><span class="t">Thu 24 – Fri 25</span><span class="k">Holiday</span><span >Christmas</span></li></ul>
+  </section>
+
+  <section class="notes" aria-labelledby="notes-months">
+    <h2 id="notes-months">About this screen</h2>
+    <p><strong>Purpose.</strong> The long view: what the next two months hold, where the busy and empty stretches are, and what is coming that needs preparing for. It is for planning, not for working through items — that is the two-week view and Today.</p>
+    <h3>Callouts</h3>
+    <ol>
+      <li><span class="callout">1</span> The summary sentence is about shape: busy or quiet, away or home, and what has a lead time. On the last day of a month, “this month” is one line and the next two months are shown in full.</li>
+      <li><span class="callout">2</span> Each month is a grid for the eye, with a sentence above it that says the same thing in words. Important dates are tinted and starred; agent-found dates are violet. At phone width the grid shows only day numbers and stars, and the list below carries the words.</li>
+      <li><span class="callout">3</span> <strong>What matters</strong> is the month without routine: important dates, due dates, trips, holidays and anything agent-found. Weekly repeats (Ward council) are left out here; they are in the grid and the calendar.</li>
+    </ol>
+    <h3>Screen reader</h3>
+    <p>The month grid is a real table with a caption and day-of-week column headers, inside a focusable region. It is optional: the sentence and the “What matters” list say everything the grid shows except the routine.</p>
+    <h3>Workflows</h3>
+    <p><a href="workflows.html#w9">W9 Look ahead</a> · <a href="workflows.html#w10">W10 Mark a date as important</a></p>
+  </section>
+</main>
+
+<aside class="evidence" aria-labelledby="ev-ahead">
+  <h2 id="ev-ahead">How this was made</h2>
+  <p class="small muted">One page over several kinds of thing. Each line is a query you can open.</p>
+  <dl class="kv" style="margin:.5rem 0 1rem">
+    <dt>Events</dt><dd><code>in:events next:2mo</code></dd>
+    <dt>Due</dt><dd><code>in:tickets due:2mo</code></dd>
+    <dt>Reply by</dt><dd><code>awaiting:me has:deadline</code> <span class="planned">planned</span></dd>
+    <dt>Trips</dt><dd><code>extract:travel.start&lt;2mo</code></dd>
+    <dt>Deliveries</dt><dd><code>extract:receipts.arrives&lt;2mo</code> <span class="planned">planned</span></dd>
+    <dt>Important</dt><dd><code>is:important</code> <span class="planned">planned</span></dd>
+  </dl>
+  <h3>Compared with your usual</h3><p class="small">“Busier than usual” compares hours booked with the same weeks over the last six months: November’s first fortnight is 31 h against a usual 22 h.</p>
+  <h3 style="margin-top:1rem">Not shown</h3>
+  <ul class="small" style="padding-left:1.1rem">
+    <li>The <strong>Family</strong> calendar is hidden here — <a href="#">show it</a></li>
+    <li>3 conversations mention a date the agent has not read yet; they will appear after its next pass</li>
+    <li>Agent-proposed events show marked, and are not counted in hours booked until you approve them</li>
+  </ul>
+</aside>
+</div>
+</body>
+</html>

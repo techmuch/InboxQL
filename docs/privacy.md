@@ -117,7 +117,7 @@ contract.
 Calendar changes an agent proposes still wait for you to approve them.
 
 When an agent moves one of your windows to show you something, the window says
-what it was told and why, and **View → [Windows](#open/windows)** keeps the record.
+what it was told and why, and **[Windows](#open/windows)** (Go to… → Windows) keeps the record.
 
 ## The log
 

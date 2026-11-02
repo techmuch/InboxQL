@@ -101,19 +101,6 @@ describe('BrowserStoragePanel', () => {
     });
   });
 
-  it('resets layout when Reset Layout is clicked', async () => {
-    localStorage.setItem('nexus-shell-layout', JSON.stringify({ root: {} }));
-
-    render(<BrowserStoragePanel />);
-    expect(localStorage.getItem('nexus-shell-layout')).not.toBeNull();
-
-    const resetBtn = screen.getByRole('button', { name: /Reset Layout/i });
-    fireEvent.click(resetBtn);
-
-    expect(localStorage.getItem('nexus-shell-layout')).toBeNull();
-    expect(await screen.findByText(/Workspace layout reset/)).toBeDefined();
-  });
-
   it('copies item value to clipboard when copy button is clicked', async () => {
     const writeTextMock = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, {

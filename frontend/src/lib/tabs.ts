@@ -1,111 +1,28 @@
-import { useLayoutStore } from 'nexus-shell';
 import { create } from 'zustand';
 import { useQueryStore } from './filters';
+import { goTo, normalisePlace, usePlaceStore } from './places';
 
 /**
- * Opening workbench tabs from anywhere.
+ * Opening things from anywhere.
  *
- * This used to live inside App as a closure, which meant only App could open a
- * tab. Components deeper in the tree — the mail list wanting to show a message,
- * the importer wanting to show its errors — had no way to reach it.
+ * This used to open workbench tabs. The workspace is now places — one screen
+ * at a time in a fixed frame — so `openTool` goes to a place instead, and the
+ * name stayed because every surface in the application already calls it.
+ * See lib/places.ts.
  */
 
-/** Component id of the Desk tab. */
+/** Place id of the mail list. */
 export const DESK_TAB = 'desk';
-/** Component id of the query tab, aliased to Desk. */
+/** The query place, the same as the mail list. */
 export const QUERY_TAB = 'desk';
 
-const DESK_ALIASES = new Set(['desk', 'mail', 'query']);
-const VIEWER_ALIASES = new Set(['viewer', 'message']);
-
 /**
- * Open a tab, or focus it if it is already open.
- *
- * Focusing rather than duplicating is the whole point: clicking ten messages
- * should reuse one viewer, not leave ten identical tabs behind.
+ * Go to a place. The label is no longer shown anywhere — a place's name comes
+ * from the left-hand pane — but callers still pass it, and it costs nothing
+ * to keep the signature they were written against.
  */
-export const openTool = (id: string, label: string): void => {
-  // Normalize legacy tab IDs so old aliases ('mail', 'query') always route to 'desk'.
-  if (DESK_ALIASES.has(id)) {
-    id = 'desk';
-    label = 'Desk';
-  }
-  // The id is normalised and the label is not. A layout persisted under the
-  // old 'message' component must still resolve, but the caller's label is a
-  // real choice now: the same tab is "Viewer" when it holds all three kinds
-  // and "Message" when split mode gives contacts and files their own.
-  if (VIEWER_ALIASES.has(id)) {
-    id = 'viewer';
-  }
-
-  const layout = useLayoutStore.getState();
-  const model = layout.model;
-  if (!model) return;
-
-  let existing: string | null = null;
-  const legacyToRename: string[] = [];
-
-  model.visitNodes((node: any) => {
-    if (node.getType() === 'tab') {
-      const comp = node.getComponent();
-      if (comp === id ||
-          (id === 'desk' && DESK_ALIASES.has(comp)) ||
-          (id === 'viewer' && VIEWER_ALIASES.has(comp))) {
-        if (!existing) {
-          const tabId = node.getId();
-          existing = tabId;
-          // A tab persisted under an old id keeps its old name until it is
-          // renamed, so "Message" would sit in the tab bar indefinitely after
-          // the rename to Viewer.
-          if (comp !== id || node.getName() !== label) {
-            legacyToRename.push(tabId);
-          }
-        }
-      }
-    }
-  });
-
-  for (const tabId of legacyToRename) {
-    try {
-      model.doAction({ type: 'FlexLayout_RenameTab', data: { node: tabId, text: label } } as any);
-    } catch {}
-    try {
-      model.doAction({
-        type: 'FlexLayout_UpdateNodeAttributes',
-        data: { node: tabId, json: { component: id, name: label } }
-      } as any);
-    } catch {}
-    const node: any = model.getNodeById(tabId);
-    if (node?._attributes) {
-      node._attributes.name = label;
-      node._attributes.component = id;
-    }
-  }
-
-  if (!existing) {
-    layout.addTab(id, label);
-    return;
-  }
-
-  // FlexLayout's Actions are not exported through nexus-shell, so the action
-  // is dispatched by its wire format. The payload key is `tabNode`, not
-  // `tabId` — with the wrong key the model looks up `undefined`, finds
-  // nothing, and returns normally, so the tab quietly never came forward and
-  // no error was raised to say so. Hence the check afterwards rather than a
-  // bare try/catch: silence is the failure mode here, not an exception.
-  try {
-    model.doAction({ type: 'FlexLayout_SelectTab', data: { tabNode: existing } } as any);
-  } catch (e) {
-    console.error('[InboxQL] could not focus the existing tab', id, e);
-    return;
-  }
-
-  const node: any = model.getNodeById(existing);
-  const parent = node?.getParent?.();
-  const selected = parent?.getChildren?.()[parent.getSelected?.()];
-  if (selected?.getId?.() !== existing) {
-    console.error('[InboxQL] tab did not come forward', id);
-  }
+export const openTool = (id: string, _label?: string): void => {
+  goTo(normalisePlace(id));
 };
 
 /**
@@ -122,7 +39,6 @@ export const openTool = (id: string, label: string): void => {
  */
 export type ViewerMode = 'reuse' | 'split';
 
-const VIEWER_MODE_KEY = 'inboxql.viewerMode';
 
 /** The kinds of subject the viewer can hold. Each is a tab in split mode. */
 export type ViewerKind = 'message' | 'contact' | 'file';
@@ -144,13 +60,13 @@ export const VIEWER_TABS: Record<ViewerKind, { id: string; label: string }> = {
   file: { id: 'viewer-file', label: 'File' },
 };
 
+/**
+ * There is one viewer now, so it always holds one subject at a time. The
+ * split mode, which gave messages, contacts and files a tab each, went with
+ * the tabs; the type stays for the code that asks.
+ */
 function readViewerMode(): ViewerMode {
-  try {
-    return localStorage.getItem(VIEWER_MODE_KEY) === 'split' ? 'split' : 'reuse';
-  } catch {
-    // A browser with storage blocked still gets a working app on the default.
-    return 'reuse';
-  }
+  return 'reuse';
 }
 
 interface ViewerState {
@@ -241,17 +157,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
     }));
   },
   setSelectedCount: (selectedCount) => set({ selectedCount }),
-  setMode: (mode) => {
-    if (get().mode === mode) return;
-    try {
-      localStorage.setItem(VIEWER_MODE_KEY, mode);
-    } catch {
-      // An unwritable store costs the preference its persistence, not the
-      // switch its effect.
-    }
-    set({ mode });
-    applyViewerMode(mode);
-  },
+  setMode: () => { /* one viewer: nothing to switch */ },
   clear: () => set({
     message: null, messageId: null, contact: null, file: null,
     previousMessage: null, selectedCount: 0,
@@ -270,105 +176,12 @@ export const MESSAGE_VIEWER_TAB = 'viewer';
 /** Component id of the error log tab. */
 export const ERROR_LOG_TAB = 'errors';
 
-/** Whether a tool's tab is currently open. */
-export const isToolOpen = (id: string): boolean => {
-  const model = useLayoutStore.getState().model;
-  if (!model) return false;
-  let open = false;
-  model.visitNodes((node: any) => {
-    if (node.getType() === 'tab' && node.getComponent() === id) open = true;
-  });
-  return open;
-};
+/** Whether a place is the one on screen. */
+export const isToolOpen = (id: string): boolean => usePlaceStore.getState().id === normalisePlace(id);
 
-/**
- * Where a subject of this kind should open.
- *
- * In reuse mode every kind routes to the one Viewer tab, which is why the
- * label changes too: three kinds sharing a tab cannot call it "Message".
- */
-const viewerTarget = (kind: ViewerKind): { id: string; label: string } =>
-  useViewerStore.getState().mode === 'split'
-    ? VIEWER_TABS[kind]
-    : { id: VIEWER_TABS.message.id, label: 'Viewer' };
-
-/** Find the tab node id for a component, or null. */
-const tabNodeFor = (component: string): string | null => {
-  const model = useLayoutStore.getState().model;
-  if (!model) return null;
-  let found: string | null = null;
-  model.visitNodes((node: any) => {
-    if (!found && node.getType() === 'tab' && node.getComponent() === component) {
-      found = node.getId();
-    }
-  });
-  return found;
-};
-
-/**
- * applyViewerMode brings the open tabs into line with the mode.
- *
- * # Why closing and re-creating, rather than hiding
- *
- * FlexLayout has no hidden state for a tab: its vocabulary is add, delete,
- * rename, select. So "hide the extra viewers" is a delete and "bring them
- * back" is an add.
- *
- * That is not a compromise, because the subject was never in the tab. A tab is
- * a frame around a slot in this store, so deleting it loses nothing and
- * re-creating it shows the same contact or file as before. What it does mean
- * is that the restore is session-scoped: this store has no persistence, so
- * after a reload there is nothing to bring back — which is the right answer
- * anyway, since there is also nothing to show.
- *
- * Only kinds that actually hold something are restored. Switching to split
- * mode having never opened a contact should not conjure an empty Contact tab;
- * one appears the next time a contact is opened, which is what every other tab
- * in this app does.
- */
-function applyViewerMode(mode: ViewerMode): void {
-  const model = useLayoutStore.getState().model;
-  if (!model) return;
-
-  if (mode === 'reuse') {
-    // The message tab is the one that survives, because its component id is
-    // the one reuse mode routes everything to.
-    for (const kind of ['contact', 'file'] as const) {
-      const tabId = tabNodeFor(VIEWER_TABS[kind].id);
-      if (!tabId) continue;
-      try {
-        model.doAction({ type: 'FlexLayout_DeleteTab', data: { node: tabId } } as any);
-      } catch {
-        // A tab that will not close is a stale view, not a broken app.
-      }
-    }
-    renameViewerTab('Viewer');
-    return;
-  }
-
-  renameViewerTab(VIEWER_TABS.message.label);
-
-  const { contact, file } = useViewerStore.getState();
-  if (contact) openTool(VIEWER_TABS.contact.id, VIEWER_TABS.contact.label);
-  if (file) openTool(VIEWER_TABS.file.id, VIEWER_TABS.file.label);
-}
-
-/**
- * renameViewerTab retitles the shared viewer as the mode changes.
- *
- * "Viewer" is right when one tab holds all three kinds and wrong when it holds
- * only messages, so the three read as a set either way.
- */
-function renameViewerTab(label: string): void {
-  const model = useLayoutStore.getState().model;
-  const tabId = tabNodeFor(VIEWER_TABS.message.id);
-  if (!model || !tabId) return;
-  try {
-    model.doAction({ type: 'FlexLayout_RenameTab', data: { node: tabId, text: label } } as any);
-  } catch {
-    // Cosmetic. A tab called the wrong thing still shows the right thing.
-  }
-}
+/** Where a subject of any kind opens: the one viewer. */
+const viewerTarget = (_kind: ViewerKind): { id: string; label: string } =>
+  ({ id: VIEWER_TABS.message.id, label: 'Viewer' });
 
 /**
  * Show a message in the viewer, opening the tab when it is not already there.
@@ -489,8 +302,8 @@ export const previewAttachment = (file: any): void => {
 /** Show a contact in the viewer, opening the tab when it is not already there. */
 export const openContact = (address: string): void => {
   useViewerStore.getState().setContact(address);
-  const target = viewerTarget('contact');
-  openTool(target.id, target.label);
+  // A person is a page of their own now, not a viewer tab.
+  openTool('person', 'Person');
 };
 
 /** Show a file in the viewer, opening the tab when it is not already there. */

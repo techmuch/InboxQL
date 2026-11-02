@@ -13,7 +13,7 @@ The answers become query terms: `label:purchased`, `label:importance`,
 the point — once a question has been answered, it is as cheap to ask as
 `from:`.
 
-Open **Intelligence → Labels & extractors** to see them.
+Open **Go to… → Labels & extractors** to see them.
 
 These are the labels a model or a rule decides. The labels **you** put on mail
 — Inbox, Receipts, the ones you made in Gmail — are the other kind, covered in
@@ -186,7 +186,7 @@ toss.
 
 ## Making your own
 
-**New annotator** on the [Annotators](#open/annotators) tab, or:
+**New annotator** in [Labels & extractors](#open/annotators), or:
 
 ```sh
 iql annotate create waiting-on-legal --engine laya \

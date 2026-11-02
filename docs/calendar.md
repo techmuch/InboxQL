@@ -6,8 +6,8 @@ reads those into an **Invitations** calendar on its own, with no account to
 connect. Connect Google Calendar or an Exchange Server, and their calendars
 appear beside it.
 
-Open it from **Go → Calendar** (**g c**). **File → New event** starts one from
-anywhere, and **File → Import calendar** and **Export calendar** move `.ics`
+Open it from **Calendar** in the left-hand pane (**g c**). **Go to… → New event** starts one from
+anywhere, and **Go to… → Import calendar** and **Export calendar** move `.ics`
 files in and out of your own calendar.
 
 ## The views
@@ -71,7 +71,7 @@ delete one.
   that provider, which tells the organizer.
 - For an invitation that only arrived **by mail**, the answer goes back by mail,
   as a calendar reply the organizer's calendar understands. It waits in the
-  outbox until you send it, from **Intelligence → [Waiting for approval](#open/approvals)** or
+  outbox until you send it, from **[To review](#open/review)** or
   with `iql outbox approve <draft-id>`.
 
 ## Connecting Google Calendar

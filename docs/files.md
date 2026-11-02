@@ -6,11 +6,11 @@ shows you **files**. A file is its bytes, so the same document sent to five
 people is one file that arrived five times — and "which version is this?" and
 "who else has it?" become questions you can ask.
 
-## The File tab
+## A file on its own
 
-Click any attachment and it opens on its own, in the File tab (or inline in
+Click any attachment and it opens on its own (or inline in
 the message — Settings → General → [**Attachment Previews**](#setting/attachment-previews) chooses which, or
-both). The File tab shows:
+both). It shows:
 
 - a preview, for PDFs, images and text;
 - its size, type and every name it arrived under;

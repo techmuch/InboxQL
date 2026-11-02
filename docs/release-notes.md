@@ -1,7 +1,7 @@
 # Release notes
 
-What changed in each release, newest first. Click the version number under
-**InboxQL** at the top left to open this page at the release you are running.
+What changed in each release, newest first. Click the version number at the
+bottom of the left-hand pane to open this page at the release you are running.
 
 **How releases are named.** A release is named for the day it was made and
 how many came before it that day: `2026.10.30.2` is the second release of
@@ -9,6 +9,61 @@ October 30, 2026. Releases before that were numbered `0.0.1` to `0.0.113`
 and have been renamed this way; each entry gives its old number, so a backup
 named for one (`inboxql-pre-0.0.112-…`) can still be matched to its release.
 `iql update` treats the new names as newer than every old number.
+
+## 2026.11.2.1 {#v2026-11-2-1}
+
+*November 2, 2026*
+
+**A new layout.** InboxQL is no longer a workspace of tabs. Every screen has
+the same three parts: the places on the left, the screen in the middle, and
+the evidence on the right. One screen at a time, with Back and Forward, and
+each place has its own address. [Getting started](getting-started.md#finding-your-way-around)
+walks through it.
+
+- **Today is the home screen.** One sentence of what needs you, then the
+  replies you owe (with **Reply**, **Open** and **Not waiting on me**), what is
+  waiting for you to review, what arrived since yesterday — from people first,
+  then everything else by sender, each sender's archivable at once with Undo —
+  your important dates, and the next 48 hours.
+- **Important dates and Ahead.** Mark a deadline, a trip or an anniversary as
+  important (**i**) and it is counted down on Today and Ahead, with a lead
+  time if it needs getting ready for — "start renewing by Dec 3". Reminders
+  arrive at 8 in the morning when the lead time starts, a week before, the day
+  before and that morning. **Ahead** shows the rest of this week and next week
+  day by day, or this month and next as grids, with overdue cards on top.
+- **Needs me, in one place each.** **Replies I owe** (and, on its other tab,
+  what you are waiting for from others; anything older than two weeks asks
+  whether it is still owed), **To review** (cards, calendar proposals, mail to
+  send and the agent's disagreements, in one queue), **Drafts and outbox**
+  (waiting for your Send, failed with the reason, drafts), and **Agent
+  activity**.
+- **Subjects.** Your saved queries are listed under Subjects, in your order.
+  **Topics** opens every topic the agent has tagged, each as a page with its
+  open loops, money, cards, people and mail. A person opens as a page too.
+- **The evidence panel** on the right shows the message under the cursor in a
+  list, how each screen was made, and why the agent concluded what it did.
+  Drag its edge to resize it, or focus the edge and use the arrow keys; **.**
+  hides it.
+- **Ask in words.** Type a question in the query bar — "how much have we spent
+  on the kitchen?" — and Claude Code answers it on this computer, using only
+  InboxQL's read commands. The answer comes with every command it ran. It is
+  off until you turn it on in Settings → AI and agents, because it sends your
+  question and what it reads to Anthropic under your own account.
+- **On your phone.** InboxQL can be installed from Chrome as an app, and is
+  laid out for a phone with the places along the bottom.
+  [On your phone](installing.md#on-your-phone) explains reaching it over
+  Tailscale.
+- **Settings opens on what needs attention** — health checks that failed, an
+  update that is ready, a backup that is overdue — and its sections are grouped
+  by what you are doing: you and your accounts, agents and AI, reading and
+  appearance, your data, this computer.
+- **Help** opens on a page of its own, and **?** on any screen says what that
+  screen is for, what is on it and which keys work there.
+- **Keys.** **g t** Today, **g a** Ahead, **g o** Replies I owe, **g r** To
+  review, **g d** Drafts and outbox, **g i** Inbox, **g e** Everything, **g m**
+  the mail list where you left it, **g h** Help.
+- Gone with the tabs: the menu bar, the chat pane, the viewer-tab setting and
+  Reset layout. Everything they held is in **Go to…** (**⌘K**).
 
 ## 2026.10.31.2 {#v2026-10-31-2}
 

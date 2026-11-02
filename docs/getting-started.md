@@ -52,23 +52,27 @@ removing](installing.md) has the details, including what each file is for.
 
 ## Finding your way around
 
-The menus along the top:
+Every screen has the same three parts:
 
-| Menu | What is in it |
-|---|---|
-| **File** | New message, New event, New task; importing mail and calendars; Settings |
-| **Go** | the places: Desk, Calendar, Board, Contacts, Files, the Dashboard |
-| **View** | the chat panel, how conversations and viewer tabs behave, the theme, Windows and the Log |
-| **Intelligence** | Waiting for approval, Labels & extractors, the AI assistants on this computer |
-| **Help** | this documentation, keyboard shortcuts, the guide for agents, updates, About |
+- **On the left, the places.** *Needs me* — [Today](#open/today), Ahead,
+  Replies I owe, To review, Drafts and outbox — then your mail (Inbox,
+  Everything, Ask in words), your **Subjects** (saved queries and topics), and
+  the other places: Calendar, Board, Files, People, Agent activity, Settings,
+  Help. A number beside one is how many are waiting.
+- **In the middle, the screen** you went to. Back and Forward work, and each
+  place has its own address (`#/today`), so a bookmark works too.
+- **On the right, the evidence**: why the agent concluded something, how a
+  list was made, the message under the cursor. Drag its edge to make it wider
+  or narrower, or press **.** to hide it.
 
-Your name at the top right has your profile, Settings and Sign out. And
-**Ctrl+K** (**⌘K**) finds any of it by name, every setting included.
+At the top, the **query bar** asks the mail anything (press **/** to get to
+it), **Go to…** (**Ctrl+K** / **⌘K**) finds any place, command or setting by
+name, and **Write** (**c**) starts a message.
 
-A small **?** beside a heading — on the Desk's rail, the query bar, a Settings
-section, the Calendar and the rest — opens the part of this documentation that
-explains it. Going the other way, a link marked **↗** in a guide opens the
-place in the application it describes: Settings at that setting, or a tab.
+**?** on any screen says what that screen is for, what is on it and which keys
+work there. A link marked **↗** in a guide opens the place in the application it
+describes. On a phone the places become a bar along the bottom
+([On your phone](installing.md#on-your-phone)).
 
 ## Your first hour
 
@@ -90,14 +94,13 @@ Gmail account can take a few days. The account's card says how far it has got.
 Already have years of mail in Apple Mail? [Importing](accounts-and-import.md#importing-from-apple-mail)
 reads it straight from Mail's own files, without changing them.
 
-### 2. Find your way around the Desk
+### 2. Start from Today
 
-The **Desk** is where mail is read. The rail on the left lists your folders,
-your saved queries and the labels that have found something. Clicking one puts
-its query in the bar at the top, so you learn the language by watching it.
-
-Use the arrow keys to move through the list; the message opens beside it.
-[The Desk](desk.md) covers the rest.
+**Today** is the home screen: the replies you owe, what is waiting for you to
+review, what arrived since yesterday grouped so a sender's newsletters can be
+archived at once (with Undo), the dates you marked important, and the next 48
+hours. **Inbox** is the whole mailbox as a list; move through it with the arrow
+keys and each message reads on the right. [The Desk](desk.md) covers the list.
 
 ### 3. Ask it something
 
@@ -122,7 +125,7 @@ Antigravity) to run `iql work guide` and read your newest conversations.
 
 ### 5. See how it is running
 
-**Help → About InboxQL** opens the System section of Settings: which version
+**Settings → System and updates** says which version
 this is, where your mail is stored and why, whether it is running as your
 login service, and whether there is an update. [Settings](settings.md)
 describes all of it.
@@ -134,5 +137,5 @@ describes all of it.
 - [Contacts](contacts.md) — who is waiting for you, and whom you are waiting on.
 - [Troubleshooting](troubleshooting.md) — when something is not right.
 
-Everything here is also in the application, under **Help → Documentation**,
+Everything here is also in the application, under **Help**,
 and describes the version you are running.

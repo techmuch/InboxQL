@@ -9,7 +9,7 @@ never changes a list, title or date you set.
 
 ## Where cards come from
 
-**By hand.** "Add a card" at the bottom of any list, **File → New task**
+**By hand.** "Add a card" at the bottom of any list, **Go to… → New task** (**t**)
 (**t**), or from a terminal:
 
 ```sh
@@ -42,7 +42,7 @@ by you, never guessed.
 
 ## The board
 
-**Go → Board** (**g b**). Lists run left to right; you start with
+**Board** in the left-hand pane (**g b**). Lists run left to right; you start with
 *Proposed*, *To do*, *Doing* and *Done*.
 
 - **Drag a card** to any place in any list. Where you drop it is where it

@@ -6,6 +6,9 @@ import { useAppUi } from '../lib/appUi';
 import type { ComposeStart } from '../lib/replies';
 import { BINDINGS } from '../lib/keySequences';
 import { openQuery } from '../lib/tabs';
+import { usePlaceStore } from '../lib/places';
+import { PLACE_HELP } from '../lib/placeHelp';
+import { openDoc } from '../lib/docsNav';
 import { matchesSetting, matchesWords, openSetting, SECTION_LABEL, SETTINGS, type SettingEntry } from '../lib/settingsIndex';
 
 /**
@@ -268,8 +271,27 @@ export const KeyboardHelp = ({ onClose }: { onClose: () => void }) => {
   const Key = ({ k }: { k: string }) => (
     <span className="inline-flex gap-1">{k.split(' ').map((p, i) => <kbd key={i} className="border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px]">{p}</kbd>)}</span>
   );
+  const place = usePlaceStore(st => st.id);
+  const here = PLACE_HELP[place];
   return (
-    <Shell title="Keyboard shortcuts" onClose={onClose}>
+    <Shell title="Help and keys" onClose={onClose}>
+      {here && (
+        <section aria-labelledby="kh-here" className="mb-4 border-b border-border pb-4">
+          <h3 id="kh-here" className="font-semibold">On this screen: {here.title}</h3>
+          <p className="mt-1 text-sm">{here.purpose}</p>
+          {here.sections && (
+            <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-sm">
+              {here.sections.map(([k, v]) => <div key={k} className="contents"><dt className="font-medium">{k}</dt><dd className="text-muted-foreground">{v}</dd></div>)}
+            </dl>
+          )}
+          {here.keys && (
+            <ul className="mt-2 space-y-1 text-sm">
+              {here.keys.map(([k, v]) => <li key={k}><kbd className="iql-kbd">{k}</kbd> {v}</li>)}
+            </ul>
+          )}
+          {here.guide && <button type="button" className="mt-2 text-sm underline" onClick={() => { openDoc(here.guide!); onClose(); }}>Read the guide</button>}
+        </section>
+      )}
       <div className="space-y-4 text-sm">
         {groups.map(g => (
           <section key={g}>

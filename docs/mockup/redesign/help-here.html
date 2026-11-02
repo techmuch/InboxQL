@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Help on Today · InboxQL redesign</title>
+<meta name="description" content="Pressing ? on a screen: what the screen is for, its sections, and its keys.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="needs:me" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div style="position:relative;height:92vh;overflow:hidden;border-bottom:2px dashed var(--border)"><div class="shell two" aria-hidden="true" inert>
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html" aria-current="page">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main class="main"><h1>Today</h1><p class="muted">(Today, behind the help.)</p></main></div>
+<div class="scrim" style="position:absolute;place-items:start end;padding:1rem">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="hh-title" style="width:min(30rem,calc(100vw - 2rem));max-height:calc(92vh - 2rem);overflow:auto">
+    <div style="display:flex;align-items:center;gap:.5rem;padding:.7rem 1rem;border-bottom:1px solid var(--border)">
+      <h1 id="hh-title" style="font-size:1.1rem;flex:1">Help: Today</h1><button class="btn quiet" aria-label="Close help">Esc</button></div>
+    <div style="padding:.8rem 1rem">
+      <p style="margin-top:0"><span class="callout" aria-hidden="true">1</span> Today shows what needs you before what arrived. Every section is a query you can open, save or hand to an agent.</p>
+      <h2 style="font-size:.95rem;margin-top:.8rem">The sections <span class="callout" aria-hidden="true">2</span></h2>
+      <dl class="kv" style="margin:.3rem 0">
+        <dt><a href="today.html#replies">Replies you owe</a></dt><dd>Conversations the agent judged waiting on you. <kbd>n</kbd> if one is not.</dd>
+        <dt>To review</dt><dd>Proposals and checks, counted; <kbd>g r</kbd> to work through them.</dd>
+        <dt>Arrived</dt><dd>New mail grouped by subject; archive a group at once, with Undo.</dd>
+        <dt>Ahead</dt><dd>Important dates counted down, and the weeks and months ahead.</dd></dl>
+      <h2 style="font-size:.95rem;margin-top:.8rem">Keys on this screen <span class="callout" aria-hidden="true">3</span></h2>
+      <table class="doc small"><tr><th scope="col">Key</th><th scope="col">Does</th></tr>
+        <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move in a section; <kbd>Tab</kbd> to the next section</td></tr>
+        <tr><td><kbd>r</kbd> <kbd>↵</kbd> <kbd>f</kbd></td><td>Reply · open · everything with this person</td></tr>
+        <tr><td><kbd>n</kbd></td><td>Not waiting on me (teaches the agent)</td></tr>
+        <tr><td><kbd>g a</kbd> <kbd>g r</kbd></td><td>Go to Ahead · To review</td></tr>
+        <tr><td><kbd>z</kbd></td><td>Undo the last change</td></tr></table>
+      <p class="small muted" style="margin:.3rem 0 0">Shown as you have them; a key you changed shows your key. <a href="settings-reading.html">Change keys</a></p>
+      <h2 style="font-size:.95rem;margin-top:.8rem">Go further</h2>
+      <ul class="small" style="padding-left:1.1rem;margin:.3rem 0"><li><a href="help-guide.html">Getting started › Today</a></li><li><a href="workflows.html#w1">The morning pass, step by step</a></li><li><a href="help.html">All help</a> <kbd>g h</kbd></li></ul>
+    </div>
+  </div>
+</div></div>
+<main id="main" class="main" style="max-width:68rem;margin:0 auto" aria-labelledby="notes-hh-t">
+  <h1 id="notes-hh-t" class="sr-only">About help on a screen</h1>
+<section class="notes" aria-labelledby="n-hh"><h2 id="n-hh">About this screen</h2><p><strong>Purpose.</strong> <kbd>?</kbd> on any screen opens its own help in a panel at the side, without leaving the screen: what it is for, what each section is, and the keys that work here — as you have them, including keys you changed.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> One sentence: what the screen is for.</li><li><span class="callout">2</span> Each section named as it appears on the screen, with a link that moves focus to it — so the help also works as a map.</li><li><span class="callout">3</span> Only the keys for this screen, not all of them. Changed keys are shown as changed.</li></ol><h3>What changed from today's app</h3><ul><li>Today the shortcuts are listed in one dialog for the whole app; there is no help per screen.</li></ul><h3>Keyboard</h3><table class="doc"><tr><th>Key</th><th>Does</th></tr><tr><td><kbd>?</kbd></td><td>Open or close help for this screen</td></tr><tr><td><kbd>Esc</kbd></td><td>Close, and return focus where it was</td></tr></table><h3>Screen reader</h3><p>A modal dialog labelled “Help: Today”; focus starts on its heading and returns to where it was when it closes. The section list is a description list so each name and its explanation are read together.</p></section></main>
+</body>
+</html>

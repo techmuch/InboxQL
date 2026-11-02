@@ -240,6 +240,32 @@ func KnownTopics(limit int) ([]string, error) {
 	return out, rows.Err()
 }
 
+// TopicCount is a topic and how many messages carry it.
+type TopicCount struct {
+	Topic string `json:"topic"`
+	Count int    `json:"count"`
+}
+
+// TopicCounts lists the topics in use with how many messages carry each, most
+// used first: the index of topic pages.
+func TopicCounts(limit int) ([]TopicCount, error) {
+	rows, err := db.Query(`SELECT topic, COUNT(*) FROM message_topics GROUP BY topic
+		ORDER BY COUNT(*) DESC, topic LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TopicCount{}
+	for rows.Next() {
+		var t TopicCount
+		if err := rows.Scan(&t.Topic, &t.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // Leases.
 
 // WorkLease is a conversation handed to a reader, and what it was asked.

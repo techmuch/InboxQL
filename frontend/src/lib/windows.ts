@@ -2,7 +2,7 @@ import { mailChanged } from './mail';
 import { deliverReminder } from './reminders';
 import { create } from 'zustand';
 import { openTool, openMessageByID, openQuery, openErrorLog, DESK_TAB } from './tabs';
-import { useLayoutStore } from 'nexus-shell';
+import { goTo, usePlaceStore } from './places';
 import { useQueryStore } from './filters';
 
 /**
@@ -74,36 +74,19 @@ export const useWindowsStore = create<WindowsState>((set) => ({
   dismissNote: () => set({ lastNote: null }),
 }));
 
-/** What this window is showing, read at the moment it is asked. */
+/**
+ * What this window is showing, read at the moment it is asked.
+ *
+ * `active` is the place on screen and `tabs` the places visited in this
+ * window, newest last — the workspace has places now, not tabs, but the
+ * listing keeps its shape so `iql ui list` and anything reading it still work.
+ * They are place ids, which is what `iql ui open` takes.
+ */
 export function currentShowing(): Showing {
   const query = useQueryStore.getState().text;
-  const tabs: string[] = [];
-  let active: string | undefined;
-  try {
-    // The same walk `openTool` does, because the layout is a FlexLayout model
-    // and `visitNodes` is the only way through it. Reported as component ids —
-    // desk, log, viewer — rather than tab labels, because the ids are what
-    // `iql ui open` takes and a listing somebody acts on should name things
-    // the way the command that acts on them does.
-    const model = (useLayoutStore.getState() as any)?.model;
-    model?.visitNodes((node: any) => {
-      if (node.getType() !== 'tab') return;
-      const comp = node.getComponent();
-      if (comp && !tabs.includes(comp)) tabs.push(comp);
-      // A FlexLayout tab knows whether it is the selected one in its tabset.
-      try {
-        const parent = node.getParent?.();
-        if (parent?.getSelectedNode?.() === node && !active) active = comp;
-      } catch {
-        // A node shape this build does not know costs the listing its active
-        // tab, not the window its registration.
-      }
-    });
-  } catch {
-    // A shell that reports its layout differently costs the listing its tab
-    // names, not the window its registration.
-  }
-  return { query, tabs, active };
+  const { id, recent } = usePlaceStore.getState();
+  const tabs = recent.includes(id) ? recent : [...recent, id];
+  return { query, tabs, active: id };
 }
 
 /** Run a command sent from outside. */
@@ -153,6 +136,9 @@ function openNamed(what: string) {
     case 'settings':
       openTool('settings', 'Settings');
       return;
+    case 'inbox':
+      openQuery('folder:inbox');
+      return;
     case 'annotators':
       openTool('annotators', 'Annotators');
       return;
@@ -160,13 +146,18 @@ function openNamed(what: string) {
       openTool(WINDOWS_TAB, 'Windows');
       return;
     default:
+      // A place by its name — today, calendar, board, review — goes there.
       // Anything else is taken as a message id, which fails visibly rather
       // than silently if it is not one.
+      if (PLACE_NAMES.has(what.toLowerCase())) { goTo(what.toLowerCase()); return; }
       void openMessageByID(what);
   }
 }
 
 export const WINDOWS_TAB = 'windows';
+
+/** Places `iql ui open` may name, besides the ones handled above. */
+const PLACE_NAMES = new Set(['today', 'ahead', 'replies', 'review', 'outbox', 'calendar', 'board', 'activity', 'help', 'ask', 'dashboard', 'work-loop', 'approvals']);
 
 let started = false;
 let heartbeat: number | null = null;

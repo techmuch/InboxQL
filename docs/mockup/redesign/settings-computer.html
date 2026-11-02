@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>This computer · Settings · InboxQL redesign</title>
+<meta name="description" content="Version and updates, the background service, address, power, open windows and logging.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="settings:computer" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html" aria-current="page">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title"><div class="page-head"><div class="grow"><h1 id="page-title">This computer</h1></div></div>
+<div class="settings"><nav class="setnav" aria-label="Settings sections"><form role="search" onsubmit="return false"><label for="setq" class="sr-only">Find a setting</label><input id="setq" placeholder="Find a setting…  ⌘F"></form><ul><li><a href="settings.html">Overview</a></li><li><a href="settings-accounts.html">You and your accounts</a></li><li><a href="settings-agents.html">Agents and AI</a></li><li><a href="settings-reading.html">Reading and appearance</a></li><li><a href="settings-data.html">Your data<span class="chip warn" title="needs attention">1<span class="sr-only"> needs attention</span></span></a></li><li><a href="settings-computer.html" aria-current="page">This computer<span class="chip warn" title="needs attention">1<span class="sr-only"> needs attention</span></span></a></li></ul></nav><div><section class="setgroup" aria-labelledby="g-ver"><h2 id="g-ver">InboxQL</h2><div class="card"><div class="set " id="setting-updates"><div><div class="lbl" id="l-updates">Version</div><p class="desc" id="d-updates">You have 2026.10.31.2. <strong>2026.11.1.1 is ready</strong>: Ahead, important dates, and a calmer Settings. <a href="#">Release notes</a></p></div><div class="ctl"><button class="btn primary">Update and restart</button></div></div><div class="set " id="setting-auto-check"><div><div class="lbl" id="l-auto-check">Check for updates</div><p class="desc" id="d-auto-check">Checks once a day; never installs without you.</p></div><div class="ctl"><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="l-auto-check"></button></div></div></div></section><section class="setgroup" aria-labelledby="g-svc"><h2 id="g-svc">Running</h2><div class="card"><div class="set " id="setting-login-service"><div><div class="lbl" id="l-login-service">Start at login</div><p class="desc" id="d-login-service">Runs in the background from login to logout, so mail stays current with no window open.</p></div><div class="ctl"><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="l-login-service"></button></div></div><div class="set " id="setting-server-address"><div><div class="lbl" id="l-server-address">Address</div><p class="desc" id="d-server-address"><code>http://127.0.0.1:8420</code> — this computer only, so no password is asked. Opening it to your network requires one.</p></div><div class="ctl"><button class="btn">Change…</button></div></div><div class="set " id="setting-heavy-work-on-battery"><div><div class="lbl" id="l-heavy-work-on-battery">Heavy work on battery</div><p class="desc" id="d-heavy-work-on-battery">Agent passes and model work wait for mains power. Nothing is lost; it stays pending.</p></div><div class="ctl"><button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="l-heavy-work-on-battery"></button></div></div><div class="set " id="setting-restart"><div><div class="lbl" id="l-restart">Restart the server</div><p class="desc" id="d-restart">Closes and reopens open windows; about 10 seconds.</p></div><div class="ctl"><button class="btn">Restart</button></div></div></div></section><section class="setgroup" aria-labelledby="g-phone"><h2 id="g-phone">Phone</h2><div class="card"><div class="set " id="setting-phone-address"><div><div class="lbl" id="l-phone-address">Reach InboxQL from your phone</div><p class="desc" id="d-phone-address">Over Tailscale at <code>https://inboxql.tail1a2b3c.ts.net</code> — only devices on your network. <a href="phone-app.html">How it works</a></p></div><div class="ctl"><span class="chip good">on</span><button class="btn">Show QR code</button></div></div><div class="set " id="setting-phone-devices"><div><div class="lbl" id="l-phone-devices">Phones allowed</div><p class="desc" id="d-phone-devices">Pixel 8 · alex@example.com · allowed Nov 1 · last seen 2 min ago</p></div><div class="ctl"><button class="btn">Sign out</button></div></div><div class="set " id="setting-phone-new"><div><div class="lbl" id="l-phone-new">New phones</div><p class="desc" id="d-phone-new">A new phone must be allowed here, with a matching code, before it can open your mailbox.</p></div><div class="ctl"><span class="chip">always asks</span></div></div></div></section><section class="setgroup" aria-labelledby="g-windows"><h2 id="g-windows">Open windows</h2><div class="card"><div class="set " id="setting-windows"><div><div class="lbl" id="l-windows">Windows showing InboxQL</div><p class="desc" id="d-windows">2 open: this one, and one on “Kitchen remodel”. Agents can point a window at a query; each time, the window says so.</p></div><div class="ctl"><button class="btn">Show</button></div></div></div></section><section class="setgroup" aria-labelledby="g-log"><h2 id="g-log">Logging</h2><div class="card"><div class="set " id="setting-log-level"><div><div class="lbl" id="l-log-level">How much is recorded</div><p class="desc" id="d-log-level">Debug is loud; turn it back down after chasing a problem.</p></div><div class="ctl"><fieldset class="seg" aria-labelledby="l-log-level"><label><input type="radio" name="ll"> Errors</label><label><input type="radio" name="ll"> Warnings</label><label><input type="radio" name="ll" checked> Info</label><label><input type="radio" name="ll"> Debug</label></fieldset></div></div><div class="set " id="setting-log-query-text"><div><div class="lbl" id="l-log-query-text">Record the text of queries</div><p class="desc" id="d-log-query-text">Queries can be as private as the mail they find. When off, timings are kept and the words are not.</p></div><div class="ctl"><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="l-log-query-text"></button></div></div><div class="set " id="setting-log-slow-queries"><div><div class="lbl" id="l-log-slow-queries">Slow query threshold</div><p class="desc" id="d-log-slow-queries">A query slower than this is logged as a warning, with its SQL.</p></div><div class="ctl"><select class="btn" aria-labelledby="l-log-slow-queries"><option>250 ms</option><option selected>500 ms</option><option>1 s</option></select></div></div><div class="set " id="setting-log-view"><div><div class="lbl" id="l-log-view">The log</div><p class="desc" id="d-log-view">50,000 lines kept · 3 warnings today.</p></div><div class="ctl"><button class="btn">Open the log</button></div></div></div></section><section class="notes" aria-labelledby="n-set-comp"><h2 id="n-set-comp">About this screen</h2><p><strong>Purpose.</strong> How InboxQL runs on this computer: version, background service, address, power, open windows and logging.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> Update, restart and address changes end the server serving your windows, so each says so on the button and in its description.</li></ol><h3>What changed from today's app</h3><ul><li>System, Logging and the Windows tab become this page.</li><li>The machine settings file is not shown as its own thing; its values are ordinary settings here, with the file path in Help.</li></ul><h3>Screen reader</h3><p>Buttons that restart say so in their names (“Update and restart”).</p></section></div></div></main>
+<aside class="evidence" aria-labelledby="ev-s"><h2 id="ev-s">From the command line</h2>
+  <p class="small muted">Everything on this page can also be done with <code>iql</code>, so a script or an agent can read it — and the change shows here.</p>
+  <ul class="small" style="list-style:none;padding:0;display:grid;gap:.55rem"><li><code>iql --json service status</code><br><span class="small muted">installed, running, address</span></li><li><code>iql --json update --check</code><br><span class="small muted">newer release?</span></li><li><code>iql --json ui list</code><br><span class="small muted">open windows</span></li><li><code>iql --json log level</code><br><span class="small muted">logging level and dropped lines</span></li></ul>
+  <h3 style="margin-top:1rem">When changes apply</h3><p class="small">Start at login and logging apply at once. Address changes need a restart; the page says so and offers it.</p>
+  <h3 style="margin-top:1rem">Help</h3><p class="small"><a href="#">Running InboxQL guide</a></p></aside>
+</div>
+</body>
+</html>

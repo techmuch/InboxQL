@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementation plan · InboxQL redesign</title>
+<meta name="description" content="The phased plan for building the InboxQL redesign, with progress and a place for feedback.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html" aria-current="page">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+
+<main id="main" class="main" style="max-width:72rem;margin:0 auto" aria-labelledby="page-title">
+  <h1 id="page-title">Building the redesign</h1>
+  <p class="muted" style="margin-top:.3rem">The phased plan for turning the <a href="index.html">mockups</a> into InboxQL. Updated 2026-11-02. Each phase ships something usable; statuses change as the work is done.</p>
+  <div class="card" style="padding:1rem 1.2rem;margin:1rem 0" role="group" aria-labelledby="ov-h">
+    <h2 id="ov-h" style="font-size:1rem">Overall: 43 of 45 tasks done (96%)</h2>
+    <div class="progress" style="margin:.5rem 0 1rem;height:.7rem" role="img" aria-label="96% done"><i style="width:96%"></i></div>
+    <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Phases summary"><table class="grid"><caption class="sr-only">Phases</caption>
+      <thead><tr><th scope="col">Phase</th><th scope="col">Status</th><th scope="col" class="num">Tasks</th><th scope="col">Progress</th></tr></thead><tbody><tr><td><a href="#p0">0. Plan and tracker</a></td><td><span class="chip good">Done</span></td><td class="num">2 of 2</td><td style="min-width:8rem"><div class="progress" role="img" aria-label="100% done"><i style="width:100%"></i></div></td></tr><tr><td><a href="#p1">1. The three-part shell</a></td><td><span class="chip good">Done</span></td><td class="num">9 of 9</td><td style="min-width:8rem"><div class="progress" role="img" aria-label="100% done"><i style="width:100%"></i></div></td></tr><tr><td><a href="#p2">2. Today</a></td><td><span class="chip good">Done</span></td><td class="num">6 of 6</td><td style="min-width:8rem"><div class="progress" role="img" aria-label="100% done"><i style="width:100%"></i></div></td></tr><tr><td><a href="#p3">3. Important dates and Ahead</a></td><td><span class="chip good">Done</span></td><td class="num">5 of 5</td><td style="min-width:8rem"><div class="progress" role="img" aria-label="100% done"><i style="width:100%"></i></div></td></tr><tr><td><a href="#p4">4. Needs me</a></td><td><span class="chip good">Done</span></td><td class="num">4 of 4</td><td style="min-width:8rem"><div class="progress" role="img" aria-label="100% done"><i style="width:100%"></i></div></td></tr><tr><td><a href="#p5">5. Mail and subjects</a></td><td><span class="chip good">Done</span></td><td class="num">4 of 4</td><td style="min-width:8rem"><div class="progress" role="img" aria-label="100% done"><i style="width:100%"></i></div></td></tr><tr><td><a href="#p6">6. Settings and Help</a></td><td><span class="chip good">Done</span></td><td class="num">4 of 4</td><td style="min-width:8rem"><div class="progress" role="img" aria-label="100% done"><i style="width:100%"></i></div></td></tr><tr><td><a href="#p7">7. Ask in words</a></td><td><span class="chip good">Done</span></td><td class="num">4 of 4</td><td style="min-width:8rem"><div class="progress" role="img" aria-label="100% done"><i style="width:100%"></i></div></td></tr><tr><td><a href="#p8">8. Phone app</a></td><td><span class="chip good">Done</span></td><td class="num">3 of 3</td><td style="min-width:8rem"><div class="progress" role="img" aria-label="100% done"><i style="width:100%"></i></div></td></tr><tr><td><a href="#p9">9. Release</a></td><td><span class="chip warn">In progress</span></td><td class="num">2 of 4</td><td style="min-width:8rem"><div class="progress" role="img" aria-label="50% done"><i style="width:50%"></i></div></td></tr></tbody></table></div>
+    <p style="margin:.8rem 0 0;display:flex;gap:.5rem;flex-wrap:wrap"><button type="button" class="btn" id="copy-fb">Copy all feedback</button><span id="copy-status" class="small muted" role="status"></span></p>
+  </div>
+  <section class="section" aria-labelledby="h-how"><h2 id="h-how">How it is built</h2>
+    <ul>
+      <li><strong>One change underneath.</strong> Everything in InboxQL opens through one function, <code>openTool()</code>. Phase 1 turns it into a router of places, so the Desk, Calendar, Board, Settings and the viewer keep working inside the new layout while new screens arrive.</li>
+      <li><strong>Each phase is usable on its own</strong> and leaves the tests passing.</li>
+      <li><strong>Nothing about sending changes.</strong> Agent mail still waits for your Send; agent calendar and card changes are still proposals.</li>
+      <li><strong>Accessibility is checked per phase</strong>: keyboard, screen reader names, contrast in every theme, 11 px minimum text.</li>
+    </ul></section>
+  
+<section class="section card" style="padding:1rem 1.2rem" id="p0" aria-labelledby="p0-h">
+  <header style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline"><h2 id="p0-h" class="grow" style="flex:1">Phase 0 · Plan and tracker</h2>
+    <span class="chip good">Done</span><span class="small muted">2 of 2 done</span></header>
+  <p style="margin:.3rem 0">A phased plan everyone can follow, with a page that tracks it and collects feedback.</p>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Tasks in phase 0">
+  <table class="grid"><caption class="sr-only">Tasks in phase 0, Plan and tracker</caption>
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead><tbody><tr><td class="num">0.1</td><td>Write the phased plan from the approved mockups and decisions</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">0.2</td><td>Publish this tracker beside the mockups and link it from the overview</td><td><span class="chip good">Done</span></td><td class="small">docs/mockup/redesign/plan.html</td></tr></tbody></table></div>
+  <div style="margin-top:.75rem"><label for="fb-p0" class="small"><strong>Your feedback on phase 0</strong> <span class="muted">— kept in this browser; “Copy all feedback” collects it</span></label>
+    <textarea id="fb-p0" data-feedback="p0" data-title="Phase 0 · Plan and tracker" rows="2" style="width:100%;font:inherit;margin-top:.3rem;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)"></textarea></div>
+</section>
+<section class="section card" style="padding:1rem 1.2rem" id="p1" aria-labelledby="p1-h">
+  <header style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline"><h2 id="p1-h" class="grow" style="flex:1">Phase 1 · The three-part shell</h2>
+    <span class="chip good">Done</span><span class="small muted">9 of 9 done</span></header>
+  <p style="margin:.3rem 0">Replace the tab-and-pane workspace with places, a left-hand pane, the screen, and a resizable evidence panel. Every existing view keeps working.</p><p class="small" style="margin:.2rem 0 .6rem">Mockups: <a href="index.html">index.html</a></p>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Tasks in phase 1">
+  <table class="grid"><caption class="sr-only">Tasks in phase 1, The three-part shell</caption>
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead><tbody><tr><td class="num">1.1</td><td>Places router: one place at a time, in the address (#/today), with Back and Forward</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">1.2</td><td>openTool() and every “open this” call route to places instead of tabs</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">1.3</td><td>App bar: brand, the query bar, Go to…, Write, sync status</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">1.4</td><td>Left-hand pane: Needs me, Mail, Subjects, Places, with live counts</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">1.5</td><td>Evidence panel: resizable by drag and keyboard (window-splitter pattern), hidden with “.”, width remembered</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">1.6</td><td>Phone width: the pane becomes a bottom bar</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">1.7</td><td>Remove tabs: no ShellLayout, menu bar, chat pane, viewer-tab modes or Reset layout; commands stay in Go to…</td><td><span class="chip good">Done</span></td><td class="small">nexus-shell stays for themes and the command palette only</td></tr><tr><td class="num">1.8</td><td>Open windows report the place they show (iql ui list), and iql ui commands move them</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">1.9</td><td>Tests updated for the shell</td><td><span class="chip good">Done</span></td><td class="small"></td></tr></tbody></table></div>
+  <div style="margin-top:.75rem"><label for="fb-p1" class="small"><strong>Your feedback on phase 1</strong> <span class="muted">— kept in this browser; “Copy all feedback” collects it</span></label>
+    <textarea id="fb-p1" data-feedback="p1" data-title="Phase 1 · The three-part shell" rows="2" style="width:100%;font:inherit;margin-top:.3rem;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)"></textarea></div>
+</section>
+<section class="section card" style="padding:1rem 1.2rem" id="p2" aria-labelledby="p2-h">
+  <header style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline"><h2 id="p2-h" class="grow" style="flex:1">Phase 2 · Today</h2>
+    <span class="chip good">Done</span><span class="small muted">6 of 6 done</span></header>
+  <p style="margin:.3rem 0">The home screen: what needs you before what arrived.</p><p class="small" style="margin:.2rem 0 .6rem">Mockups: <a href="today.html">today.html</a></p>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Tasks in phase 2">
+  <table class="grid"><caption class="sr-only">Tasks in phase 2, Today</caption>
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead><tbody><tr><td class="num">2.1</td><td>One sentence of state at the top</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">2.2</td><td>Replies you owe, with reply / open / not waiting on me</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">2.3</td><td>To review: counts by kind, linking to the queue</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">2.4</td><td>Arrived since yesterday, grouped by topic, archive a group with Undo</td><td><span class="chip good">Done</span></td><td class="small">Grouped by sender for now: the topics element is not answered widely enough to group by</td></tr><tr><td class="num">2.5</td><td>Next 48 hours</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">2.6</td><td>Today is the home screen</td><td><span class="chip good">Done</span></td><td class="small"></td></tr></tbody></table></div>
+  <div style="margin-top:.75rem"><label for="fb-p2" class="small"><strong>Your feedback on phase 2</strong> <span class="muted">— kept in this browser; “Copy all feedback” collects it</span></label>
+    <textarea id="fb-p2" data-feedback="p2" data-title="Phase 2 · Today" rows="2" style="width:100%;font:inherit;margin-top:.3rem;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)"></textarea></div>
+</section>
+<section class="section card" style="padding:1rem 1.2rem" id="p3" aria-labelledby="p3-h">
+  <header style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline"><h2 id="p3-h" class="grow" style="flex:1">Phase 3 · Important dates and Ahead</h2>
+    <span class="chip good">Done</span><span class="small muted">5 of 5 done</span></header>
+  <p style="margin:.3rem 0">Countdowns for dates you mark important, the next two weeks and two months, and reminders as they approach.</p><p class="small" style="margin:.2rem 0 .6rem">Mockups: <a href="ahead.html">ahead.html</a> · <a href="ahead-months.html">ahead-months.html</a></p>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Tasks in phase 3">
+  <table class="grid"><caption class="sr-only">Tasks in phase 3, Important dates and Ahead</caption>
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead><tbody><tr><td class="num">3.1</td><td>Important dates stored in the mailbox (title, date, lead time, yearly, what it is about), with an API</td><td><span class="chip good">Done</span></td><td class="small">Schema v49, /api/dates; agent suggestions are stored but not counted down</td></tr><tr><td class="num">3.2</td><td>Ahead: two weeks, day by day, from events, card due dates and important dates</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">3.3</td><td>Ahead: two months as grids with “What matters”</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">3.4</td><td>Countdowns on Today and Ahead; mark and unmark a date</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">3.5</td><td>Reminders when a lead time starts, a week before, the day before and that morning</td><td><span class="chip good">Done</span></td><td class="small">Sent by the server at 8 AM to every window, or as a system notification</td></tr></tbody></table></div>
+  <div style="margin-top:.75rem"><label for="fb-p3" class="small"><strong>Your feedback on phase 3</strong> <span class="muted">— kept in this browser; “Copy all feedback” collects it</span></label>
+    <textarea id="fb-p3" data-feedback="p3" data-title="Phase 3 · Important dates and Ahead" rows="2" style="width:100%;font:inherit;margin-top:.3rem;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)"></textarea></div>
+</section>
+<section class="section card" style="padding:1rem 1.2rem" id="p4" aria-labelledby="p4-h">
+  <header style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline"><h2 id="p4-h" class="grow" style="flex:1">Phase 4 · Needs me</h2>
+    <span class="chip good">Done</span><span class="small muted">4 of 4 done</span></header>
+  <p style="margin:.3rem 0">Everything waiting on you, in one place each.</p><p class="small" style="margin:.2rem 0 .6rem">Mockups: <a href="replies.html">replies.html</a> · <a href="review.html">review.html</a> · <a href="outbox.html">outbox.html</a> · <a href="activity.html">activity.html</a></p>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Tasks in phase 4">
+  <table class="grid"><caption class="sr-only">Tasks in phase 4, Needs me</caption>
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead><tbody><tr><td class="num">4.1</td><td>Replies I owe, and Waiting on others</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">4.2</td><td>To review: one queue for mail to send, calendar proposals, proposed cards and agent checks</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">4.3</td><td>Drafts and outbox: waiting for your Send, failed with the reason, drafts</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">4.4</td><td>Agent activity: what agents did, with Undo, and how often they are right</td><td><span class="chip good">Done</span></td><td class="small">Counts of what agents wrote and proposed, with the work loop (accuracy, disagreements) beneath; per-change Undo stays on each item</td></tr></tbody></table></div>
+  <div style="margin-top:.75rem"><label for="fb-p4" class="small"><strong>Your feedback on phase 4</strong> <span class="muted">— kept in this browser; “Copy all feedback” collects it</span></label>
+    <textarea id="fb-p4" data-feedback="p4" data-title="Phase 4 · Needs me" rows="2" style="width:100%;font:inherit;margin-top:.3rem;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)"></textarea></div>
+</section>
+<section class="section card" style="padding:1rem 1.2rem" id="p5" aria-labelledby="p5-h">
+  <header style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline"><h2 id="p5-h" class="grow" style="flex:1">Phase 5 · Mail and subjects</h2>
+    <span class="chip good">Done</span><span class="small muted">4 of 4 done</span></header>
+  <p style="margin:.3rem 0">The inbox, all mail, and pages for people and topics.</p><p class="small" style="margin:.2rem 0 .6rem">Mockups: <a href="inbox.html">inbox.html</a> · <a href="everything.html">everything.html</a> · <a href="subject.html">subject.html</a> · <a href="topic.html">topic.html</a></p>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Tasks in phase 5">
+  <table class="grid"><caption class="sr-only">Tasks in phase 5, Mail and subjects</caption>
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead><tbody><tr><td class="num">5.1</td><td>Inbox and Everything in the new layout; the selected message reads in the evidence panel</td><td><span class="chip good">Done</span></td><td class="small">The Desk keeps its folders and labels, now a rail you can put away</td></tr><tr><td class="num">5.2</td><td>Subjects in the left-hand pane are your saved queries, in your order</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">5.3</td><td>Person page: open loops first, then everything with them</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">5.4</td><td>Topic page: open loops, money, dates, cards and people for a topic</td><td><span class="chip good">Done</span></td><td class="small">From the topics element; /api/topics lists them; Topics is under Subjects</td></tr></tbody></table></div>
+  <div style="margin-top:.75rem"><label for="fb-p5" class="small"><strong>Your feedback on phase 5</strong> <span class="muted">— kept in this browser; “Copy all feedback” collects it</span></label>
+    <textarea id="fb-p5" data-feedback="p5" data-title="Phase 5 · Mail and subjects" rows="2" style="width:100%;font:inherit;margin-top:.3rem;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)"></textarea></div>
+</section>
+<section class="section card" style="padding:1rem 1.2rem" id="p6" aria-labelledby="p6-h">
+  <header style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline"><h2 id="p6-h" class="grow" style="flex:1">Phase 6 · Settings and Help</h2>
+    <span class="chip good">Done</span><span class="small muted">4 of 4 done</span></header>
+  <p style="margin:.3rem 0">Six settings sections led by what needs attention; help on every screen.</p><p class="small" style="margin:.2rem 0 .6rem">Mockups: <a href="settings.html">settings.html</a> · <a href="help.html">help.html</a> · <a href="help-here.html">help-here.html</a></p>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Tasks in phase 6">
+  <table class="grid"><caption class="sr-only">Tasks in phase 6, Settings and Help</caption>
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead><tbody><tr><td class="num">6.1</td><td>Settings overview: needs attention, then each section’s state in a line</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">6.2</td><td>Settings regrouped into accounts, agents and AI, reading and appearance, your data, this computer</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">6.3</td><td>Help home: search, guides, what’s new</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">6.4</td><td>“?” on any screen: what it is for, its sections and its keys</td><td><span class="chip good">Done</span></td><td class="small"></td></tr></tbody></table></div>
+  <div style="margin-top:.75rem"><label for="fb-p6" class="small"><strong>Your feedback on phase 6</strong> <span class="muted">— kept in this browser; “Copy all feedback” collects it</span></label>
+    <textarea id="fb-p6" data-feedback="p6" data-title="Phase 6 · Settings and Help" rows="2" style="width:100%;font:inherit;margin-top:.3rem;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)"></textarea></div>
+</section>
+<section class="section card" style="padding:1rem 1.2rem" id="p7" aria-labelledby="p7-h">
+  <header style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline"><h2 id="p7-h" class="grow" style="flex:1">Phase 7 · Ask in words</h2>
+    <span class="chip good">Done</span><span class="small muted">4 of 4 done</span></header>
+  <p style="margin:.3rem 0">A question in plain words, answered by Claude Code on this computer, with the evidence and the commands it ran.</p><p class="small" style="margin:.2rem 0 .6rem">Mockups: <a href="ask.html">ask.html</a></p>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Tasks in phase 7">
+  <table class="grid"><caption class="sr-only">Tasks in phase 7, Ask in words</caption>
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead><tbody><tr><td class="num">7.1</td><td>Server runs the chosen agent CLI read-only (iql commands only) and returns its answer</td><td><span class="chip good">Done</span></td><td class="small">Off by default; read-only iql allow-list; tested end to end on an empty mailbox (14 s)</td></tr><tr><td class="num">7.2</td><td>Ask page: the answer, what it rests on, the commands it ran, what was sent</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">7.3</td><td>The query bar offers “Ask” for words that are not a query</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">7.4</td><td>Settings: which agent answers, or off</td><td><span class="chip good">Done</span></td><td class="small">Settings → AI and agents → Ask in words: Off or Claude Code</td></tr></tbody></table></div>
+  <div style="margin-top:.75rem"><label for="fb-p7" class="small"><strong>Your feedback on phase 7</strong> <span class="muted">— kept in this browser; “Copy all feedback” collects it</span></label>
+    <textarea id="fb-p7" data-feedback="p7" data-title="Phase 7 · Ask in words" rows="2" style="width:100%;font:inherit;margin-top:.3rem;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)"></textarea></div>
+</section>
+<section class="section card" style="padding:1rem 1.2rem" id="p8" aria-labelledby="p8-h">
+  <header style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline"><h2 id="p8-h" class="grow" style="flex:1">Phase 8 · Phone app</h2>
+    <span class="chip good">Done</span><span class="small muted">3 of 3 done</span></header>
+  <p style="margin:.3rem 0">InboxQL installable from Chrome, laid out for a phone.</p><p class="small" style="margin:.2rem 0 .6rem">Mockups: <a href="phone-app.html">phone-app.html</a> · <a href="mobile.html">mobile.html</a></p>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Tasks in phase 8">
+  <table class="grid"><caption class="sr-only">Tasks in phase 8, Phone app</caption>
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead><tbody><tr><td class="num">8.1</td><td>Web app manifest, icons and a service worker, so Chrome offers “Install app”</td><td><span class="chip good">Done</span></td><td class="small">Chrome reports no installability errors; the worker is network-first and never caches /api/</td></tr><tr><td class="num">8.2</td><td>Phone layout checked: bottom bar, one column, 44 px targets</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">8.3</td><td>Guide: reaching InboxQL from your phone over Tailscale</td><td><span class="chip good">Done</span></td><td class="small">docs/installing.md → On your phone (tailscale serve --bg 8420)</td></tr></tbody></table></div>
+  <div style="margin-top:.75rem"><label for="fb-p8" class="small"><strong>Your feedback on phase 8</strong> <span class="muted">— kept in this browser; “Copy all feedback” collects it</span></label>
+    <textarea id="fb-p8" data-feedback="p8" data-title="Phase 8 · Phone app" rows="2" style="width:100%;font:inherit;margin-top:.3rem;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)"></textarea></div>
+</section>
+<section class="section card" style="padding:1rem 1.2rem" id="p9" aria-labelledby="p9-h">
+  <header style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline"><h2 id="p9-h" class="grow" style="flex:1">Phase 9 · Release</h2>
+    <span class="chip warn">In progress</span><span class="small muted">2 of 4 done</span></header>
+  <p style="margin:.3rem 0">Documented, tested, released and installed.</p>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Tasks in phase 9">
+  <table class="grid"><caption class="sr-only">Tasks in phase 9, Release</caption>
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead><tbody><tr><td class="num">9.1</td><td>Guides updated for the new layout; release notes</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">9.2</td><td>Typecheck, unit tests, Go tests; accessibility check in light and dark</td><td><span class="chip good">Done</span></td><td class="small"></td></tr><tr><td class="num">9.3</td><td>Commit, tag, push; the release workflow builds</td><td><span class="chip warn">In progress</span></td><td class="small"></td></tr><tr><td class="num">9.4</td><td>Installed with iql update</td><td><span class="chip warn">In progress</span></td><td class="small"></td></tr></tbody></table></div>
+  <div style="margin-top:.75rem"><label for="fb-p9" class="small"><strong>Your feedback on phase 9</strong> <span class="muted">— kept in this browser; “Copy all feedback” collects it</span></label>
+    <textarea id="fb-p9" data-feedback="p9" data-title="Phase 9 · Release" rows="2" style="width:100%;font:inherit;margin-top:.3rem;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)"></textarea></div>
+</section>
+  <section class="section" aria-labelledby="h-later"><h2 id="h-later">Later — decided, not in this release</h2><ul><li><strong>agy as the agent that answers</strong> — Only Claude Code is supported: agy here is an alias that skips permissions, which a read-only answerer must not do.</li><li><strong>Allowing a new phone from the Mac with a matching code</strong> — Needs a device-pairing design reviewed against Tailscale identity.</li><li><strong>Reminders pushed to a phone whose app is closed</strong> — Needs Web Push (VAPID keys, a push subscription per phone).</li><li><strong>Birthdays and anniversaries from contacts</strong> — Contacts do not hold dates yet.</li><li><strong>A terminal panel with the agent CLI</strong> — Deferred until Ask in words has been used.</li><li><strong>Guide examples that run on your own mail, with counts</strong> — After the Help home settles.</li><li><strong>Reply deadlines read from mail (“by Monday”)</strong> — Needs the waiting element to record a date.</li></ul></section>
+</main>
+<script>
+(function () {
+  var areas = document.querySelectorAll('[data-feedback]');
+  areas.forEach(function (a) {
+    var k = 'iql-plan-fb-' + a.dataset.feedback;
+    try { a.value = localStorage.getItem(k) || ''; } catch (e) {}
+    a.addEventListener('input', function () { try { localStorage.setItem(k, a.value); } catch (e) {} });
+  });
+  document.getElementById('copy-fb').addEventListener('click', function () {
+    var out = [];
+    areas.forEach(function (a) { if (a.value.trim()) out.push('## ' + a.dataset.title + '\n' + a.value.trim()); });
+    var text = out.length ? out.join('\n\n') : '';
+    var s = document.getElementById('copy-status');
+    if (!text) { s.textContent = 'No feedback written yet.'; return; }
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
+      function () { s.textContent = 'Copied feedback on ' + out.length + ' phase' + (out.length === 1 ? '' : 's') + '.'; },
+      function () { s.textContent = 'Could not copy; select the text in each box instead.'; });
+  });
+})();
+</script>
+</body>
+</html>

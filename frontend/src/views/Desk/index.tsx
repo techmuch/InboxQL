@@ -149,6 +149,10 @@ const RowTarget = ({ title, onClick, className = '', children }: {
 );
 
 export const Desk = () => {
+  // The rail of folders and labels can be put away: the left-hand pane has
+  // the places now. Remembered in this browser.
+  const [railOpen, setRailOpen] = useState(() => { try { return localStorage.getItem('iql.deskRail') !== 'closed'; } catch { return true; } });
+  const setRail = (open: boolean) => { setRailOpen(open); try { localStorage.setItem('iql.deskRail', open ? 'open' : 'closed'); } catch { /* not remembered */ } };
   const [messages, setMessages] = useState<any[]>([]);
   const openMessageId = useViewerStore(s => s.messageId);
   const [loading, setLoading] = useState(true);
@@ -921,6 +925,15 @@ export const Desk = () => {
 
   return (
     <div className="flex h-full bg-background text-foreground overflow-hidden">
+      {!railOpen && (
+        <button type="button" onClick={() => setRail(true)} aria-expanded={false} aria-controls="desk-rail"
+          className="shrink-0 border-r border-border px-1 text-xs text-muted-foreground hover:bg-accent [writing-mode:vertical-rl]">
+          Folders and labels
+        </button>
+      )}
+      {railOpen && <div id="desk-rail" className="flex shrink-0 flex-col">
+      <button type="button" onClick={() => setRail(false)} aria-expanded={true} aria-controls="desk-rail"
+        className="border-b border-r border-border px-3 py-1 text-left text-xs text-muted-foreground hover:bg-accent">‹ Hide folders and labels</button>
       <Rail
         folders={navItems}
         hiddenFolders={hiddenFolders}
@@ -1006,6 +1019,7 @@ export const Desk = () => {
         }}
         onAddDefaults={() => openTool('settings', 'Settings')}
       />
+      </div>}
 
       {/* The ref sits on the whole pane rather than on the list, so pressing
           Down anywhere in Desk that is not a text field moves into the

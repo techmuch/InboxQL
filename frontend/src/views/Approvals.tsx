@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { CalendarDays, Check, Loader2, Mail, RefreshCw, Send, SquareKanban, X } from 'lucide-react';
 import { sendDraft } from '../lib/sending';
 import { approveChange, listChanges, rejectChange, type Change } from './Calendar/api';
@@ -18,7 +18,7 @@ interface Draft { id: string; to: string[]; subject: string; origin: string; que
  * place — cards an extractor proposed, calendar changes an agent proposed,
  * and mail queued in the outbox.
  */
-export const Approvals = () => {
+export const Approvals = ({ title = 'Waiting for approval', children }: { title?: string; children?: ReactNode } = {}) => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [changes, setChanges] = useState<Change[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -72,7 +72,7 @@ export const Approvals = () => {
       <div className="mx-auto max-w-3xl space-y-6">
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="flex items-center gap-2 text-xl font-semibold">Waiting for approval <Help topic="approvals" /></h1>
+            <h1 className="flex items-center gap-2 text-xl font-semibold">{title} <Help topic="approvals" /></h1>
             <p className="text-sm text-muted-foreground">
               {loading ? 'Looking…' : total === 0 ? 'Nothing is waiting for you.' : `${total} waiting for you.`}
             </p>
@@ -146,6 +146,7 @@ export const Approvals = () => {
             <code className="mx-1 font-mono">iql outbox approve &lt;id&gt;</code>.
           </p>
         )}
+        {children}
       </div>
     </div>
   );

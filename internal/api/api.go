@@ -127,6 +127,20 @@ func Router() (http.Handler, error) {
 	// reads mail, this moves the screen in front of a person.
 	uiMux := http.NewServeMux()
 	registerUIRoutes(uiMux)
+	// Important dates: counted down on Today and Ahead, reminded of as they
+	// approach. See store/importantdates.go.
+	datesMux := http.NewServeMux()
+	registerDateRoutes(datesMux)
+	mux.Handle("/api/dates", auth.Middleware(datesMux))
+	mux.Handle("/api/dates/", auth.Middleware(datesMux))
+	mux.Handle("/api/topics", auth.Middleware(datesMux))
+
+	// Ask in words: Claude Code answering with read-only iql commands. Off
+	// until turned on; see askapi.go.
+	askMux := http.NewServeMux()
+	registerAskRoutes(askMux)
+	mux.Handle("/api/ask", auth.Middleware(askMux))
+
 	// Arranging the rail. Its own routes rather than part of the saved-query
 	// surface, because moving an entry and editing one are different acts:
 	// editing a query's text must not move it, and moving it must not touch
@@ -211,6 +225,9 @@ func Router() (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load embedded frontend: %w", err)
 	}
+	// The web app manifest's type, which Go does not know, so Chrome reads it
+	// and offers "Install app".
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 	mux.Handle("/", http.FileServer(http.FS(content)))
 
 	return mux, nil

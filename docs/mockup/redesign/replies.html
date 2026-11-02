@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replies I owe · InboxQL redesign</title>
+<meta name="description" content="Every conversation waiting on you, deadlines first, with the other direction one tab away.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="awaiting:me" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html" aria-current="page">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title">
+  <div class="page-head"><div class="grow">
+    <p class="crumbs"><a href="today.html">Today</a></p>
+    <h1 id="page-title">Replies I owe</h1>
+    <p class="muted" style="margin-top:.3rem"><span class="callout" aria-hidden="true">1</span> You owe <strong>4 replies</strong>; 2 have a deadline in the next 3 days. You are waiting on others in <strong>7</strong> conversations; 2 of those are over a week old.</p>
+  </div></div>
+  <nav class="tabs" aria-label="Direction">
+    <a href="replies.html" aria-current="page">I owe · 4</a><a href="#waiting">Waiting on others · 7</a><a href="#let-go">Let go recently · 12</a>
+  </nav>
+
+  <section class="section" aria-labelledby="h-deadline">
+    <header><h2 id="h-deadline" class="grow">With a deadline <span class="callout" aria-hidden="true">2</span></h2></header>
+    <ul class="list card" aria-label="Replies with a deadline, soonest first">
+      <li class="row selected" aria-current="true"><span class="avatar" aria-hidden="true">RO</span><div><span class="who">Rafael Ortiz</span> <span class="chip">Kitchen remodel</span> <span class="chip agent">draft ready · 1 blank</span><div class="line">“Can you pick brushed brass or matte black by Monday so I can order?”</div></div><span class="meta"><strong>by Mon</strong> · 2 days<br><span class="chip agent">agent: on you</span></span></li>
+      <li class="row"><span class="avatar" aria-hidden="true">PR</span><div><span class="who">Priya Raman</span> <span class="chip">Q4 report</span><div class="line">“Could you look at section 3 before Tuesday’s call?”</div></div><span class="meta"><strong>by Tue 2 PM</strong> · 1 day<br><span class="chip agent">agent: on you</span></span></li>
+    </ul>
+  </section>
+
+  <section class="section" aria-labelledby="h-nodeadline">
+    <header><h2 id="h-nodeadline" class="grow">No deadline</h2></header>
+    <ul class="list card" aria-label="Replies without a deadline, oldest first">
+      <li class="row"><span class="avatar" aria-hidden="true">NB</span><div><span class="who">Northwind Bank</span> <span class="chip">system</span><div class="line">Confirm the new payee “Ortiz Renovations” before the first transfer — an action, not a reply</div></div><span class="meta">3 h<br><span class="chip agent">agent: on you</span></span></li>
+      <li class="row"><span class="avatar" aria-hidden="true">DW</span><div><span class="who">Dana Whitfield</span> <div class="line">“Are you able to take the 8:15 run this week?”</div></div><span class="meta">5 h<br><span class="chip agent">agent: on you</span></span></li>
+    </ul>
+  </section>
+
+  <section class="section" aria-labelledby="h-old">
+    <header><h2 id="h-old" class="grow">Older than two weeks <span class="callout" aria-hidden="true">3</span></h2></header>
+    <p class="card small" style="padding:.6rem .85rem">None. When a reply has waited two weeks it moves here with one question: <em>still owed?</em> — “Reply”, “Not owed any more” or “Remind me in a week”.</p>
+  </section>
+
+  <div class="selbar" role="region" aria-label="Selection" style="margin-top:1rem"><span class="callout" aria-hidden="true">4</span> <strong>Example:</strong> 2 selected · <button class="btn">Not waiting on me</button><button class="btn">Remind me Monday</button><button class="btn">Hand to the agent to draft</button></div>
+<section class="notes" aria-labelledby="n-replies"><h2 id="n-replies">About this screen</h2><p><strong>Purpose.</strong> Every conversation the <code>waiting</code> element judged to be on you, in one list — the full version of the first section of Today. A tab turns it round to what you are waiting for from others.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> One sentence of state for both directions, so the page never only shows half the picture.</li><li><span class="callout">2</span> <strong>Deadline first.</strong> A reply with a date in it (“by Monday”) sorts by that date; the rest by age. The deadline is read by the agent and shown with its quote in the evidence panel <span class="planned">planned</span>.</li><li><span class="callout">3</span> Old owed replies are asked about, not left to rot: a reply owed for two weeks is either still owed or it is not.</li><li><span class="callout">4</span> Bulk actions on a selection. “Not waiting on me” records your ruling on each conversation; nothing is sent.</li></ol><h3>What changed from today's app</h3><ul><li>Today this list exists only as a query (<code>awaiting:me</code>) and as counts on a contact card.</li><li>“Waiting on others” replaces looking through Sent for unanswered mail.</li></ul><h3>Keyboard</h3><table class="doc"><tr><th>Key</th><th>Does</th></tr><tr><td><kbd>g o</kbd></td><td>Go to Replies I owe</td></tr><tr><td><kbd>r</kbd> <kbd>↵</kbd></td><td>Reply · open</td></tr><tr><td><kbd>d</kbd></td><td>Open the agent’s draft, if there is one</td></tr><tr><td><kbd>n</kbd></td><td>Not waiting on me</td></tr><tr><td><kbd>x</kbd></td><td>Select</td></tr><tr><td><kbd>]</kbd></td><td>Waiting on others tab</td></tr></table><h3>Screen reader</h3><p>Each row is one list item with the person, the quote, the deadline and the agent’s judgement in reading order. The selected row is <code>aria-current</code>. The tabs are links with <code>aria-current="page"</code>.</p><h3>Workflows</h3><p><a href="workflows.html#w1">W1 Morning pass</a> · <a href="workflows.html#w3">W3 Reply with the agent’s draft</a> · <a href="workflows.html#w5">W5 Correct the agent</a></p></section></main>
+<aside class="evidence" aria-labelledby="ev-r"><h2 id="ev-r">Rafael Ortiz · Cabinet hardware</h2>
+  <p class="small muted">Selected. Why the agent thinks you owe this:</p>
+  <h3>Waiting on you</h3><blockquote class="quote">Can you pick brushed brass or matte black by Monday so I can order?<cite>Rafael, Oct 29 · last message in the conversation</cite></blockquote>
+  <h3>Deadline</h3><blockquote class="quote">by Monday<cite>read as Mon, Nov 2 · <a href="#">wrong date?</a></cite></blockquote>
+  <h3>Draft</h3><p class="small">The agent wrote a reply with <strong>1 blank</strong> for you to fill: which finish. <a href="compose.html">Open the draft</a></p>
+  <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem"><button class="btn">On Rafael</button><button class="btn">No one</button></div>
+</aside>
+</div>
+</body>
+</html>

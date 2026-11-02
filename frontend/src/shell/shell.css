@@ -1,0 +1,96 @@
+/*
+ * The three-part frame: the places, the screen, the evidence.
+ *
+ * Plain CSS rather than utilities, because the frame's shape changes with the
+ * window's width and the evidence panel's width is a value the person sets.
+ * Colours are the theme's own variables, so every theme applies.
+ */
+.iql-frame {
+  --ev-w: 352px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: 15.5rem minmax(0, 1fr) var(--ev-w);
+  grid-template-areas: "bar bar bar" "nav main ev";
+  height: 100vh;
+  height: 100dvh;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+.iql-frame.ev-hidden { grid-template-columns: 15.5rem minmax(0, 1fr) 0; }
+
+.iql-bar { grid-area: bar; display: flex; align-items: center; gap: .6rem; padding: .45rem .8rem; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--background)); min-width: 0; }
+.iql-brand { font-weight: 700; letter-spacing: -.01em; white-space: nowrap; padding: .25rem .4rem; border-radius: 4px; }
+.iql-brand:hover { background: hsl(var(--accent)); }
+.iql-querybar { flex: 1; display: flex; align-items: center; gap: .4rem; min-width: 0; border: 1px solid hsl(var(--border)); background: hsl(var(--card)); border-radius: 6px; padding: .2rem .5rem; }
+.iql-querybar:focus-within { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.iql-querybar input { flex: 1; min-width: 4rem; border: 0; background: transparent; color: inherit; font-family: ui-monospace, Menlo, monospace; font-size: .85rem; padding: .25rem 0; }
+.iql-querybar input:focus { outline: none; }
+.iql-btn { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid hsl(var(--border)); background: hsl(var(--background)); padding: .3rem .7rem; border-radius: 6px; font-size: .85rem; white-space: nowrap; color: inherit; }
+.iql-btn:hover { background: hsl(var(--accent)); }
+.iql-btn.primary { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.iql-btn.primary:hover { filter: brightness(1.07); }
+.iql-btn kbd, .iql-kbd { font-family: ui-monospace, Menlo, monospace; font-size: .72rem; border: 1px solid currentColor; border-radius: 3px; padding: 0 .3rem; opacity: .75; }
+.iql-status { display: flex; align-items: center; gap: .45rem; font-size: .78rem; color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.iql-status button { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+.iql-nav { grid-area: nav; overflow: auto; border-right: 1px solid hsl(var(--border)); background: hsl(var(--card)); padding: .5rem .45rem 1rem; }
+.iql-nav h2 { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: hsl(var(--muted-foreground)); padding: .8rem .55rem .3rem; }
+.iql-nav ul { list-style: none; margin: 0; padding: 0; }
+.iql-nav a { display: flex; align-items: center; gap: .5rem; padding: .32rem .55rem; border-radius: 6px; color: inherit; text-decoration: none; font-size: .88rem; min-height: 2rem; }
+.iql-nav a:hover { background: hsl(var(--accent)); }
+.iql-nav a[aria-current="page"] { background: hsl(var(--selected, var(--primary)) / var(--selected-strong-alpha, .15)); font-weight: 600; }
+.iql-nav .count { margin-left: auto; font-size: .78rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.iql-nav .who { margin-top: 1rem; padding: .6rem .55rem 0; border-top: 1px solid hsl(var(--border)); font-size: .8rem; color: hsl(var(--muted-foreground)); display: flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: center; }
+.iql-nav .who button { text-decoration: underline; text-underline-offset: 2px; }
+
+.iql-main { grid-area: main; min-width: 0; min-height: 0; overflow: auto; position: relative; }
+.iql-main:focus { outline: none; }
+
+.iql-ev { grid-area: ev; position: relative; min-width: 0; min-height: 0; border-left: 1px solid hsl(var(--border)); background: hsl(var(--card)); }
+.iql-ev-scroll { height: 100%; overflow: auto; padding: 1rem; }
+.iql-frame.ev-hidden .iql-ev { border-left: 0; }
+.iql-frame.ev-hidden .iql-ev-scroll { display: none; }
+.iql-ev-default { font-size: .85rem; color: hsl(var(--muted-foreground)); }
+.iql-ev-default h2 { font-size: 1rem; color: hsl(var(--foreground)); margin-bottom: .4rem; font-weight: 600; }
+
+/* The divider: drag it, or focus it and use the arrow keys. */
+.iql-splitter { position: absolute; top: 0; bottom: 0; left: -6px; width: 11px; z-index: 5; cursor: col-resize; touch-action: none; }
+.iql-frame.ev-hidden .iql-splitter { left: -11px; cursor: pointer; }
+.iql-splitter::before { content: ""; position: absolute; top: 0; bottom: 0; left: 5px; width: 1px; background: transparent; }
+.iql-splitter:hover::before, .iql-splitter.dragging::before, .iql-splitter:focus-visible::before { left: 4px; width: 3px; background: hsl(var(--primary)); }
+.iql-splitter .grip { position: absolute; top: 45%; left: 1px; width: 9px; height: 2.75rem; border-radius: 999px; background: hsl(var(--muted)); border: 1px solid hsl(var(--border)); }
+.iql-splitter:focus { outline: none; }
+.iql-splitter:focus-visible .grip { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+body.iql-resizing { cursor: col-resize; user-select: none; }
+
+.iql-skip { position: absolute; left: 8px; top: -48px; z-index: 60; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); padding: .4rem .7rem; border-radius: 6px; }
+.iql-skip:focus { top: 8px; }
+
+.iql-crumbs { display: flex; align-items: center; gap: .5rem; padding: .4rem .9rem; border-bottom: 1px solid hsl(var(--border)); font-size: .82rem; }
+
+/* Narrower: the evidence opens over the screen when asked for. */
+@media (max-width: 1100px) {
+  .iql-frame, .iql-frame.ev-hidden { grid-template-columns: 14rem minmax(0, 1fr); grid-template-areas: "bar bar" "nav main"; }
+  .iql-ev { position: fixed; top: 3rem; right: 0; bottom: 0; width: min(26rem, 90vw); z-index: 30; box-shadow: -8px 0 24px rgb(0 0 0 / 18%); }
+  .iql-frame.ev-hidden .iql-ev { display: none; }
+  .iql-splitter { display: none; }
+}
+
+/* A phone: the places become a bar along the bottom. */
+@media (max-width: 720px) {
+  .iql-frame, .iql-frame.ev-hidden { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "bar" "main" "nav"; }
+  .iql-bar { flex-wrap: wrap; }
+  .iql-querybar { order: 3; flex-basis: 100%; }
+  .iql-status { display: none; }
+  .iql-nav { border-right: 0; border-top: 1px solid hsl(var(--border)); padding: .25rem .4rem; display: flex; gap: .25rem; overflow-x: auto; overflow-y: hidden; }
+  .iql-nav h2, .iql-nav .who { display: none; }
+  .iql-nav ul { display: flex; gap: .2rem; flex: none; }
+  .iql-nav a { white-space: nowrap; min-height: 2.75rem; }
+  .iql-ev { top: 0; width: 100vw; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .iql-nav a, .iql-btn { transition: background-color .12s ease; }
+}
+.iql-nav a[aria-current="page"] .count { color: inherit; }
+.iql-nav, .iql-nav a { position: relative; }

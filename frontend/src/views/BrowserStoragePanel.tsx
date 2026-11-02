@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { settingAnchor } from '../lib/settingsIndex';
 import {
   AlertTriangle, Check, Copy, HardDrive, RefreshCw,
-  RotateCcw, Search, Trash2, ChevronDown, ChevronRight,
-  Info,
+  Search, Trash2, ChevronDown, ChevronRight,
 } from 'lucide-react';
 
 export interface StorageItem {
@@ -190,17 +189,8 @@ export const BrowserStoragePanel = () => {
     scanStorage();
   };
 
-  const resetLayout = () => {
-    localStorage.removeItem('nexus-shell-layout');
-    setStatusMessage({
-      text: 'Workspace layout reset. Reload the tab to restore default Desk layout.',
-      type: 'success',
-    });
-    scanStorage();
-  };
-
   const clearAllStorage = () => {
-    if (!window.confirm('Clear all browser local and session storage? This will reset your layout, theme, and cached client state.')) {
+    if (!window.confirm('Clear all browser local and session storage? This resets the theme and other preferences kept in this browser.')) {
       return;
     }
     localStorage.clear();
@@ -232,19 +222,10 @@ export const BrowserStoragePanel = () => {
             Browser Storage
           </h2>
           <p className="text-muted-foreground text-sm mt-1">
-            Inspect, manage, and reset cached workspace layouts, themes, and client-side storage.
+            What this browser keeps for InboxQL: preferences such as the theme and the evidence panel's width, and cached state. None of it is your mail.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={resetLayout}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary/20 text-xs font-semibold rounded-none border border-primary/30 transition-colors"
-            title="Clears nexus-shell-layout to unstick misconfigured workbench tabs"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Reset Layout
-          </button>
           <button
             type="button"
             onClick={scanStorage}
@@ -312,15 +293,6 @@ export const BrowserStoragePanel = () => {
           <div className="text-[11px] text-muted-foreground mt-1">
             {quotaInfo ? `of ${formatBytes(quotaInfo.quota)} available` : 'Managed by browser sandbox'}
           </div>
-        </div>
-      </div>
-
-      {/* Layout Recovery Explainer Alert */}
-      <div className="p-4 bg-card border border-primary/20 flex items-start gap-3 text-xs leading-relaxed text-muted-foreground">
-        <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-        <div>
-          <span className="font-semibold text-foreground">Layout Persistence & Recovery:</span>{' '}
-          The workbench layout is persisted in your browser's <code className="font-mono text-primary">nexus-shell-layout</code> key so your open tabs and split panels remain between refreshes. If you ever encounter duplicate or mislabeled tabs from older versions, click <strong>Reset Layout</strong> above to safely clear the cached model without affecting your email database or settings.
         </div>
       </div>
 

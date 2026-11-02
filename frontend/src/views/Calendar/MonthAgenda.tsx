@@ -103,8 +103,8 @@ export const Agenda = ({ occurrences, colourOf, selected, onSelect }: {
                     {o.allDay ? 'All day' : `${fmtTime(new Date(o.start))} – ${fmtTime(new Date(o.end))}`}
                   </span>
                   <span className={`flex-1 truncate ${o.myStatus === 'declined' ? 'line-through text-muted-foreground' : ''}`}>{o.summary}</span>
-                  {o.proposed && <span className="text-[11px] uppercase tracking-wider text-amber-600">proposed</span>}
-                  {o.myStatus === 'needs-action' && <span className="text-[11px] uppercase tracking-wider text-amber-600">not answered</span>}
+                  {o.proposed && <span className="text-[11px] uppercase tracking-wider text-amber-800 dark:text-amber-300">proposed</span>}
+                  {o.myStatus === 'needs-action' && <span className="text-[11px] uppercase tracking-wider text-amber-800 dark:text-amber-300">not answered</span>}
                   {o.location && <span className="max-w-[12rem] truncate text-xs text-muted-foreground">{o.location}</span>}
                 </button>
               </li>

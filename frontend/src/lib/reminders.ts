@@ -8,6 +8,8 @@ export interface Reminder {
   location?: string;
   conferenceUrl?: string;
   minutes: number;
+  /** How an important date's reminder reads: "in 7 days". */
+  note?: string;
 }
 
 /**
@@ -29,6 +31,7 @@ export const useReminders = create<ReminderState>((set) => ({
 }));
 
 export function reminderText(r: Reminder): string {
+  if (r.note) return r.note.charAt(0).toUpperCase() + r.note.slice(1);
   if (r.allDay) return 'Today';
   if (r.minutes <= 0) return 'Now';
   const at = new Date(r.start).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });

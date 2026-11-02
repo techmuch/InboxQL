@@ -21,13 +21,20 @@ export interface Binding {
 }
 
 export const BINDINGS: Binding[] = [
-  { keys: 'g d', label: 'Desk', command: 'iql.open-desk', group: 'Go' },
+  { keys: 'g t', label: 'Today', command: 'iql.open-today', group: 'Go' },
+  { keys: 'g i', label: 'Inbox', command: 'iql.open-inbox', group: 'Go' },
+  { keys: 'g e', label: 'Everything', command: 'iql.open-everything', group: 'Go' },
+  { keys: 'g o', label: 'Replies I owe', command: 'iql.open-replies', group: 'Go' },
+  { keys: 'g d', label: 'Drafts and outbox', command: 'iql.open-outbox', group: 'Go' },
+  { keys: 'g m', label: 'Mail, where you left it', command: 'iql.open-desk', group: 'Go' },
   { keys: 'g c', label: 'Calendar', command: 'iql.open-calendar', group: 'Go' },
   { keys: 'g b', label: 'Board', command: 'iql.open-board', group: 'Go' },
-  { keys: 'g p', label: 'People (Contacts)', command: 'iql.open-contacts', group: 'Go' },
+  { keys: 'g p', label: 'People', command: 'iql.open-contacts', group: 'Go' },
   { keys: 'g f', label: 'Files', command: 'iql.open-files', group: 'Go' },
-  { keys: 'g a', label: 'Waiting for approval', command: 'iql.open-approvals', group: 'Go' },
+  { keys: 'g r', label: 'To review', command: 'iql.open-review', group: 'Go' },
+  { keys: 'g a', label: 'Ahead', command: 'iql.open-ahead', group: 'Go' },
   { keys: 'g s', label: 'Settings', command: 'iql.open-settings', group: 'Go' },
+  { keys: 'g h', label: 'Help', command: 'iql.open-docs', group: 'Go' },
   { keys: 'c', label: 'New message', command: 'iql.new-message', group: 'Create' },
   { keys: 't', label: 'New task', command: 'iql.new-task', group: 'Create' },
   { keys: '?', label: 'Keyboard shortcuts', command: 'iql.keyboard', group: 'Help' },

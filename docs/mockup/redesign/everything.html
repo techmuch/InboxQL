@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Everything · InboxQL redesign</title>
+<meta name="description" content="All mail in every account, with where each message is and who moved it.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="folder:allmail" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html" aria-current="page">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title">
+  <div class="page-head"><div class="grow">
+    <h1 id="page-title">Everything</h1>
+    <p class="muted" style="margin-top:.3rem"><span class="callout" aria-hidden="true">1</span> All mail in 2 accounts: <strong>48,210 messages</strong>, 2009 to today. Trash and Spam are left out — <strong>1,312</strong> more there. <a href="#">Include them</a></p>
+  </div></div>
+  <div class="filters" role="group" aria-label="Where"><span class="callout" aria-hidden="true">2</span>
+    <button class="chip" aria-pressed="true">All mail</button><button class="chip" aria-pressed="false">Inbox</button><button class="chip" aria-pressed="false">Archived</button>
+    <button class="chip" aria-pressed="false">Sent</button><button class="chip" aria-pressed="false">Starred</button><button class="chip" aria-pressed="false">Trash</button><button class="chip" aria-pressed="false">Spam</button></div>
+  <div class="filters" role="group" aria-label="Account"><span class="small muted">Account:</span>
+    <button class="chip" aria-pressed="true">Both</button><button class="chip" aria-pressed="false">Personal (Gmail)</button><button class="chip" aria-pressed="false">Work (IMAP)</button></div>
+  <div style="overflow-x:auto" tabindex="0" role="region" aria-label="Messages table">
+  <table class="grid"><caption class="sr-only">All mail, newest first</caption>
+    <thead><tr><th scope="col">From</th><th scope="col">Subject</th><th scope="col">Where <span class="callout" aria-hidden="true">3</span></th><th scope="col" class="num">Date</th></tr></thead>
+    <tbody>
+      <tr class="sel"><td>Dana Whitfield</td><td>Saturday carpool</td><td><span class="chip">Inbox</span></td><td class="num">9:12 AM</td></tr>
+      <tr><td>Hardware Depot</td><td>20% off fasteners this weekend</td><td><span class="chip">Archived</span> <span class="chip agent">by agent, 8:09</span></td><td class="num">8:02 AM</td></tr>
+      <tr><td>You</td><td>Re: Lunch Friday?</td><td><span class="chip">Sent</span></td><td class="num">Thu</td></tr>
+      <tr><td>Lumen Air</td><td>Your trip to Denver: LA 418</td><td><span class="chip">Archived</span> <span class="chip">Travel</span></td><td class="num">Oct 22</td></tr>
+      <tr><td>Ortiz Renovations</td><td>Deposit received</td><td><span class="chip">Archived</span> <span class="chip">Receipts</span></td><td class="num">Oct 14</td></tr>
+      <tr><td>Priya Raman</td><td>Q4 kickoff notes</td><td><span class="chip">Archived</span> <span class="chip">Work/Q4</span></td><td class="num">Sep 30</td></tr>
+    </tbody></table></div>
+  <p class="small muted" style="margin-top:.4rem">6 of 48,210 · <a href="query.html">Open in Ask</a> to count, chart or add up.</p>
+<section class="notes" aria-labelledby="n-every"><h2 id="n-every">About this screen</h2><p><strong>Purpose.</strong> All your mail, wherever it is: the place to look for something you archived, or to see where a message went. It is <code>folder:allmail</code> with the place and account as buttons.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> The sentence says what is left out and how much, with a way to include it — an empty search is never a mystery.</li><li><span class="callout">2</span> Where and account are toggle groups, not a folder tree. Mail has labels; a message can be in Sent and under Receipts at once.</li><li><span class="callout">3</span> <strong>Where</strong> is a column: every row says where the message is and, if something other than you moved it, who did.</li></ol><h3>What changed from today's app</h3><ul><li>The folder rows in the Desk rail become these buttons; labels stay under Subjects.</li><li>A table rather than a list, because looking things up is comparing columns.</li></ul><h3>Keyboard</h3><table class="doc"><tr><th>Key</th><th>Does</th></tr><tr><td><kbd>g e</kbd></td><td>Go to Everything</td></tr><tr><td><kbd>/</kbd></td><td>Type a query</td></tr><tr><td><kbd>↵</kbd></td><td>Open</td></tr></table><h3>Screen reader</h3><p>A real table with a caption and column headers in a focusable region; the “by agent” chip is read as text in the Where cell.</p><h3>Workflows</h3><p><a href="workflows.html#w8">W8 Find out what happened</a></p></section></main>
+<aside class="evidence" aria-labelledby="ev-e"><h2 id="ev-e">In all mail</h2>
+  <table class="grid small"><caption class="sr-only">Messages by place</caption><tbody>
+  <tr><th scope="row">Inbox</th><td class="num">117</td></tr><tr><th scope="row">Archived</th><td class="num">44,830</td></tr><tr><th scope="row">Sent</th><td class="num">3,263</td></tr>
+  <tr><th scope="row">Trash</th><td class="num">1,204</td></tr><tr><th scope="row">Spam</th><td class="num">108</td></tr></tbody></table>
+  <h3 style="margin-top:1rem">By year</h3>
+  <ul class="small" style="list-style:none;padding:0;display:grid;gap:.2rem">
+    <li><span class="bar-h" style="width:6rem" aria-hidden="true"></span> 2026 · 9,880</li><li><span class="bar-h" style="width:5.4rem" aria-hidden="true"></span> 2025 · 8,920</li>
+    <li><span class="bar-h" style="width:4.6rem" aria-hidden="true"></span> 2024 · 7,640</li><li><span class="bar-h" style="width:2rem" aria-hidden="true"></span> 2009–2023 · 21,770</li></ul>
+  <p class="small muted">A first sync is newest first: older Gmail mail is still arriving (82% here).</p>
+</aside>
+</div>
+</body>
+</html>

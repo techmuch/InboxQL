@@ -23,7 +23,7 @@ const (
 	// DBNAME is the default name for the SQLite database file.
 	DBNAME = "inboxql.db"
 	// SchemaVersion is the current version of the database schema.
-	SchemaVersion = 48
+	SchemaVersion = 49
 )
 
 var (
@@ -2060,6 +2060,35 @@ func migrateDB(db *sql.DB) error {
 			return err
 		}
 		currentVersion = 48
+	}
+
+	if currentVersion < 49 {
+		log.Println("Applying schema migration v49 (important dates)...")
+		// Dates the person marked important, counted down on Today and Ahead
+		// and reminded of as they approach. A row of its own rather than a
+		// flag on an event or a card, because an important date need not be
+		// either — a passport's expiry is a date in a message, or no message
+		// at all — and because one card or event can matter and the next
+		// occurrence of it not. ref_kind and ref_id say what it is about,
+		// when it is about something.
+		if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS important_dates (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			date TEXT NOT NULL,
+			lead_days INTEGER NOT NULL DEFAULT 0,
+			yearly INTEGER NOT NULL DEFAULT 0,
+			ref_kind TEXT NOT NULL DEFAULT '',
+			ref_id TEXT NOT NULL DEFAULT '',
+			note TEXT NOT NULL DEFAULT '',
+			origin TEXT NOT NULL DEFAULT 'human',
+			created_at INTEGER NOT NULL
+		)`); err != nil {
+			return fmt.Errorf("failed to apply schema v49: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 49;"); err != nil {
+			return err
+		}
+		currentVersion = 49
 	}
 
 	log.Printf("Database schema is up to date (version %d).", SchemaVersion)

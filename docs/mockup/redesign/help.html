@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Help · InboxQL redesign</title>
+<meta name="description" content="Built-in guides, release notes and keyboard reference, with help on every screen.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="help:" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="help.html" aria-current="page">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title">
+  <div class="page-head"><div class="grow"><h1 id="page-title">Help</h1>
+    <p class="muted" style="margin:.3rem 0 0"><span class="callout" aria-hidden="true">1</span> Every guide is built into InboxQL and matches the version you are running, 2026.10.31.2. Nothing here is fetched from the web.</p></div></div>
+  <form role="search" onsubmit="return false" style="display:flex;gap:.5rem;margin:.5rem 0 1rem"><label for="hq" class="sr-only">Search help</label><input id="hq" class="btn" style="flex:1;font-size:1rem;padding:.5rem .7rem" placeholder="Search the guides, or ask how to do something" value=""><button class="btn primary">Search</button></form>
+  <section class="section" aria-labelledby="h-here">
+    <header><h2 id="h-here" class="grow">Help where you are <span class="callout" aria-hidden="true">2</span></h2></header>
+    <p class="card" style="padding:.7rem 1rem;margin:0">Press <kbd>?</kbd> on any screen for what it is for, its sections, and its keys — <a href="help-here.html">see it on Today</a>. Each setting and each agent conclusion links to the paragraph that explains it.</p>
+  </section>
+  <section class="section" aria-labelledby="h-new">
+    <header><h2 id="h-new" class="grow">What’s new in 2026.10.31.2 <span class="callout" aria-hidden="true">3</span></h2><a class="small" href="#">All release notes</a></header>
+    <ul class="card small" style="padding:.7rem 1rem .7rem 2rem;margin:0">
+      <li><strong>Selected rows</strong> use a colour measured against every theme, so the selection is visible in Dark.</li>
+      <li>An <strong>indigo Light theme</strong>, a clearer <strong>unread mark</strong>, and no text smaller than 11 px.</li>
+      <li>One toolbar row fewer on the Desk.</li></ul>
+  </section>
+  <section class="section" aria-labelledby="h-guides">
+    <header><h2 id="h-guides" class="grow">Guides</h2><span class="small muted">14 guides · start with Getting started</span></header>
+    <ul class="list card" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))"><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Getting started</a><div class="line">The first hour: accounts, the first sync, Today.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Reading and replying</a><div class="line">Conversations, the evidence panel, drafts and sending.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">The query language</a><div class="line">Everything you can type in the query bar.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Labels</a><div class="line">Gmail-style labels, and labels the agent gives.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">People</a><div class="line">Contacts, open loops and who is waiting on whom.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Files</a><div class="line">Files from mail, versions, and reading inside them.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Calendar</a><div class="line">Events, invitations and proposals.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Board</a><div class="line">Cards, lists, rules, and cards raised from mail.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Accounts and import</a><div class="line">Adding accounts; bringing in Apple Mail and .eml.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Privacy</a><div class="line">What leaves this computer, and when.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Settings</a><div class="line">Every setting, by section.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Installing and updating</a><div class="line">The service, updates, the phone.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">The command line</a><div class="line">iql for people; AGENTS.md for agents.</div></div></li><li class="row" style="grid-template-columns:minmax(0,1fr)"><div><a class="who" href="help-guide.html">Troubleshooting</a><div class="line">When something is wrong, and how to tell what.</div></div></li></ul>
+  </section>
+  <section class="section" aria-labelledby="h-ref">
+    <header><h2 id="h-ref" class="grow">Reference</h2></header>
+    <ul class="small" style="padding-left:1.1rem"><li><a href="help-here.html">Keyboard shortcuts</a> — every key, on one page, and the ones you have changed</li>
+      <li><a href="#">For agents (AGENTS.md)</a> — the contract an agent driving <code>iql</code> follows; the same text as <code>iql help agents</code></li>
+      <li><a href="#">Workflows</a> — step by step, with what a screen reader hears</li></ul>
+  </section>
+<section class="notes" aria-labelledby="n-help"><h2 id="n-help">About this screen</h2><p><strong>Purpose.</strong> One place for every guide, the release notes and the keyboard reference, all built into the binary — so help is always about the version you have, works offline, and is the same text <code>iql help</code> prints.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> Says the version the guides describe, and that nothing is fetched.</li><li><span class="callout">2</span> <strong>Help where you are</strong> is the main way in: <kbd>?</kbd> on any screen opens that screen’s own help (the same content these mockups show under each screen), and Settings rows, agent conclusions and error messages link to their paragraph.</li><li><span class="callout">3</span> What’s new shows the release you are running. After an update, Today shows one line — “Updated to 2026.11.1.1 · What’s new” — once, and dismissing it does not hide the notes here.</li></ol><h3>What changed from today's app</h3><ul><li>Help → Documentation today is a list of Markdown files in a viewer tab; it becomes a page in the three-part layout.</li><li>Search covers guides, release notes, keyboard keys and settings together, and offers Ask in words for “how do I…” questions.</li></ul><h3>Keyboard</h3><table class="doc"><tr><th>Key</th><th>Does</th></tr><tr><td><kbd>?</kbd></td><td>Help for this screen</td></tr><tr><td><kbd>g h</kbd></td><td>Go to Help</td></tr><tr><td><kbd>/</kbd> in Help</td><td>Search help</td></tr></table><h3>Screen reader</h3><p>Guides are a list of links with one-line descriptions. The search is a search landmark labelled “Search help”.</p></section></main>
+<aside class="evidence" aria-labelledby="ev-h"><h2 id="ev-h">Example: asking how</h2>
+  <p class="small muted">Searching “hide spam from the side” finds two paragraphs, and offers Ask in words:</p>
+  <ul class="small" style="padding-left:1.1rem"><li><a href="#">Settings › Subjects in the navigation</a></li><li><a href="#">Labels › Mailbox rows are hidden, never deleted</a></li></ul>
+  <div class="card small" style="padding:.6rem .7rem;margin-top:.5rem"><p style="margin:0 0 .3rem"><span class="chip agent">Claude Code</span></p>
+    <p style="margin:0">Open <strong>Settings › Reading and appearance › Subjects in the navigation</strong> and switch off Spam. It is hidden, not deleted; Reset brings it back.</p>
+    <p class="muted" style="margin:.3rem 0 0">From: Settings guide §4, Labels guide §6 · <button class="btn" style="padding:.1rem .5rem">Do it for me</button></p></div>
+  <p class="small muted" style="margin-top:.5rem">“Do it for me” opens the setting with focus on it; it does not change it.</p>
+</aside>
+</div>
+</body>
+</html>

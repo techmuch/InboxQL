@@ -18,7 +18,7 @@ export const Help = ({ topic, className = '' }: { topic: string; className?: str
       title={`${t.label} — open the guide`}
       aria-label={`Help: ${t.label}`}
       data-help={topic}
-      className={`inline-flex shrink-0 items-center justify-center rounded-full text-muted-foreground/70 hover:text-primary focus-visible:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary ${className}`}
+      className={`inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 hover:text-primary focus-visible:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary ${className}`}
     >
       <CircleHelp className="h-3.5 w-3.5" />
     </button>

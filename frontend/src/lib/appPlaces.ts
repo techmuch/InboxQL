@@ -10,6 +10,14 @@ import { CALENDAR_TAB } from './calendarNav';
 import { openErrorLog, openTool, DESK_TAB } from './tabs';
 
 export const PLACES: Record<string, { label: string; open: () => void }> = {
+  today: { label: 'Today', open: () => openTool('today', 'Today') },
+  ahead: { label: 'Ahead', open: () => openTool('ahead', 'Ahead') },
+  replies: { label: 'Replies I owe', open: () => openTool('replies', 'Replies I owe') },
+  review: { label: 'To review', open: () => openTool('review', 'To review') },
+  outbox: { label: 'Drafts and outbox', open: () => openTool('outbox', 'Drafts and outbox') },
+  activity: { label: 'Agent activity', open: () => openTool('activity', 'Agent activity') },
+  ask: { label: 'Ask in words', open: () => openTool('ask', 'Ask in words') },
+  help: { label: 'Help', open: () => openTool('help', 'Help') },
   desk: { label: 'Desk', open: () => openTool(DESK_TAB, 'Desk') },
   calendar: { label: 'Calendar', open: () => openTool(CALENDAR_TAB, 'Calendar') },
   board: { label: 'Board', open: () => openTool('board', 'Board') },

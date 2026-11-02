@@ -81,34 +81,9 @@ describe('useIsCurrent', () => {
     expect(screen.getByTestId('message-null').textContent).toBe('not');
   });
 
-  /**
-   * The cascade, in one assertion.
-   *
-   * A file selected in the Desk list and a message selected inside that file are
-   * different viewer slots, so both stay lit. One global "current row" would
-   * un-highlight the file the moment a message inside it was previewed — while
-   * the file is still on screen in its own tab.
-   */
-  it('keeps a file current while a message inside it is shown', () => {
-    const key = 'b'.repeat(64);
-    act(() => { useViewerStore.getState().setMode('split'); });
-    render(
-      <>
-        <Row kind="file" id={key} />
-        <Row kind="message" id="m2" />
-      </>,
-    );
-
-    act(() => { useViewerStore.getState().setFile({ key, filename: 'contract.pdf' }); });
-    act(() => { useViewerStore.getState().setMessage({ id: 'm2' }); });
-
-    expect(screen.getByTestId(`file-${key}`).textContent).toBe('current');
-    expect(screen.getByTestId('message-m2').textContent).toBe('current');
-  });
-
-  // Reuse mode holds one subject at a time, so the second one replaces the
-  // first. That is the mode working, not the highlight failing.
-  it('and in reuse mode the file gives way, because the tab does', () => {
+  // The one viewer holds one subject at a time, so the second one replaces
+  // the first. That is the viewer working, not the highlight failing.
+  it('a file gives way to a message, because the viewer does', () => {
     const key = 'c'.repeat(64);
     act(() => { useViewerStore.getState().setMode('reuse'); });
     render(

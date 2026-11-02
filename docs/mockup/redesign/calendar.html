@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calendar · InboxQL redesign</title>
+<meta name="description" content="The week view, with agent proposals placed where they would go and every event tied to its source.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="in:events during:2026-11-02..2026-11-08" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html" aria-current="page">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title">
+  <div class="page-head"><div class="grow">
+    <h1 id="page-title">Calendar</h1>
+    <p class="muted" style="margin-top:.3rem"><span class="callout" aria-hidden="true">1</span> Next week: 14 hours booked across 10 events, <strong>1 overlap</strong> (Thursday 3:15) and <strong>1 proposal</strong> waiting for you.</p>
+  </div>
+  <div style="display:flex;gap:.3rem;flex-wrap:wrap"><button class="btn" aria-label="Previous week">←</button><button class="btn">This week</button><button class="btn" aria-label="Next week">→</button></div></div>
+  <nav class="tabs" aria-label="View"><a href="#" >Day</a><a href="calendar.html" aria-current="page">Week</a><a href="ahead-months.html">Month</a><a href="ahead.html">Agenda</a>
+    <span style="flex:1"></span><span class="small muted" style="align-self:center">Calendars: Personal, Work, Invitations · <a href="#">Family hidden</a></span></nav>
+  <h2 class="sr-only">Week of November 2</h2>
+  <div class="week"><div class="hours" aria-hidden="true"><div style="height:2.6rem"></div><div style="height:1.6rem;border-bottom:1px solid var(--border)"></div><div style="position:relative;height:31.2rem"><span style="top:2.6rem">9 AM</span><span style="top:5.2rem">10 AM</span><span style="top:7.800000000000001rem">11 AM</span><span style="top:10.4rem">12 PM</span><span style="top:13.0rem">1 PM</span><span style="top:15.600000000000001rem">2 PM</span><span style="top:18.2rem">3 PM</span><span style="top:20.8rem">4 PM</span><span style="top:23.400000000000002rem">5 PM</span><span style="top:26.0rem">6 PM</span><span style="top:28.6rem">7 PM</span></div></div><section class="col" aria-labelledby="d2"><h3 id="d2"><span class="sr-only">Monday, November 2</span><span aria-hidden="true">Mon<span class="dn">2</span></span></h3><ul class="allday" aria-label="All day"></ul><ul class="slots" aria-label="Timed events"><li class="ev-b proposed sel" style="top:6.50rem;height:5.20rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Cabinet delivery</strong>10:30 AM–12:30 PM · Rafael<span class="sr-only">. Proposed by the agent, not on your calendar yet.</span></a></li><li class="ev-b " style="top:13.00rem;height:1.30rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Team stand-up <span style="font-weight:400">1:00 PM</span></strong><span class="sr-only"> to 1:30 PM</span><span class="sr-only">.</span></a></li><li class="ev-b " style="top:18.20rem;height:5.20rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Design review</strong>3:00 PM–5:00 PM<span class="sr-only">.</span></a></li></ul></section><section class="col" aria-labelledby="d3"><h3 id="d3"><span class="sr-only">Tuesday, November 3</span><span aria-hidden="true">Tue<span class="dn">3</span></span></h3><ul class="allday" aria-label="All day"><li>Election Day</li></ul><ul class="slots" aria-label="Timed events"><li class="ev-b " style="top:2.60rem;height:5.20rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Planning</strong>9:00 AM–11:00 AM<span class="sr-only">.</span></a></li><li class="ev-b " style="top:15.60rem;height:2.60rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Q4 report call <span style="font-weight:400">2:00 PM</span></strong><span class="sr-only"> to 3:00 PM</span><span class="sr-only">.</span></a></li></ul></section><section class="col" aria-labelledby="d4"><h3 id="d4"><span class="sr-only">Wednesday, November 4</span><span aria-hidden="true">Wed<span class="dn">4</span></span></h3><ul class="allday" aria-label="All day"></ul><ul class="slots" aria-label="Timed events"><li class="ev-b " style="top:28.60rem;height:2.60rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Youth activity <span style="font-weight:400">7:00 PM</span></strong><span class="sr-only"> to 8:00 PM</span><span class="sr-only">.</span></a></li></ul></section><section class="col" aria-labelledby="d5"><h3 id="d5"><span class="sr-only">Thursday, November 5</span><span aria-hidden="true">Thu<span class="dn">5</span></span></h3><ul class="allday" aria-label="All day"></ul><ul class="slots" aria-label="Timed events"><li class="ev-b clash half" style="top:18.20rem;height:2.60rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Dentist <span style="font-weight:400">3:00 PM</span></strong><span class="sr-only"> to 4:00 PM</span><span class="sr-only">. Overlaps another event.</span></a></li><li class="ev-b clash half2" style="top:18.85rem;height:1.30rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Conference <span style="font-weight:400">3:15 PM</span></strong><span class="sr-only"> to 3:45 PM</span><span class="sr-only">. Overlaps another event.</span></a></li></ul></section><section class="col" aria-labelledby="d6"><h3 id="d6"><span class="sr-only">Friday, November 6</span><span aria-hidden="true">Fri<span class="dn">6</span></span></h3><ul class="allday" aria-label="All day"></ul><ul class="slots" aria-label="Timed events"><li class="ev-b " style="top:2.60rem;height:6.50rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Budget workshop</strong>9:00 AM–11:30 AM<span class="sr-only">.</span></a></li><li class="ev-b " style="top:10.40rem;height:2.60rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Lunch with Jordan <span style="font-weight:400">12:00 PM</span></strong><span class="sr-only"> to 1:00 PM</span><span class="sr-only">.</span></a></li></ul></section><section class="col" aria-labelledby="d7"><h3 id="d7"><span class="sr-only">Saturday, November 7</span><span aria-hidden="true">Sat<span class="dn">7</span></span></h3><ul class="allday" aria-label="All day"></ul><ul class="slots" aria-label="Timed events"></ul></section><section class="col" aria-labelledby="d8"><h3 id="d8"><span class="sr-only">Sunday, November 8</span><span aria-hidden="true">Sun<span class="dn">8</span></span></h3><ul class="allday" aria-label="All day"></ul><ul class="slots" aria-label="Timed events"><li class="ev-b " style="top:2.60rem;height:3.90rem"><a href="#" style="color:inherit;text-decoration:none"><strong>Ward council</strong>9:00 AM–10:30 AM<span class="sr-only">.</span></a></li></ul></section></div>
+  <p class="small muted" style="margin-top:.4rem"><span class="callout" aria-hidden="true">2</span> Solid = on your calendar · <span style="color:var(--agent)">dashed violet = proposed by the agent</span> · <span style="color:var(--warn)">amber edge = overlaps</span>. Each is also said in words.</p>
+<section class="notes" aria-labelledby="n-cal"><h2 id="n-cal">About this screen</h2><p><strong>Purpose.</strong> The calendar stays a place, because time is a layout people read at a glance. It loses its own approval sidebar (proposals go to Review) and gains the evidence panel: every event says where it came from.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> A sentence about the week first: hours, overlaps, proposals.</li><li><span class="callout">2</span> Proposals sit on the grid where they would go, marked, so you can see whether they fit before approving. They are not counted in hours booked.</li></ol><h3>What changed from today's app</h3><ul><li>Proposals move from the Calendar sidebar to Review, and remain visible here.</li><li>Month and Agenda views are the two Ahead views; the calendar is the same data at day and week scale.</li></ul><h3>Keyboard</h3><table class="doc"><tr><th>Key</th><th>Does</th></tr><tr><td><kbd>g c</kbd></td><td>Go to Calendar</td></tr><tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Previous · next week</td></tr><tr><td><kbd>d</kbd> <kbd>w</kbd> <kbd>m</kbd> <kbd>a</kbd></td><td>Day · week · month · agenda</td></tr><tr><td><kbd>Tab</kbd></td><td>Events in time order</td></tr><tr><td><kbd>a</kbd> / <kbd>⌫</kbd></td><td>Approve · reject a selected proposal</td></tr></table><h3>Screen reader</h3><p>Each day is a region with a heading (“Monday, November 2”) and its events as a list in time order, so the grid is read as an agenda. Each event’s name includes its time and, in words, whether it is proposed or overlaps.</p><h3>Workflows</h3><p><a href="workflows.html#w9">W9 Look ahead</a></p></section></main>
+<aside class="evidence" aria-labelledby="ev-c"><h2 id="ev-c">Cabinet delivery</h2>
+  <p class="small"><span class="chip agent">proposed by the agent</span> Mon, Nov 2, 10:30 AM – 12:30 PM</p>
+  <h3>From</h3><blockquote class="quote">If the order goes in Monday, we can deliver the cabinets Monday Nov 2 between 10:30 and 12:30.<cite>Rafael Ortiz, Oct 29 · <a href="conversation.html">open</a></cite></blockquote>
+  <h3>Fits?</h3><p class="small">Free 10:30–12:30. Team stand-up at 1:00.</p>
+  <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.5rem"><button class="btn primary">Approve <kbd>a</kbd></button><button class="btn">Edit</button><button class="btn quiet">Reject</button></div>
+</aside>
+</div>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your data · Settings · InboxQL redesign</title>
+<meta name="description" content="Where the mailbox is, backups, import and export, health, and deleting.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="settings:data" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html" aria-current="page">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title"><div class="page-head"><div class="grow"><h1 id="page-title">Your data</h1></div></div>
+<div class="settings"><nav class="setnav" aria-label="Settings sections"><form role="search" onsubmit="return false"><label for="setq" class="sr-only">Find a setting</label><input id="setq" placeholder="Find a setting…  ⌘F"></form><ul><li><a href="settings.html">Overview</a></li><li><a href="settings-accounts.html">You and your accounts</a></li><li><a href="settings-agents.html">Agents and AI</a></li><li><a href="settings-reading.html">Reading and appearance</a></li><li><a href="settings-data.html" aria-current="page">Your data<span class="chip warn" title="needs attention">1<span class="sr-only"> needs attention</span></span></a></li><li><a href="settings-computer.html">This computer<span class="chip warn" title="needs attention">1<span class="sr-only"> needs attention</span></span></a></li></ul></nav><div><section class="setgroup" aria-labelledby="g-where"><h2 id="g-where">The mailbox</h2><div class="card"><div class="set " id="setting-mailbox-location"><div><div class="lbl" id="l-mailbox-location">Where it is</div><p class="desc" id="d-mailbox-location"><code>~/.iql/mail</code> — from the machine settings. Messages 3.1 GB · files 0.9 GB · search index 0.2 GB.</p></div><div class="ctl"><button class="btn">Show in Finder</button></div></div><div class="set " id="setting-disk"><div><div class="lbl" id="l-disk">Room left</div><p class="desc" id="d-disk">41 GB free on this disk.</p></div><div class="ctl"><span class="chip good">plenty</span></div></div></div></section><section class="setgroup" aria-labelledby="g-backups"><h2 id="g-backups">Backups <span class="callout" aria-hidden="true">1</span></h2><div class="card"><div class="set " id="setting-backups"><div><div class="lbl" id="l-backups">Last backup</div><p class="desc" id="d-backups"><strong>Oct 22, 9 days ago.</strong> The weekly backup on Sunday was missed because the computer was asleep; the next will run when it wakes.</p></div><div class="ctl"><span class="chip warn">overdue</span><button class="btn primary">Back up now</button></div></div><div class="set " id="setting-backup-keep"><div><div class="lbl" id="l-backup-keep">Schedule and keeping</div><p class="desc" id="d-backup-keep">Weekly · keep 4 scheduled, 3 from updates, 2 from restores. Backups you make yourself are never removed.</p></div><div class="ctl"><fieldset class="seg" aria-labelledby="l-backup-keep"><label><input type="radio" name="bs"> Off</label><label><input type="radio" name="bs"> Daily</label><label><input type="radio" name="bs" checked> Weekly</label></fieldset><button class="btn">Keep rules…</button></div></div><div class="set " id="setting-backup-list"><div><div class="lbl" id="l-backup-list">Backups</div><p class="desc" id="d-backup-list">7 backups, 27 GB. Each is checked after it is written.</p></div><div class="ctl"><button class="btn">Show all</button><button class="btn">Restore…</button></div></div></div></section><section class="setgroup" aria-labelledby="g-import"><h2 id="g-import">Bring mail in</h2><div class="card"><div class="set " id="setting-import-source"><div><div class="lbl" id="l-import-source">Apple Mail</div><p class="desc" id="d-import-source"><span style="color:var(--warn)">Blocked:</span> needs Full Disk Access for <strong>Terminal</strong> — the program macOS checks, not iql. <a href="#">How to allow it</a></p></div><div class="ctl"><button class="btn" disabled aria-describedby="d-import-source">Import…</button></div></div><div class="set " id="setting-import-eml"><div><div class="lbl" id="l-import-eml">A folder of .eml files</div><p class="desc" id="d-import-eml">No permission needed: drag messages out of Mail into a folder.</p></div><div class="ctl"><button class="btn">Choose folder…</button></div></div><div class="set " id="setting-export"><div><div class="lbl" id="l-export">Export</div><p class="desc" id="d-export">All mail as .mbox, or a query’s results.</p></div><div class="ctl"><button class="btn">Export…</button></div></div></div></section><section class="setgroup" aria-labelledby="g-maint"><h2 id="g-maint">Health</h2><div class="card"><div class="set " id="setting-health-checks"><div><div class="lbl" id="l-health-checks">Checks</div><p class="desc" id="d-health-checks">All 14 passed this morning. 211 files not yet read for text.</p></div><div class="ctl"><span class="chip good">ok</span><button class="btn">Read the 211 files</button></div></div></div></section><section class="setgroup" aria-labelledby="g-danger"><h2 id="g-danger">Delete</h2><div class="card"><div class="set danger" id="setting-erase-data"><div><div class="lbl" id="l-erase-data">Delete all stored messages <span class="callout" aria-hidden="true">2</span></div><p class="desc" id="d-erase-data">Removes every message, file and agent answer from this computer, after making a backup. Mail on your servers is not touched.</p></div><div class="ctl"><button class="btn" style="color:var(--bad);border-color:var(--bad)">Delete everything…</button></div></div></div></section><section class="notes" aria-labelledby="n-set-data"><h2 id="n-set-data">About this screen</h2><p><strong>Purpose.</strong> Where your mail is kept, whether it is safe, and how it comes in and goes out.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> Backups say when, what was missed and why, and what happens next — “overdue” is the state, “Back up now” the fix.</li><li><span class="callout">2</span> Destructive actions are last, in their own group, and say what they will and will not affect before you confirm by typing the mailbox name.</li></ol><h3>What changed from today's app</h3><ul><li>Import, Data management, Maintenance and Storage were four sections.</li><li>Full Disk Access names the program that needs it, as the CLI does.</li></ul><h3>Screen reader</h3><p>The disabled Import button is described by the sentence saying why, so a screen reader hears the reason.</p></section></div></div></main>
+<aside class="evidence" aria-labelledby="ev-s"><h2 id="ev-s">From the command line</h2>
+  <p class="small muted">Everything on this page can also be done with <code>iql</code>, so a script or an agent can read it — and the change shows here.</p>
+  <ul class="small" style="list-style:none;padding:0;display:grid;gap:.55rem"><li><code>iql --json backup list</code><br><span class="small muted">every backup, room taken and left</span></li><li><code>iql --json backup</code><br><span class="small muted">make one now</span></li><li><code>iql --json import sources</code><br><span class="small muted">what can be imported, and what blocks it</span></li><li><code>iql --json doctor</code><br><span class="small muted">health checks</span></li></ul>
+  <h3 style="margin-top:1rem">When changes apply</h3><p class="small">Backups run in the background; you can keep working. Restoring restarts the server.</p>
+  <h3 style="margin-top:1rem">Help</h3><p class="small"><a href="#">Backups and import guide</a></p></aside>
+</div>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { ShellLayout, chatPanel, componentRegistry, menuRegistry, commandRegistry, useThemeStore, useKeyboardShortcuts, UserProfile, BUNDLED_THEMES } from 'nexus-shell';
-import { Search, Mail, Server, Shield, Cpu, Eye, Check, AlertCircle, RefreshCw, MessageSquare, User, Lock, Download, Database, HardDrive, Wrench } from 'lucide-react';
+import { commandRegistry, useThemeStore, useKeyboardShortcuts } from 'nexus-shell';
+import { Search, Mail, Server, Shield, Cpu, Eye, Check, AlertCircle, User, Lock, Download, Database, HardDrive, Wrench } from 'lucide-react';
 import { AgentManager } from './AgentManager';
 import { ImportPanel } from './views/ImportPanel';
 import { BrowserStoragePanel } from './views/BrowserStoragePanel';
@@ -13,9 +13,9 @@ import { Desk } from './views/Desk';
 import { Dashboard } from './views/Dashboard';
 import { Board } from './views/Board';
 import { DataManagement } from './views/DataManagement';
-import { openTool, openErrorLog, useViewerStore, type ViewerMode } from './lib/tabs';
+import { openTool, openErrorLog, openQuery, useViewerStore } from './lib/tabs';
 import { useAttachmentTargetStore, type AttachmentTarget } from './lib/attachmentTarget';
-import { CalendarDays, Radio, RadioTower, ScrollText } from 'lucide-react';
+import { CalendarDays, ScrollText } from 'lucide-react';
 import { useThreadingStore, type Threading } from './lib/threading';
 import { ENTRY_CAP, useThreadExpansionStore, type ThreadExpansion } from './lib/threadExpansion';
 import { startWindowSession, useWindowsStore, WINDOWS_TAB } from './lib/windows';
@@ -40,12 +40,26 @@ import { Approvals } from './views/Approvals';
 import { WorkLoop } from './views/WorkLoop';
 import { openCompose, openKeys, openNewTask, openPalette } from './lib/appUi';
 import { installKeySequences } from './lib/keySequences';
-import { openDoc, DOCS_TAB } from './lib/docsNav';
+import { openDoc } from './lib/docsNav';
 import { appVersion, notesAnchor } from './lib/version';
-import { AppLockup } from './views/AppLockup';
+import { AppShell } from './shell/AppShell';
+import { Evidence } from './shell/Evidence';
+import { followAddress, usePlaceStore } from './lib/places';
 import 'nexus-shell/style.css';
 import './App.css';
 import { Help } from './views/Help';
+import { Today } from './views/Today';
+import { SettingsOverview, type SettingsGroup } from './views/Settings/Overview';
+import { Ahead } from './views/Ahead';
+import { Review } from './views/NeedsMe/Review';
+import { Replies } from './views/NeedsMe/Replies';
+import { Outbox } from './views/NeedsMe/Outbox';
+import { Activity } from './views/NeedsMe/Activity';
+import { Person } from './views/Subjects/Person';
+import { Ask } from './views/Ask';
+import { AskSetting } from './views/Ask/AskSetting';
+import { askInWords, looksLikeQuestion } from './lib/ask';
+import { Topic, Topics } from './views/Subjects/Topic';
 
 // --- Login View ---
 const LoginView = ({ onLogin }: { onLogin: (user: any) => void }) => {
@@ -144,60 +158,6 @@ const LoginView = ({ onLogin }: { onLogin: (user: any) => void }) => {
 
 // --- Gmail-like Mail Client Tool ---
 // --- Unified Settings View ---
-/**
- * The viewer reuse preference.
- *
- * Two options spelled out rather than a checkbox, because "Reuse viewer tab ☐"
- * tells you what is being turned off and not what happens instead — and the
- * alternative here is a different arrangement of the workspace, which is worth
- * a sentence.
- */
-const ViewerModeSetting = () => {
-  const mode = useViewerStore(s => s.mode);
-  const setMode = useViewerStore(s => s.setMode);
-
-  const options: { id: ViewerMode; label: string; detail: string }[] = [
-    {
-      id: 'reuse',
-      label: 'Reuse one Viewer tab',
-      detail: 'Messages, contacts and files share a single tab. Opening one replaces the last.',
-    },
-    {
-      id: 'split',
-      label: 'A tab for each kind',
-      detail: 'Message, Contact and File get their own tabs, so opening a file leaves the message you were reading where it was.',
-    },
-  ];
-
-  return (
-    <section {...settingAnchor('viewer-tabs')}>
-      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Viewer Tabs</h3>
-      <div className="grid grid-cols-2 gap-4">
-        {options.map(o => (
-          <button
-            key={o.id}
-            onClick={() => setMode(o.id)}
-            aria-pressed={mode === o.id}
-            className={`relative p-4 border text-left flex flex-col gap-1.5 transition-all ${
-              mode === o.id
-                ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                : 'border-border hover:bg-accent'
-            }`}
-          >
-            <span className="text-sm font-medium">{o.label}</span>
-            <span className="text-xs text-muted-foreground leading-snug">{o.detail}</span>
-            {mode === o.id && <Check className="w-3 h-3 text-primary absolute top-2 right-2" />}
-          </button>
-        ))}
-      </div>
-      <p className="text-[11px] text-muted-foreground mt-3">
-        Switching to a single tab closes the Contact and File tabs; switching back reopens
-        the ones that still have something in them.
-      </p>
-    </section>
-  );
-};
-
 /**
  * Whether the Desk opens threaded.
  *
@@ -382,7 +342,7 @@ const AttachmentTargetSetting = () => {
 
 const SettingsView = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState(() => takeSettingsSection() ?? 'profile');
+  const [activeCategory, setActiveCategory] = useState(() => takeSettingsSection() ?? 'overview');
   useEffect(() => {
     const go = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
@@ -457,28 +417,32 @@ const SettingsView = () => {
     }
   };
 
+  // Sections, grouped by what you are doing rather than by the code behind
+  // them: who you are and your accounts, agents, how things look, your data,
+  // and this computer. Each section id is unchanged, so every link into
+  // Settings (the settings index, the guides) still lands where it did.
   const categories = [
-    { id: 'profile', label: 'User Profile', icon: User },
-    // General absorbed Appearance rather than sitting beside it. Appearance
-    // held one thing — the theme — and a category per preference is how a
-    // settings page ends up with eight sections nobody can find anything in.
-    { id: 'general', label: 'General', icon: Eye },
-    // The machine rather than the mailbox: where the mail is, how the server
-    // runs, the settings file, restart and update.
-    { id: 'system', label: 'System', icon: Server },
-    { id: 'accounts', label: 'Mail Accounts', icon: Mail },
-    { id: 'calendars', label: 'Calendars', icon: CalendarDays },
-    { id: 'import', label: 'Import Mail', icon: Download },
-    { id: 'ai', label: 'AI Configuration', icon: Cpu },
-    { id: 'security', label: 'Security', icon: Shield },
-    // Its own section rather than inside General, which is per-browser by its
-    // own description, or Maintenance, which is a page of verbs and would
-    // become a junk drawer.
-    { id: 'logging', label: 'Logging', icon: ScrollText },
-    { id: 'maintenance', label: 'Maintenance', icon: Wrench },
-    { id: 'data', label: 'Data Management', icon: Database },
-    { id: 'storage', label: 'Browser Storage', icon: HardDrive },
+    { id: 'overview', label: 'Overview', icon: Check, group: '' },
+    { id: 'profile', label: 'Profile', icon: User, group: 'you' },
+    { id: 'accounts', label: 'Mail accounts', icon: Mail, group: 'you' },
+    { id: 'calendars', label: 'Calendars', icon: CalendarDays, group: 'you' },
+    { id: 'ai', label: 'AI and agents', icon: Cpu, group: 'agents' },
+    { id: 'general', label: 'Look and reading', icon: Eye, group: 'reading' },
+    { id: 'import', label: 'Import mail', icon: Download, group: 'data' },
+    { id: 'data', label: 'Backups and data', icon: Database, group: 'data' },
+    { id: 'maintenance', label: 'Health and maintenance', icon: Wrench, group: 'data' },
+    { id: 'storage', label: 'Browser storage', icon: HardDrive, group: 'data' },
+    { id: 'system', label: 'System and updates', icon: Server, group: 'computer' },
+    { id: 'logging', label: 'Logging', icon: ScrollText, group: 'computer' },
+    { id: 'security', label: 'Security', icon: Shield, group: 'computer' },
   ];
+  const GROUPS: SettingsGroup[] = [
+    { id: 'you', label: 'You and your accounts', about: 'Your name and picture, the mail accounts InboxQL reads, and connected calendars.', sections: [] },
+    { id: 'agents', label: 'Agents and AI', about: 'Where summaries and drafts are written, local models, and the starters.', sections: [] },
+    { id: 'reading', label: 'Reading and appearance', about: 'Theme, how the inbox is laid out, conversations, attachment previews.', sections: [] },
+    { id: 'data', label: 'Your data', about: 'Importing, backups, health checks and maintenance, and what this browser stores.', sections: [] },
+    { id: 'computer', label: 'This computer', about: 'Version and updates, the background service, logging, security.', sections: [] },
+  ].map(g => ({ ...g, sections: categories.filter(c => c.group === g.id).map(c => ({ id: c.id, label: c.label })) }));
 
   // The same index Find anything uses, so the two searches agree: a section
   // stays listed when its name matches or anything in it does, and the
@@ -507,10 +471,15 @@ const SettingsView = () => {
           </div>
         </div>
         <div className="flex-1 overflow-auto py-2">
-          {filteredCategories.map(cat => (
-            <div key={cat.id} className={`flex items-center pr-3 ${activeCategory === cat.id ? 'bg-primary/10' : ''}`}>
+          {filteredCategories.map((cat, i) => (
+            <div key={cat.id}>
+            {cat.group && cat.group !== filteredCategories[i - 1]?.group && (
+              <h2 className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{GROUPS.find(g => g.id === cat.group)?.label}</h2>
+            )}
+            <div className={`flex items-center pr-3 ${activeCategory === cat.id ? 'bg-primary/10' : ''}`}>
               <button
                 onClick={() => setActiveCategory(cat.id)}
+                aria-current={activeCategory === cat.id ? 'page' : undefined}
                 className={`flex-1 flex items-center gap-3 px-4 py-2 text-sm transition-colors ${activeCategory === cat.id ? 'text-primary font-semibold' : 'hover:bg-accent text-foreground/70'}`}
               >
                 <cat.icon className="w-4 h-4" />
@@ -518,7 +487,8 @@ const SettingsView = () => {
               </button>
               {/* The open section's guide, beside its name rather than over its
                   page, where it would sit on the section's own buttons. */}
-              {activeCategory === cat.id && cat.id !== 'security' && <Help topic={`settings-${cat.id}`} />}
+              {activeCategory === cat.id && cat.id !== 'security' && cat.id !== 'overview' && <Help topic={`settings-${cat.id}`} />}
+            </div>
             </div>
           ))}
           {matchingSettings.length > 0 && (
@@ -537,20 +507,11 @@ const SettingsView = () => {
             </div>
           )}
         </div>
-        <div className="p-4 border-t border-border mt-auto opacity-50">
-          <div className="text-xs font-mono flex items-center justify-between text-muted-foreground">
-            <span>InboxQL</span>
-            <button type="button" onClick={() => openDoc('release-notes', notesAnchor(appVersion))}
-              aria-label={`Version ${appVersion}, release notes`} title="Release notes for this version"
-              className="hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-              v{appVersion}
-            </button>
-          </div>
-        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-8">
         <div className="max-w-3xl mx-auto">
+          {activeCategory === 'overview' && <SettingsOverview groups={GROUPS} open={setActiveCategory} />}
           {activeCategory === 'accounts' && <MailAccounts />}
 
           {activeCategory === 'profile' && (
@@ -570,8 +531,8 @@ const SettingsView = () => {
                     </div>
                     <div className="flex-1 space-y-4">
                       <div className="space-y-1.5" {...settingAnchor('display-name')}>
-                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Display Name</label>
-                        <input 
+                        <label htmlFor="profile-name" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Display Name</label>
+                        <input id="profile-name" 
                           type="text" 
                           className="w-full bg-background border border-border  px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                           value={userProfile.displayName || ''}
@@ -579,8 +540,8 @@ const SettingsView = () => {
                         />
                       </div>
                       <div className="space-y-1.5" {...settingAnchor('profile-email')}>
-                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Email Address</label>
-                        <input 
+                        <label htmlFor="profile-email-input" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Email Address</label>
+                        <input id="profile-email-input" 
                           type="email" 
                           className="w-full bg-background border border-border  px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                           value={userProfile.email || ''}
@@ -591,8 +552,8 @@ const SettingsView = () => {
                   </div>
 
                   <div className="space-y-1.5" {...settingAnchor('profile-image')}>
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Profile Image URL</label>
-                    <input 
+                    <label htmlFor="profile-image-url" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Profile Image URL</label>
+                    <input id="profile-image-url" 
                       type="text" 
                       placeholder="https://example.com/avatar.jpg"
                       className="w-full bg-background border border-border  px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
@@ -658,14 +619,16 @@ const SettingsView = () => {
                 <ThreadingSetting />
                 <ThreadExpansionSetting />
                 <AttachmentTargetSetting />
-                <ViewerModeSetting />
                 <RailDefaults />
               </div>
             </div>
           )}
 
           {activeCategory === 'ai' && (
+            <>
+            <AskSetting />
             <AISettingsPanel />
+            </>
           )}
 
           {activeCategory === 'security' && (
@@ -704,35 +667,55 @@ const SettingsView = () => {
   );
 };
 
-// --- Register Components ---
-componentRegistry.register('dashboard', Dashboard);
-componentRegistry.register('desk', Desk);
-// The layout is persisted, so a tab someone had open before the merge still
-// names the component by its old id. Without these the saved layout renders
-// "Unknown Component" and the mailbox looks deleted rather than renamed.
-componentRegistry.register('mail', Desk);
-componentRegistry.register('query', Desk);
-componentRegistry.register('search', Desk);
-componentRegistry.register('settings', SettingsView);
-componentRegistry.register(DOCS_TAB, Docs);
-componentRegistry.register(CALENDAR_TAB, Calendar);
-componentRegistry.register('agents', AgentManager);
-componentRegistry.register('viewer', () => <MessageViewer only="message" />);
-// The old id, so a layout persisted before the rename still resolves.
-componentRegistry.register('message', () => <MessageViewer only="message" />);
-// The per-kind viewers split mode opens. Registered unconditionally and
-// permanently: layouts are persisted, so somebody who used split mode once has
-// these in their saved layout forever, and an unregistered component renders
-// "Unknown Component" — which is what the alias above already exists to avoid.
-componentRegistry.register('viewer-contact', () => <MessageViewer only="contact" />);
-componentRegistry.register('viewer-file', () => <MessageViewer only="file" />);
-componentRegistry.register('errors', ErrorLog);
-componentRegistry.register('windows', Windows);
+// --- Places ---
+/**
+ * What each place shows. A place is one screen in the middle of the frame
+ * (see lib/places.ts); its id is the old tab component id, so everything that
+ * opened a tab now goes to the place instead.
+ */
+const VIEWS: Record<string, { label: string; view: React.ComponentType }> = {
+  today: { label: 'Today', view: Today },
+  ahead: { label: 'Ahead', view: Ahead },
+  desk: { label: 'Mail', view: Desk },
+  dashboard: { label: 'Dashboard', view: Dashboard },
+  settings: { label: 'Settings', view: SettingsView },
+  help: { label: 'Help', view: Docs },
+  calendar: { label: 'Calendar', view: Calendar },
+  agents: { label: 'AI Agents (preview)', view: AgentManager },
+  viewer: { label: 'Reading', view: ViewerPlace },
+  errors: { label: 'Log', view: ErrorLog },
+  windows: { label: 'Windows', view: Windows },
+  board: { label: 'Board', view: Board },
+  annotators: { label: 'Labels and extractors', view: Annotators },
+  approvals: { label: 'Waiting for approval', view: Approvals },
+  review: { label: 'To review', view: Review },
+  replies: { label: 'Replies I owe', view: Replies },
+  outbox: { label: 'Drafts and outbox', view: Outbox },
+  person: { label: 'Person', view: Person },
+  ask: { label: 'Ask in words', view: Ask },
+  topic: { label: 'Topic', view: Topic },
+  'topic-index': { label: 'Topics', view: Topics },
+  'work-loop': { label: 'Work loop', view: WorkLoop },
+  activity: { label: 'Agent activity', view: Activity },
+};
 
-componentRegistry.register('board', Board);
-componentRegistry.register('annotators', Annotators);
-componentRegistry.register('approvals', Approvals);
-componentRegistry.register('work-loop', WorkLoop);
+/** The viewer as a place: a way back, then the message, contact or file. */
+function ViewerPlace() {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="iql-crumbs">
+        <button type="button" className="iql-btn" onClick={() => window.history.back()}>← Back</button>
+        <span className="text-muted-foreground">Esc also goes back</span>
+      </div>
+      <div className="min-h-0 flex-1"><MessageViewer only="message" /></div>
+    </div>
+  );
+}
+
+const labelOf = (place: string) => VIEWS[place]?.label ?? 'InboxQL';
+/** Saved queries the pane already has as places of their own. */
+const PLACE_QUERIES = new Set(['inbox', 'tickets', 'proposed', 'files', 'people']);
+const AVAILABLE = new Set(Object.keys(VIEWS));
 
 /** File → Import calendar: pick an .ics file and add it to your own calendar. */
 function importCalendarFile() {
@@ -766,9 +749,7 @@ function App() {
 
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeAccount, setActiveAccount] = useState<any>(null);
   const [globalUnread, setGlobalUnread] = useState(0);
-  const [syncStatus] = useState('Idle');
   const [lastError, setLastError] = useState<string | null>(null);
 
   // Tab opening moved to lib/tabs so components deeper in the tree — the mail
@@ -818,7 +799,6 @@ function App() {
         if (res.status === 401) { setUser(null); return; }
         const accounts = await res.json();
         if (accounts && accounts.length > 0) {
-          setActiveAccount(accounts[0]);
           let totalUnread = 0;
           for (const acc of accounts) {
             const sRes = await fetch(`/api/accounts/stats?id=${acc.id}`);
@@ -859,14 +839,22 @@ function App() {
       commandRegistry.registerCommand({ id, label, execute, keybinding });
 
     // Places.
-    cmd('iql.open-desk', 'Go to Desk', () => openToolCb('desk', 'Desk'), 'Control+Shift+M');
+    cmd('iql.open-desk', 'Go to mail, where you left it', () => openToolCb('desk', 'Desk'), 'Control+Shift+M');
+    cmd('iql.open-today', 'Go to Today', () => openToolCb('today', 'Today'));
+    cmd('iql.open-ahead', 'Go to Ahead', () => openToolCb('ahead', 'Ahead'));
+    cmd('iql.open-replies', 'Go to Replies I owe', () => openToolCb('replies', 'Replies I owe'));
+    cmd('iql.open-outbox', 'Go to Drafts and outbox', () => openToolCb('outbox', 'Drafts and outbox'));
+    cmd('iql.open-activity', 'Go to Agent activity', () => openToolCb('activity', 'Agent activity'));
+    cmd('iql.open-inbox', 'Go to Inbox', () => openQuery('folder:inbox'));
+    cmd('iql.open-everything', 'Go to Everything', () => openQuery('folder:allmail'));
+    cmd('iql.open-review', 'Go to To review', () => openToolCb('review', 'To review'));
     cmd('iql.open-calendar', 'Go to Calendar', () => openToolCb(CALENDAR_TAB, 'Calendar'), 'Control+Shift+Y');
     // Not Control+Shift+B: Chrome binds that to the bookmarks bar.
     cmd('iql.open-board', 'Go to Board', () => openToolCb('board', 'Board'), 'Control+Shift+K');
     // Desk on a contact query rather than a tab of its own: contacts are an
     // entity in the query language, and a separate surface would be a second
     // place that filters, sorts and pages them.
-    cmd('iql.open-contacts', 'Go to Contacts', () => { useQueryStore.getState().set('in:contacts'); openToolCb('desk', 'Desk'); }, 'Control+Shift+C');
+    cmd('iql.open-contacts', 'Go to People', () => { useQueryStore.getState().set('in:contacts kind:person'); openToolCb('desk', 'Desk'); }, 'Control+Shift+C');
     cmd('iql.open-files', 'Go to Files', () => { useQueryStore.getState().set('in:attachments'); openToolCb('desk', 'Desk'); });
     cmd('iql.open-dashboard', 'Go to Dashboard', () => openToolCb('dashboard', 'Analytics Dashboard'), 'Control+Shift+D');
     cmd('iql.open-search', 'Search mail', () => {
@@ -903,12 +891,6 @@ function App() {
     // Themes are the shell's own commands (theme.<id>), one per bundled theme.
     cmd('iql.threading-threaded', 'Conversations: grouped', () => useThreadingStore.getState().setThreading('threaded'));
     cmd('iql.threading-flat', 'Conversations: one row per message', () => useThreadingStore.getState().setThreading('flat'));
-    cmd('iql.viewer-reuse', 'Viewer tabs: reuse one', () => useViewerStore.getState().setMode('reuse'));
-    cmd('iql.viewer-split', 'Viewer tabs: one per kind', () => useViewerStore.getState().setMode('split'));
-    cmd('iql.reset-layout', 'Reset layout', () => {
-      try { localStorage.removeItem('nexus-shell-layout'); } catch { /* storage unavailable */ }
-      window.location.reload();
-    });
     cmd('iql.open-windows', 'Windows', () => openToolCb(WINDOWS_TAB, 'Windows'));
     cmd('iql.open-errors', 'Log', () => openErrorLog(), 'Control+Shift+E');
 
@@ -929,60 +911,6 @@ function App() {
     // version, where the mailbox is and how the server is running.
     cmd('nexus.about', 'About InboxQL', () => openSettingsAt('system'));
 
-    const item = (id: string, label: string, keybinding?: string) => ({ id, label, commandId: id, keybinding });
-    // No dividers: the shell's menu bar has no separator and draws "---" as
-    // an item. Grouping is by order instead.
-    menuRegistry.setMenus({
-      'File': [
-        item('iql.new-message', 'New message', 'C'),
-        item('iql.new-event', 'New event'),
-        item('iql.new-task', 'New task', 'T'),
-        item('iql.import-mail', 'Import mail…'),
-        item('iql.import-calendar', 'Import calendar (.ics)…'),
-        item('iql.export-calendar', 'Export calendar (.ics)'),
-        item('iql.open-settings', 'Settings…', 'Ctrl+,'),
-      ],
-      'Go': [
-        item('iql.open-desk', 'Desk', 'G D'),
-        item('iql.open-calendar', 'Calendar', 'G C'),
-        item('iql.open-board', 'Board', 'G B'),
-        item('iql.open-contacts', 'Contacts', 'G P'),
-        item('iql.open-files', 'Files', 'G F'),
-        item('iql.open-dashboard', 'Dashboard'),
-        item('iql.find-anything', 'Find anything…', 'Ctrl+K'),
-      ],
-      'View': [
-        { id: 'view.toggle-chat', label: 'Chat', commandId: 'view.toggleChat', keybinding: 'Ctrl+I' },
-        { id: 'view.threading', label: 'Conversations', submenu: [
-          item('iql.threading-threaded', 'Grouped'),
-          item('iql.threading-flat', 'One row per message'),
-        ] },
-        { id: 'view.viewer', label: 'Viewer tabs', submenu: [
-          item('iql.viewer-reuse', 'Reuse one'),
-          item('iql.viewer-split', 'One per kind'),
-        ] },
-        { id: 'view.theme', label: 'Theme', submenu: BUNDLED_THEMES.map(t => ({ id: `view.theme.${t.id}`, label: t.label, commandId: `theme.${t.id}` })) },
-        item('iql.reset-layout', 'Reset layout'),
-        item('iql.open-windows', 'Windows'),
-        item('iql.open-errors', 'Log'),
-      ],
-      'Intelligence': [
-        item('iql.open-approvals', 'Waiting for approval', 'G A'),
-        item('iql.open-work-loop', 'Work loop'),
-        item('iql.open-annotators', 'Labels & extractors'),
-        item('iql.ai-assistants', 'AI assistants'),
-        item('iql.open-agents', 'AI Agents (Preview)'),
-      ],
-      'Help': [
-        item('iql.open-docs', 'Documentation', 'F1'),
-        item('iql.keyboard', 'Keyboard shortcuts', '?'),
-        item('iql.for-agents', 'For agents'),
-        item('iql.release-notes', 'Release notes'),
-        item('iql.check-updates', 'Check for updates'),
-        item('nexus.about', 'About InboxQL'),
-      ],
-    });
-
     // Branding and the activity bar used to be forced here by polling the DOM
     // every 100ms: nexus-shell 0.1.x had no way to set a title, and no way to
     // suppress the activity bar, so the shell's own markup was rewritten from
@@ -991,73 +919,106 @@ function App() {
     // so the interval is gone rather than merely tidied.
   }, [user, openTool]);
 
-  const statusBar = [
-    { id: 'acc', label: activeAccount ? `Account: ${activeAccount.name}` : 'No Account', alignment: 'left' as const, icon: Mail },
-    // Account-wide, junk and trash included — which is a different number
-    // from the Inbox badge beside it. Saying which one it is stops the two
-    // from reading as a contradiction.
-    { id: 'unread', label: `${globalUnread} unread, all folders`, alignment: 'left' as const },
-    { id: 'status', label: `Sync: ${syncStatus}`, alignment: 'center' as const, icon: RefreshCw },
-    { id: 'error', label: lastError || 'System OK', alignment: 'right' as const, icon: lastError ? AlertCircle : Check },
-    // Which window this is, and whether the backend can reach it. Clicking it
-    // opens the list, because a name on its own is a label nobody can map to a
-    // screen until something shows them the mapping.
-    {
-      id: 'window',
-      label: windowName ? `Window ${windowName}${windowLive ? '' : ' (no channel)'}` : 'Window —',
-      alignment: 'right' as const,
-      icon: windowLive ? RadioTower : Radio,
-      onClick: () => openToolCb(WINDOWS_TAB, 'Windows'),
-    },
-    { id: 'chat', label: 'Chat', alignment: 'right' as const, icon: MessageSquare, onClick: () => commandRegistry.executeCommand('view.toggleChat') },
-  ];
-
+  useEffect(() => followAddress(), []);
+  const place = usePlaceStore(s => s.id);
+  // Esc on the reading place goes back, as the crumb says.
   useEffect(() => {
-    if (user && !loading) {
-      // Auto-open Desk on login
-      setTimeout(() => openToolCb('desk', 'Desk'), 500);
-    }
-  }, [user, loading, openTool]);
+    if (place !== 'viewer') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('input, textarea, select, [role="dialog"]')) return;
+      window.history.back();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [place]);
+
+  // Subjects in the left-hand pane: your saved queries, in your order, less the
+  // ones that are places of their own now, then Topics.
+  const [saved, setSaved] = useState<{ name: string; title?: string; query: string }[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    const read = () => fetch('/api/queries').then(r => (r.ok ? r.json() : [])).then(d => setSaved(Array.isArray(d) ? d : [])).catch(() => {});
+    read();
+    window.addEventListener('iql:saved-changed', read);
+    return () => window.removeEventListener('iql:saved-changed', read);
+  }, [user]);
+  const subjects = {
+    key: 'subjects', label: 'Subjects',
+    items: [
+      ...saved.filter(q => !PLACE_QUERIES.has(q.name)).map(q => ({ key: `q-${q.name}`, label: q.title || q.name, place: 'desk', query: q.query })),
+      { key: 'topics', label: 'Topics', place: 'topic-index' },
+    ],
+  };
 
   if (loading) return null;
   if (!user) return <LoginView onLogin={setUser} />;
 
+  const View = (VIEWS[place] ?? VIEWS.today).view;
+  const onDesk = place === 'desk';
+
   return (
-    <div className="h-screen w-screen overflow-hidden iql-workbench">
-      {/* Outside the shell, because it explains something that happened to the
-          whole window rather than to any one panel. */}
+    <>
+      {/* Outside the frame, because it explains something that happened to the
+          whole window rather than to any one screen. */}
       <WindowNote />
       <ReminderToasts />
       <AppDialogs />
-      <ShellLayout
-        // `app-lockup` keeps the QL in InboxQL; see App.css for why a Tailwind
-        // class could not do it.
-        title={<AppLockup />}
-        // Chat was a fixture of the shell in 0.1.x, toggled by a built-in
-        // command. In 0.2.x it is an ordinary registered panel, so passing no
-        // panels left `view.toggleChat` with nothing to toggle. Registering it
-        // on the bottom edge restores the View menu and status-bar buttons —
-        // and the bottom edge specifically, because it is the one side with no
-        // icon rail, which keeps the activity bar hidden as before.
-        panels={[chatPanel({ side: 'bottom' })]}
-        statusBarConfig={statusBar}
-        rightMenuBarContent={
-          <UserProfile
-            profile={{
-              name: user.displayName,
-              email: user.email,
-              avatarUrl: user.profileImageUrl,
-            }}
-            actions={[
-              { id: 'profile', label: 'Profile', onSelect: () => commandRegistry.executeCommand('iql.open-profile') },
-              { id: 'settings', label: 'Settings', onSelect: () => commandRegistry.executeCommand('iql.open-settings') },
-              { id: 'logout', label: 'Sign out', onSelect: () => commandRegistry.executeCommand('iql.logout'), destructive: true, divider: true },
-            ]}
-          />
+      <AppShell
+        available={AVAILABLE}
+        subjects={subjects}
+        labelOf={labelOf}
+        onQuery={q => (looksLikeQuestion(q) ? askInWords(q) : openQuery(q))}
+        onAsk={q => askInWords(q)}
+        hideQuery={onDesk}
+        actions={
+          <>
+            <button type="button" className="iql-btn" onClick={openPalette} aria-keyshortcuts="Meta+K Control+K">Go to… <kbd>⌘K</kbd></button>
+            <button type="button" className="iql-btn primary" onClick={openCompose} aria-keyshortcuts="c">Write <kbd>c</kbd></button>
+          </>
         }
-      />
-    </div>
+        status={
+          <>
+            <span aria-hidden="true" className={`inline-block h-2 w-2 rounded-full ${lastError ? 'bg-destructive' : 'bg-green-600'}`} />
+            <span>{lastError ? lastError : `${globalUnread} unread`}</span>
+            <button type="button" onClick={() => openToolCb(WINDOWS_TAB, 'Windows')}
+              title="Open windows, and what each is showing">
+              {windowName ? `Window ${windowName}${windowLive ? '' : ' (no channel)'}` : 'Window —'}
+            </button>
+          </>
+        }
+        person={
+          <>
+            <span className="truncate" title={user.email}>{user.displayName || user.email}</span>
+            <button type="button" onClick={() => commandRegistry.executeCommand('iql.open-profile')}>Profile</button>
+            <button type="button" onClick={handleLogout}>Sign out</button>
+            <button type="button" onClick={() => openDoc('release-notes', notesAnchor(appVersion))}>v{appVersion}</button>
+          </>
+        }
+        evidenceDefault={
+          onDesk
+            ? <><h2>Reading</h2><p>Move to a message to read it here. Enter opens it on its own.</p></>
+            : <><h2>Evidence</h2><p>What this screen rests on appears here. Drag the edge or press <kbd className="iql-kbd">.</kbd> to hide it.</p></>
+        }
+      >
+        <View />
+      </AppShell>
+      {onDesk && <DeskReading />}
+    </>
   );
+}
+
+/**
+ * The message under the cursor in the mail list, read in the evidence panel.
+ *
+ * Arrowing the list already points the viewer at the row (previewMessage);
+ * the viewer used to be a tab beside the list, and now it is the panel.
+ */
+function DeskReading() {
+  const has = useViewerStore(s => Boolean(s.message || s.contact || s.file));
+  if (!has) return null;
+  return <Evidence><MessageViewer /></Evidence>;
 }
 
 export default App;

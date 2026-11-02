@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Go to… · InboxQL redesign</title>
+<meta name="description" content="The command palette: one box to reach any person, subject, place or action.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html" aria-current="page">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="needs:me" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div style="position:relative;height:88vh;overflow:hidden;border-bottom:2px dashed var(--border)"><div class="shell two" aria-hidden="true" inert>
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html" aria-current="page">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav>
+<main class="main"><h1>Today</h1><p class="muted">(Today, behind the palette.)</p></main></div>
+
+<div class="scrim" style="position:absolute">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pal-title">
+    <h1 id="pal-title" class="sr-only">Go to</h1>
+    <div style="display:flex;align-items:center;gap:.5rem;padding:.6rem .9rem;border-bottom:1px solid var(--border)">
+      <span aria-hidden="true" class="muted">⌕</span>
+      <input role="combobox" aria-expanded="true" aria-controls="pal-list" aria-activedescendant="opt1" aria-autocomplete="list"
+             aria-label="Go to a person, subject, place or action" value="rafa" autofocus
+             style="flex:1;border:0;background:transparent;font:inherit;font-size:1.05rem;color:var(--text)">
+      <kbd>Esc</kbd>
+    </div>
+    <ul id="pal-list" role="listbox" aria-label="Matches" class="list" style="max-height:60vh;overflow:auto">
+      <li role="presentation" class="small muted" style="padding:.5rem .9rem 0">PEOPLE</li>
+<li id="opt1" role="option" aria-selected="true" class="row selected" style="grid-template-columns:5.5rem minmax(0,1fr) auto;padding:.45rem .9rem"><span class="small muted">Person</span><span><strong>Rafael Ortiz</strong> <span class="muted small">rafael@ortizreno.example · 38 messages · 1 reply owed</span></span><span><kbd>↵</kbd></span></li><li id="opt2" role="option" aria-selected="false" class="row" style="grid-template-columns:5.5rem minmax(0,1fr) auto;padding:.45rem .9rem"><span class="small muted">Person</span><span><strong>Rafaela Souza</strong> <span class="muted small">rsouza@example.org · 3 messages</span></span><span></span></li><li role="presentation" class="small muted" style="padding:.5rem .9rem 0">SUBJECTS</li><li id="opt3" role="option" aria-selected="false" class="row" style="grid-template-columns:5.5rem minmax(0,1fr) auto;padding:.45rem .9rem"><span class="small muted">Topic</span><span><strong>Kitchen remodel</strong> <span class="muted small">12 conversations · Rafael Ortiz, Jordan Lee</span></span><span></span></li><li role="presentation" class="small muted" style="padding:.5rem .9rem 0">ACTIONS</li><li id="opt4" role="option" aria-selected="false" class="row" style="grid-template-columns:5.5rem minmax(0,1fr) auto;padding:.45rem .9rem"><span class="small muted">Action</span><span><strong>Reply to Rafael</strong> <span class="muted small">Cabinet hardware · the agent drafted one</span></span><span></span></li><li id="opt5" role="option" aria-selected="false" class="row" style="grid-template-columns:5.5rem minmax(0,1fr) auto;padding:.45rem .9rem"><span class="small muted">Action</span><span><strong>Write to Rafael</strong> <span class="muted small"></span></span><span></span></li><li id="opt6" role="option" aria-selected="false" class="row" style="grid-template-columns:5.5rem minmax(0,1fr) auto;padding:.45rem .9rem"><span class="small muted">Action</span><span><strong>Pin Rafael Ortiz</strong> <span class="muted small">adds him to Subjects</span></span><span></span></li><li role="presentation" class="small muted" style="padding:.5rem .9rem 0">SEARCH</li><li id="opt7" role="option" aria-selected="false" class="row" style="grid-template-columns:5.5rem minmax(0,1fr) auto;padding:.45rem .9rem"><span class="small muted">Query</span><span><strong>Mail mentioning “rafa”</strong> <span class="muted small"><code>rafa</code> · 41 messages</span></span><span></span></li><li id="opt8" role="option" aria-selected="false" class="row" style="grid-template-columns:5.5rem minmax(0,1fr) auto;padding:.45rem .9rem"><span class="small muted">Query</span><span><strong>Mail from Rafael this month</strong> <span class="muted small"><code>from:rafael@ortizreno.example after:2026-10-01</code></span></span><span></span></li>
+    </ul>
+    <p class="small muted" style="padding:.5rem .9rem;border-top:1px solid var(--border);margin:0">↑↓ choose · ↵ go · type <kbd>&gt;</kbd> for actions only, <kbd>/</kbd> to write a query</p>
+  </div>
+</div>
+</div>
+<main id="main" class="main" style="max-width:52rem;margin:0 auto">
+  <section class="notes" aria-labelledby="notes-pal">
+    <h2 id="notes-pal">About this screen</h2>
+    <p><strong>Purpose.</strong> Objective 5, <em>fewer places</em>. With subjects replacing most destinations, the way to anywhere is to type its name. <kbd>⌘K</kbd> from any screen. The navigation column stays, holding only what you pinned and the four Needs-me entries.</p>
+    <h3>What it finds</h3>
+    <ul>
+      <li><strong>People and organizations</strong>, ranked by how recently and how much you correspond — not alphabetically.</li>
+      <li><strong>Subjects</strong>: topics, labels, saved queries, cards.</li>
+      <li><strong>Actions</strong> that apply to the top match (“Reply to Rafael”) and global ones (“Go to Calendar”, “Switch theme”).</li>
+      <li><strong>Queries</strong>: the text as a full-text search, and a structured guess. Choosing one opens Ask with that query — shown, never run unseen.</li>
+    </ul>
+    <h3>Screen reader</h3>
+    <p>The ARIA combobox pattern: a modal dialog, an input with <code>aria-activedescendant</code> pointing at the highlighted option, group labels as presentation rows. Each option's text says its kind first. The count of matches is announced politely after typing pauses.</p>
+    <h3>Workflows</h3>
+    <p><a href="workflows.html#w2">W2 Work one subject</a> · <a href="workflows.html#w7">W7 Ask a question of the mail</a></p>
+  </section>
+</main>
+</body>
+</html>

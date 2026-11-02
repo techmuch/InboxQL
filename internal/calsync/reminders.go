@@ -33,10 +33,16 @@ type Reminder struct {
 	Location      string    `json:"location,omitempty"`
 	ConferenceURL string    `json:"conferenceUrl,omitempty"`
 	Minutes       int       `json:"minutes"`
+	// Note, when set, is how the reminder reads instead of a time: an
+	// important date says "in 7 days", not a clock time.
+	Note string `json:"note,omitempty"`
 }
 
 // Text is how a reminder reads in a notification.
 func (r Reminder) Text() string {
+	if r.Note != "" {
+		return r.Summary + " — " + r.Note
+	}
 	when := "now"
 	switch {
 	case r.AllDay:
@@ -97,7 +103,64 @@ func DueReminders(after, until time.Time) ([]Reminder, error) {
 			}
 		}
 	}
-	return due, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	dates, err := dueImportantDates(after, until)
+	if err != nil {
+		return nil, err
+	}
+	return append(due, dates...), nil
+}
+
+// ReminderHour is when an important date's reminders arrive, local time: a
+// reminder about a date is for the morning, not the moment the day turns.
+var ReminderHour = 8
+
+// dueImportantDates returns reminders for marked dates that came due in
+// (after, until]: when a lead time starts, a week before, the day before and
+// the morning of. A suggestion nobody accepted reminds nobody.
+func dueImportantDates(after, until time.Time) ([]Reminder, error) {
+	ds, err := store.ListImportantDates()
+	if err != nil {
+		return nil, err
+	}
+	var due []Reminder
+	for _, d := range ds {
+		if d.Origin != "human" {
+			continue
+		}
+		// The occurrence the window is approaching: from the start of the
+		// window, so a yearly date that is today is still today's.
+		day, ok := d.NextOccurrence(after.In(time.Local))
+		if !ok {
+			continue
+		}
+		stages := []struct {
+			days int
+			note string
+		}{{0, "today"}, {1, "tomorrow"}, {7, "in 7 days"}}
+		if d.LeadDays > 1 && d.LeadDays != 7 {
+			stages = append(stages, struct {
+				days int
+				note string
+			}{d.LeadDays, "in " + strconv.Itoa(d.LeadDays) + " days — time to start"})
+		}
+		for _, st := range stages {
+			at := time.Date(day.Year(), day.Month(), day.Day()-st.days, ReminderHour, 0, 0, 0, time.Local)
+			if at.After(after) && !at.After(until) {
+				due = append(due, Reminder{
+					EventID: "date:" + d.ID + ":" + strconv.Itoa(st.days),
+					Summary: d.Title,
+					Start:   day,
+					AllDay:  true,
+					Minutes: st.days * 1440,
+					Note:    st.note,
+				})
+			}
+		}
+	}
+	return due, nil
 }
 
 // RunReminders checks for due alarms until ctx ends.

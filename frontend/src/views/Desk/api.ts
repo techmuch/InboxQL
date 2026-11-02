@@ -226,8 +226,11 @@ export const setFolderHidden = (folder: string, hidden: boolean) =>
 export const resetFolders = () =>
   putJSON<{ hidden: string[] }>('/api/rail/folders/reset', {}, 'POST');
 
-export const moveSaved = (name: string, to: number) =>
-  putJSON<{ queries: SavedQuery[] }>('/api/rail/order', { name, to });
+export const moveSaved = async (name: string, to: number) => {
+  const out = await putJSON<{ queries: SavedQuery[] }>('/api/rail/order', { name, to });
+  savedChanged();
+  return out;
+};
 
 export const setSavedIcon = (name: string, icon: string) =>
   putJSON<unknown>('/api/rail/icon', { name, icon });
@@ -303,12 +306,20 @@ export async function saveQuery(q: SavedQuery): Promise<SavedQuery> {
     body: JSON.stringify(q),
   });
   if (!res.ok) await readError(res);
-  return res.json();
+  const saved = await res.json();
+  savedChanged();
+  return saved;
 }
 
 export async function deleteSaved(name: string): Promise<void> {
   const res = await fetch(`/api/queries?${new URLSearchParams({ name })}`, { method: 'DELETE' });
   if (!res.ok) await readError(res);
+  savedChanged();
+}
+
+/** Saved queries are Subjects in the left-hand pane, which listens for this. */
+function savedChanged() {
+  try { window.dispatchEvent(new Event('iql:saved-changed')); } catch { /* no window in a test */ }
 }
 
 /**

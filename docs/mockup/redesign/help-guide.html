@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The query language · Help · InboxQL redesign</title>
+<meta name="description" content="A built-in guide with live examples that run on your own mail.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="help:query-language" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="help.html" aria-current="page">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title">
+  <p class="crumbs"><a href="help.html">Help</a> › Guides</p>
+  <article aria-labelledby="page-title">
+  <h1 id="page-title">The query language</h1>
+  <p class="small muted">For 2026.10.31.2 · about 8 minutes · <a href="#">open as plain text</a></p>
+  <p>Everything InboxQL shows you is the answer to a query, and every query is something you can type. This page is the whole language. It is short, because most of its power comes from a few pieces that combine.</p>
+  <p>A query is a <strong>filter</strong>, optionally followed by <strong>stages</strong> after a <code>|</code>:</p>
+  <figure class="card" style="margin:.6rem 0;padding:.5rem .75rem;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .75rem;align-items:center"><code style="font-size:.9rem;overflow-wrap:anywhere">from:*@stripe.com after:2026-01-01 has:attachment</code><span style="display:flex;gap:.4rem;align-items:center"><span class="chip good">42 in your mail</span><button class="btn" aria-label="Run from:*@stripe.com after:2026-01-01 has:attachment on your mail">Run</button><button class="btn quiet" aria-label="Copy from:*@stripe.com after:2026-01-01 has:attachment">Copy</button></span></figure>
+  <figure class="card" style="margin:.6rem 0;padding:.5rem .75rem;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .75rem;align-items:center"><code style="font-size:.9rem;overflow-wrap:anywhere">is:unread -from:*@acme.com | count by week</code><span style="display:flex;gap:.4rem;align-items:center"><span class="chip">nothing in your mail</span><button class="btn" aria-label="Run is:unread -from:*@acme.com | count by week on your mail">Run</button><button class="btn quiet" aria-label="Copy is:unread -from:*@acme.com | count by week">Copy</button></span><figcaption class="small muted" style="grid-column:1/3"><span class="callout" aria-hidden="true">1</span> Nothing here matches <code>*@acme.com</code>, so the example is shown with your most frequent sender instead: <a href="#">is:unread -from:*@hardwaredepot.example | count by week</a>.</figcaption></figure>
+
+  <h2 id="match" style="margin-top:1.5rem">Three ways to match</h2>
+  <figure class="card" style="margin:.6rem 0;padding:.5rem .75rem;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .75rem;align-items:center"><code style="font-size:.9rem;overflow-wrap:anywhere">from:ortiz</code><span style="display:flex;gap:.4rem;align-items:center"><span class="chip good">38 in your mail</span><button class="btn" aria-label="Run from:ortiz on your mail">Run</button><button class="btn quiet" aria-label="Copy from:ortiz">Copy</button></span><figcaption class="small muted" style="grid-column:1/3">contains “ortiz” — also matches notortiz@x.com</figcaption></figure>
+  <figure class="card" style="margin:.6rem 0;padding:.5rem .75rem;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .75rem;align-items:center"><code style="font-size:.9rem;overflow-wrap:anywhere">from:=rafael@ortizreno.example</code><span style="display:flex;gap:.4rem;align-items:center"><span class="chip good">36 in your mail</span><button class="btn" aria-label="Run from:=rafael@ortizreno.example on your mail">Run</button><button class="btn quiet" aria-label="Copy from:=rafael@ortizreno.example">Copy</button></span><figcaption class="small muted" style="grid-column:1/3">exactly this address</figcaption></figure>
+  <figure class="card" style="margin:.6rem 0;padding:.5rem .75rem;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .75rem;align-items:center"><code style="font-size:.9rem;overflow-wrap:anywhere">from:*@ortizreno.example</code><span style="display:flex;gap:.4rem;align-items:center"><span class="chip good">38 in your mail</span><button class="btn" aria-label="Run from:*@ortizreno.example on your mail">Run</button><button class="btn quiet" aria-label="Copy from:*@ortizreno.example">Copy</button></span><figcaption class="small muted" style="grid-column:1/3"><span class="callout" aria-hidden="true">2</span> a pattern; * stands for any run of characters. Examples use your own correspondents where the guide’s would match nothing.</figcaption></figure>
+  <p>They are different questions, so the language keeps them apart instead of guessing which you meant.</p>
+
+  <h2 id="leave" style="margin-top:1.5rem">Leaving things out</h2>
+  <p><code>-</code> or <code>NOT</code> in front of any term or group leaves out what it matches. On recipients, <code>-to:bob</code> means <strong>no recipient is Bob</strong> — not “some recipient is not Bob”, which would match nearly every message with more than one recipient.</p>
+  <figure class="card" style="margin:.6rem 0;padding:.5rem .75rem;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .75rem;align-items:center"><code style="font-size:.9rem;overflow-wrap:anywhere">from:*@ortizreno.example -to:jordan@example.net</code><span style="display:flex;gap:.4rem;align-items:center"><span class="chip good">12 in your mail</span><button class="btn" aria-label="Run from:*@ortizreno.example -to:jordan@example.net on your mail">Run</button><button class="btn quiet" aria-label="Copy from:*@ortizreno.example -to:jordan@example.net">Copy</button></span></figure>
+  <aside class="callout-box card" style="padding:.6rem .85rem;border-left:3px solid var(--accent);margin:.8rem 0" aria-label="Note">
+    <p class="small" style="margin:0"><span class="callout" aria-hidden="true">3</span> <strong>Try it here:</strong> <kbd>Run</kbd> opens the results in Ask beside this guide; the guide stays open in the right-hand panel, at this paragraph, until you close it.</p></aside>
+  </article>
+<section class="notes" aria-labelledby="n-guide"><h2 id="n-guide">About this screen</h2><p><strong>Purpose.</strong> Reading a guide. The text is the same Markdown as <code>docs/query-language.md</code>, but examples are live: each runs on your own mail.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> Each example says how many messages it finds in <em>your</em> mail. An example that finds nothing says so and offers a version that does, built from your own senders — a guide that only ever shows “0” teaches that the feature does not work.</li><li><span class="callout">2</span> Example counts are computed when the guide opens, locally; nothing is sent anywhere.</li><li><span class="callout">3</span> Run keeps the guide open beside the results, in the evidence panel, at the paragraph you were reading — so you can read, try, and read on.</li></ol><h3>What changed from today's app</h3><ul><li>Today the guides render as static Markdown in a tab; examples are text to copy.</li></ul><h3>Keyboard</h3><table class="doc"><tr><th>Key</th><th>Does</th></tr><tr><td><kbd>r</kbd> on an example</td><td>Run it</td></tr><tr><td><kbd>c</kbd></td><td>Copy it</td></tr><tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Previous · next section</td></tr></table><h3>Screen reader</h3><p>The guide is an <code>article</code> with one level-1 heading and level-2 sections. Each Run and Copy button is named with its query (“Run from:ortiz on your mail”), and the count is read as text after the query.</p><h3>Workflows</h3><p><a href="workflows.html#w7">W7 Ask a question of the mail</a></p></section></main>
+<aside class="evidence" aria-labelledby="ev-g"><h2 id="ev-g">On this page</h2>
+  <nav aria-label="On this page"><ol class="small" style="padding-left:1.1rem;display:grid;gap:.2rem">
+    <li><a href="#page-title">Introduction</a></li><li><a href="#">Filters</a></li><li><a href="#match" aria-current="location"><strong>Three ways to match</strong></a></li>
+    <li><a href="#leave">Leaving things out</a></li><li><a href="#">What a query is about</a></li><li><a href="#">Calendar events</a></li><li><a href="#">Stages</a></li>
+    <li><a href="#">Examples worth stealing</a></li><li><a href="#">When a query is wrong</a></li></ol></nav>
+  <h3 style="margin-top:1rem">Related</h3><ul class="small" style="padding-left:1.1rem"><li><a href="#">Labels</a></li><li><a href="query.html">Ask — the query bar</a></li><li><a href="ask.html">Ask in words</a></li></ul>
+  <h3 style="margin-top:1rem">Was this clear?</h3><p class="small" style="margin:0 0 .4rem">Saved on this computer, with the paragraph you were reading, for whoever improves the guide.</p>
+  <div style="display:flex;gap:.4rem"><button class="btn">Yes</button><button class="btn">Not quite…</button></div>
+</aside>
+</div>
+</body>
+</html>

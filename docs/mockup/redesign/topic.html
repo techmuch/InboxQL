@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kitchen remodel · InboxQL redesign</title>
+<meta name="description" content="A topic subject: next step, open loops, money against the quote, dates, cards and people.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="topic:kitchen-remodel" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html" aria-current="page">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title">
+  <p class="crumbs"><a href="today.html">Today</a> › Subjects</p>
+  <div class="page-head"><div class="grow">
+    <h1 id="page-title">Kitchen remodel</h1>
+    <p class="muted" style="margin:0"><span class="chip">topic</span> 3 people · 52 messages · 6 files · 5 cards · since Aug 12</p>
+  </div><button class="btn" aria-pressed="true">Pinned <kbd>p</kbd></button></div>
+  <p><span class="callout" aria-hidden="true">1</span> <strong>Next:</strong> choose a hardware finish by Monday so cabinets can be delivered Nov 2. Rafael still owes you the island quote. The rough-in inspection is due Nov 17.</p>
+
+  <section class="section" aria-labelledby="h-k-loops">
+    <header><h2 id="h-k-loops" class="grow">Open loops</h2></header>
+    <ul class="list card">
+      <li class="row selected"><span class="chip warn">on you</span><div><span class="who">Cabinet hardware finish</span> <div class="line">Rafael: “Can you pick brushed brass or matte black by Monday…” · Oct 29</div></div><span class="meta"><a class="btn primary" href="compose.html">Reply</a></span></li>
+      <li class="row"><span class="chip">on Rafael</span><div><span class="who">Revised quote with the island</span> <div class="line">You asked Oct 26 · no answer in 5 days</div></div><span class="meta"><button class="btn">Nudge</button></span></li>
+      <li class="row"><span class="chip">on Jordan</span><div><span class="who">Pick-up of old cabinets</span> <div class="line">You asked Jordan Lee on Oct 24 whether his truck is free on the 7th</div></div><span class="meta"><button class="btn">Nudge</button></span></li>
+    </ul>
+  </section>
+
+  <div style="display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr))">
+  <section class="section card" style="padding:.8rem 1rem;margin:0" aria-labelledby="h-k-money">
+    <h2 id="h-k-money">Money <span class="callout" aria-hidden="true">2</span></h2>
+    <p style="margin:.3rem 0">Spent <strong>$5,412.20</strong> of a <strong>$18,450</strong> quote.</p>
+    <div class="progress" aria-hidden="true"><i style="width:29%"></i></div>
+    <ul class="small" style="padding-left:1.1rem;margin:.5rem 0 0"><li>Deposit, Ortiz Renovations — $5,000.00, Oct 14</li><li>Hardware Depot (2 orders) — $412.20</li></ul>
+    <p class="small muted" style="margin:.3rem 0 0">From receipts the agent extracted · <a href="query.html">Open as a query</a></p>
+  </section>
+  <section class="section card" style="padding:.8rem 1rem;margin:0" aria-labelledby="h-k-dates">
+    <h2 id="h-k-dates">Dates</h2>
+    <ul class="items tight" style="margin-top:.4rem">
+      <li><span class="t">Mon 2</span><span class="k">Event</span><span>Cabinet delivery <span class="chip agent">proposed</span></span></li>
+      <li><span class="t">Wed 4</span><span class="k">Delivery</span><span>Hardware Depot #88231</span></li>
+      <li><span class="t">Tue 17</span><span class="k">Due</span><span>Rough-in inspection</span></li>
+    </ul>
+    <p class="small muted" style="margin:.4rem 0 0"><a href="ahead.html">See in Ahead</a></p>
+  </section>
+  <section class="section card" style="padding:.8rem 1rem;margin:0" aria-labelledby="h-k-cards">
+    <h2 id="h-k-cards">Cards</h2>
+    <ul class="small" style="padding-left:1.1rem;margin:.4rem 0 0"><li>Order cabinet hardware — <em>To do</em>, due Nov 2</li><li>Book the inspection — <em>Doing</em></li><li>Choose countertop — <em>Done</em></li><li><span class="chip agent">proposed</span> Arrange old-cabinet pick-up</li></ul>
+    <p class="small muted" style="margin:.4rem 0 0"><a href="board.html">Open on the Board</a></p>
+  </section>
+  </div>
+
+  <section class="section" aria-labelledby="h-k-people">
+    <header><h2 id="h-k-people" class="grow">People</h2></header>
+    <ul class="list card">
+      <li class="row"><span class="avatar" aria-hidden="true">RO</span><div><span class="who"><a href="subject.html">Rafael Ortiz</a></span> <div class="line">Contractor · 38 messages · usually replies within a day</div></div><span class="meta"></span></li>
+      <li class="row"><span class="avatar" aria-hidden="true">JL</span><div><span class="who">Jordan Lee</span> <div class="line">Copied on 9 · helping with the pick-up</div></div><span class="meta"></span></li>
+      <li class="row read"><span class="avatar" aria-hidden="true">HD</span><div><span class="who">Hardware Depot</span> <div class="line">System · 5 order emails</div></div><span class="meta"></span></li>
+    </ul>
+  </section>
+
+  <section class="section" aria-labelledby="h-k-stream">
+    <header><h2 id="h-k-stream" class="grow">Everything in this topic</h2></header>
+    <div role="group" aria-label="Show" class="filters"><button class="chip" aria-pressed="true">All</button><button class="chip" aria-pressed="false">Mail</button><button class="chip" aria-pressed="false">Files</button><button class="chip" aria-pressed="false">Cards</button><button class="chip" aria-pressed="false">Money</button></div>
+    <ol class="list card" aria-label="Kitchen remodel, newest first">
+      <li class="row read"><span class="meta" style="text-align:left;min-width:3.5rem">Oct 31</span><div><span class="who">✉ Hardware Depot: order #88231 shipped</span> <div class="line">Arrives Wednesday</div></div><span class="meta"></span></li>
+      <li class="row"><span class="meta" style="text-align:left;min-width:3.5rem">Oct 29</span><div><span class="who">✉ Rafael Ortiz: Cabinet hardware</span> <span class="chip warn">owed</span><div class="line">“Can you pick brushed brass or matte black by Monday…”</div></div><span class="meta"><a class="btn" href="conversation.html">Open</a></span></li>
+      <li class="row"><span class="meta" style="text-align:left;min-width:3.5rem">Oct 27</span><div><span class="who">📎 Quote-v2.pdf</span> <div class="line">Revised quote · $18,450 extracted</div></div><span class="meta"><a class="btn" href="files.html">Preview</a></span></li>
+    </ol>
+  </section>
+<section class="notes" aria-labelledby="n-topic"><h2 id="n-topic">About this screen</h2><p><strong>Purpose.</strong> A topic is a subject that is not a person: everything about one piece of your life or work, across people. It is the page for a project like a remodel, where the questions are <em>what is next, what is it costing, and who is holding things up</em>.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> <strong>Next</strong> is one sentence about what moves the project forward, built from open loops and dates — not from a summary of the mail.</li><li><span class="callout">2</span> Money is added up from receipts in the topic and compared with the quote the agent found. Each figure links to its message.</li></ol><h3>What changed from today's app</h3><ul><li>Today a topic is a tag on threads (<code>topic:</code>) with no page of its own.</li><li>Topics come from the agent’s <code>topics</code> element; you can add or remove any conversation, and your choice wins.</li></ul><h3>Keyboard</h3><table class="doc"><tr><th>Key</th><th>Does</th></tr><tr><td><kbd>p</kbd></td><td>Pin or unpin as a subject</td></tr><tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>All / Mail / Files / Cards / Money</td></tr><tr><td><kbd>t</kbd></td><td>Add the open conversation to a topic</td></tr></table><h3>Screen reader</h3><p>Sections are headings in order: open loops, money, dates, cards, people, everything. The money progress bar is decorative; the sentence above it says the figures.</p><h3>Workflows</h3><p><a href="workflows.html#w2">W2 Work one subject</a></p></section></main>
+<aside class="evidence" aria-labelledby="ev-k"><h2 id="ev-k">How this topic is made</h2>
+  <p class="small"><code>topic:kitchen-remodel</code></p>
+  <ul class="small" style="padding-left:1.1rem"><li>49 conversations tagged by the agent</li><li>3 you added by hand</li><li>1 you removed (“Hardware Depot newsletter”) — the agent won’t add it again</li></ul>
+  <h3>Usually in this topic</h3><p class="small">Mail from <code>*@ortizreno.example</code>, Hardware Depot orders, and anything mentioning cabinets, countertop or inspection.</p>
+  <button class="btn" style="margin-top:.5rem">Rename or merge topic</button>
+</aside>
+</div>
+</body>
+</html>

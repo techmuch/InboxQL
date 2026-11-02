@@ -1,6 +1,6 @@
 # Settings and the System section
 
-**Settings** (Ctrl+, **File → Settings**, or your name at the top right) is a tab with a section for each kind
+**Settings** (Ctrl+, or **Settings** at the bottom of the left-hand pane) opens on an overview of what needs attention, then a section for each kind
 of setting. They are stored in three different places, and knowing which is
 the difference between a setting that follows you and one that does not:
 
@@ -16,7 +16,7 @@ You don't need to know which section a setting is in. Press **Ctrl+K** (**⌘K**
 anywhere and type what you are after — *dark mode*, *port*, *battery*,
 *gravatar* — and choose it: Settings opens at that section, scrolls to the
 setting and outlines it for a moment. The **Search settings** box at the top
-of the Settings tab does the same from inside it, listing the matching
+of Settings does the same from inside it, listing the matching
 settings under the sections.
 
 Every word you type has to begin a word of the setting's name, its section or
@@ -25,8 +25,7 @@ both find the theme.
 
 ## System
 
-The section to open when you want to know what is going on. **Help → About
-InboxQL** opens it directly.
+The section to open when you want to know what is going on: **System and updates**, under *This computer*.
 
 ![Settings, System: how this server is running, and where its mailbox is](images/settings-system.webp)
 
@@ -145,8 +144,8 @@ Gravatar. You can also give any picture's address yourself.
 
 How the Desk looks and behaves in this browser: the [colour theme](#setting/theme), [**Inbox
 Layout**](#setting/inbox-layout) (a row per message or per conversation), **Conversations** (start
-closed or open), [**Viewer Tabs**](#setting/viewer-tabs) (one shared tab or one per kind), and
-[**Attachment Previews**](#setting/attachment-previews) (in the message, in the File tab, or both). The Desk's
+closed or open), and
+[**Attachment Previews**](#setting/attachment-previews) (in the message, on its own, or both). The Desk's
 default [rail entries](#setting/rail-entries) can be re-added here too. [The Desk](desk.md) explains
 each.
 
@@ -184,11 +183,11 @@ mailbox without your consent per annotator. See [Labels](labels.md).
 
 ## Logging
 
-What InboxQL writes in its own log, which you can read under **View → [Log](#open/log)** or
+What InboxQL writes in its own log, which you can read under **[Log](#open/log)** (Go to… → Log) or
 query with `in:logs`: [how slow a query must be](#setting/log-slow-queries) to be recorded as slow, [which
 noisy categories](#setting/log-categories) to include, [how many lines to keep](#setting/log-lines), and [whether the text of
 your queries is written down](#setting/log-query-text). How *much* is logged — the level — is set in the
-Log tab itself.
+Log itself.
 
 ## Maintenance
 
@@ -256,6 +255,5 @@ From a terminal: `iql backup`, `iql backup list`, `iql backup check`,
 
 ## Browser Storage
 
-[What this browser](#setting/browser-storage) has stored for InboxQL — the window layout, a cached profile —
-with **Reset Layout** for a layout that has got into a muddle, and **Clear All
-Browser Storage**. None of it is your mail.
+[What this browser](#setting/browser-storage) has stored for InboxQL — preferences such as the evidence panel's width, a cached profile —
+with **Clear All Browser Storage**. None of it is your mail.

@@ -33,7 +33,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   { id: 'work-loop', where: 'Work loop', doc: 'reading', anchor: 'measuring-the-loop', label: 'Measuring the loop' },
   { id: 'approvals', where: 'Waiting for approval', doc: 'desk', anchor: 'waiting-for-approval', label: 'Waiting for approval' },
   { id: 'contact-card', where: 'Contact card', doc: 'contacts', anchor: 'what-a-contact-card-shows', label: 'What a contact card shows' },
-  { id: 'file-tab', where: 'File viewer', doc: 'files', anchor: 'the-file-tab', label: 'The File tab' },
+  { id: 'file-tab', where: 'File viewer', doc: 'files', anchor: 'a-file-on-its-own', label: 'A file on its own' },
   { id: 'calendar', where: 'Calendar', doc: 'calendar', anchor: 'the-views', label: 'The calendar' },
   { id: 'event-card', where: 'Calendar, an event', doc: 'calendar', anchor: 'an-events-card', label: "An event's card" },
   { id: 'board', where: 'Board', doc: 'tickets', anchor: 'the-board', label: 'The board' },

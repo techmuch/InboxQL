@@ -4,6 +4,8 @@ import { searchDocs, type DocHit, type DocSection } from '../lib/docsSearch';
 import { DOC_EVENT, takeDocRequest, type DocRequest } from '../lib/docsNav';
 import { openSetting } from '../lib/settingsIndex';
 import { openPlace } from '../lib/appPlaces';
+import { openKeys } from '../lib/appUi';
+import { appVersion, notesAnchor } from '../lib/version';
 
 /**
  * Help → Documentation: the guides, searchable, in a tab.
@@ -42,7 +44,7 @@ export const Docs = () => {
   const [guides, setGuides] = useState<Guide[]>([]);
   const [version, setVersion] = useState('');
   const [index, setIndex] = useState<DocSection[] | null>(null);
-  const [current, setCurrent] = useState<DocRequest>(() => takeDocRequest() ?? { slug: 'getting-started' });
+  const [current, setCurrent] = useState<DocRequest>(() => takeDocRequest() ?? { slug: 'home' });
   const [page, setPage] = useState<Page | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -69,10 +71,11 @@ export const Docs = () => {
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
+    // Help's home is a page of its own, not a guide.
+    if (current.slug === 'home') return;
     fetch(`/api/docs/${encodeURIComponent(current.slug)}`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((p: Page) => { if (!cancelled) setPage(p); })
+      .then((p: Page) => { if (!cancelled) { setPage(p); setError(null); } })
       .catch(() => { if (!cancelled) setError(`there is no guide called “${current.slug}”`); });
     return () => { cancelled = true; };
   }, [current.slug]);
@@ -190,6 +193,12 @@ export const Docs = () => {
         </div>
 
         <nav className="flex-1 overflow-auto py-2 text-sm" aria-label="Guides">
+          {!query.trim() && (
+            <button onClick={() => open('home')} aria-current={current.slug === 'home' ? 'page' : undefined}
+              className={`mb-2 w-full text-left px-4 py-1.5 transition-colors ${current.slug === 'home' ? 'bg-primary/10 text-primary font-semibold' : 'hover:bg-accent text-foreground/80'}`}>
+              Help home
+            </button>
+          )}
           {query.trim() ? (
             <SearchResults hits={hits} active={active} loading={index === null} onChoose={choose} />
           ) : (
@@ -220,9 +229,10 @@ export const Docs = () => {
       </aside>
 
       <div ref={bodyRef} className="flex-1 overflow-auto" onClick={onBodyClick}>
+        {current.slug === 'home' ? <HelpHome groups={groups} version={version} open={open} /> : <>
         {error && <p className="p-8 text-sm text-destructive">{error}</p>}
         {!page && !error && <p className="p-8"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></p>}
-        {page && (
+        {page && page.slug === current.slug && (
           <div className="mx-auto flex max-w-5xl gap-10 px-8 py-10">
             <article className="min-w-0 flex-1 max-w-[46rem]">
               <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">{page.group}</p>
@@ -264,6 +274,7 @@ export const Docs = () => {
             )}
           </div>
         )}
+        </>}
       </div>
     </div>
   );
@@ -304,3 +315,42 @@ const SearchResults = ({ hits, active, loading, onChoose }: {
 
 /** An icon for the Help menu and the tab. */
 export const DocsIcon = BookOpen;
+
+/**
+ * Help's home: what is new, help where you are, then every guide. Search is
+ * beside it, in the list of guides.
+ */
+const HelpHome = ({ groups, version, open }: {
+  groups: { group: string; guides: Guide[] }[]; version: string; open: (slug: string, anchor?: string) => void;
+}) => (
+  <div className="mx-auto max-w-4xl px-8 py-10">
+    <h1 className="text-3xl font-bold tracking-tight">Help</h1>
+    <p className="mt-2 text-muted-foreground">Every guide is built into InboxQL and describes the version you are running, v{version || appVersion}. Nothing here is fetched from the web. Search them with <kbd className="iql-kbd">/</kbd>.</p>
+    <section className="mt-8" aria-labelledby="hh-here">
+      <h2 id="hh-here" className="text-lg font-semibold">Help where you are</h2>
+      <p className="mt-1">Press <kbd className="iql-kbd">?</kbd> on any screen for what it is for, its sections and its keys. <button type="button" className="underline" onClick={openKeys}>Try it here</button>.</p>
+    </section>
+    <section className="mt-8" aria-labelledby="hh-new">
+      <h2 id="hh-new" className="text-lg font-semibold">What’s new</h2>
+      <p className="mt-1"><button type="button" className="underline" onClick={() => open('release-notes', notesAnchor(appVersion))}>Release notes for v{appVersion}</button>, and every release before it.</p>
+    </section>
+    <section className="mt-8" aria-labelledby="hh-guides">
+      <h2 id="hh-guides" className="text-lg font-semibold">Guides</h2>
+      {groups.map(g => (
+        <div key={g.group} className="mt-3">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">{g.group}</h3>
+          <ul className="mt-1 grid gap-2 sm:grid-cols-2">
+            {g.guides.map(guide => (
+              <li key={guide.slug}>
+                <button type="button" className="w-full border border-border bg-card px-3 py-2 text-left hover:bg-accent" onClick={() => open(guide.slug)}>
+                  <span className="block font-medium">{guide.title}</span>
+                  <span className="block text-sm text-muted-foreground">{guide.summary}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  </div>
+);

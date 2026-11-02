@@ -50,7 +50,6 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'inbox-layout', label: 'Inbox layout', section: 'general', keywords: 'conversations threads threaded flat grouped' },
   { id: 'conversations-open', label: 'Conversations start open or closed', section: 'general', keywords: 'expand collapse threads', within: 'inbox-layout' },
   { id: 'attachment-previews', label: 'Attachment previews', section: 'general', keywords: 'files open where preview' },
-  { id: 'viewer-tabs', label: 'Viewer tabs', section: 'general', keywords: 'split reuse message tab' },
   { id: 'rail-entries', label: 'Rail entries', section: 'general', keywords: 'sidebar saved queries folders hide reorder' },
 
   { id: 'this-server', label: 'Version and server', section: 'system', keywords: 'version about mode dev service uptime restart' },

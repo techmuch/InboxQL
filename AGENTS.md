@@ -28,7 +28,7 @@ recalled, it goes out under their name, and nothing in InboxQL stops you —
 the rule is the safeguard.
 
 `iql send` does not send. It moves a draft into the outbox and stops, where
-the person can read it in Intelligence → Waiting for approval and press Send.
+the person can read it in **Drafts and outbox** (or **To review**) and press Send.
 `iql outbox approve <id>` sends it: at a terminal it shows the message and asks;
 without one it needs `--yes`, which is how you send.
 
@@ -750,7 +750,7 @@ see what somebody is looking at, and put something in front of them.
 ```
 iql --json ui list                     who is open, and what each is showing
 iql ui query <id> <query> --note why   point one window at a query
-iql ui open <id> <what>                desk, log, settings, annotators, windows, or a message id
+iql ui open <id> <what>                a place (today, ahead, inbox, review, calendar…), or a message id
 iql ui notice <id> <text>              say something, changing nothing
 iql ui close <id>                      forget one that is gone
 ```
@@ -763,7 +763,8 @@ serving them, so `iql start` must be running and `--addr` must point at it
 ### Why this is the useful half
 
 `ui list` answers *what is the user looking at* without asking them. Each window
-reports its current query and its open tabs, so you can see that somebody is on
+reports its current query, the place it shows (`active`: `today`, `desk`,
+`calendar`…) and the places it has visited (`tabs`), so you can see that somebody is on
 `label:purchases` before suggesting anything about it.
 
 The other direction is a handoff: when you have found something, put it on their
@@ -794,8 +795,8 @@ dropped; it cannot be commanded until it reconnects.
 
 ### The person can see all of this
 
-The Windows tab in the UI lists every open window, what each is showing, which
-tabs it has, and what it was last told — including by you. There is no way to
+Windows in the UI (Go to… → Windows) lists every open window, what each is showing, which
+places it has visited, and what it was last told — including by you. There is no way to
 move somebody's screen without it being visible to them afterwards, which is the
 intended property rather than an oversight.
 
@@ -867,7 +868,7 @@ when the first annotation of a run seems to hang.
 
 | | Where | What it is |
 |---|---|---|
-| **Level** | the Log tab, `iql log level` | how much — the floor |
+| **Level** | the Log, `iql log level` | how much — the floor |
 | **Everything else** | Settings → Logging | what, and how slow is slow |
 
 Settings → Logging holds four things: the slow-query threshold, which of the
@@ -1185,7 +1186,7 @@ user did not make from the review queue: it launders a correction into the set
 the model is measured on.
 
 In the interface, a label on a message is a chip with a context menu — Right,
-Wrong, or for a levelled label *Should be …* — and the Annotators tab has
+Wrong, or for a levelled label *Should be …* — and Labels & extractors has
 **Review**, which draws ten messages across the whole score range and hides the
 model's answer until the user has given theirs.
 
@@ -1304,7 +1305,7 @@ answered, half at random (these measure accuracy) and half where a wrong answer
 is likeliest; the template guesses nothing and the first answers are not shown.
 Read from scratch, preferably as a different model, and `audit submit` in the
 `work submit` shape. Agreement stands; a disagreement flags the conversation
-for `work next --deep` and waits for a person in Intelligence → Work loop.
+for `work next --deep` and waits for a person in **To review** (and Agent activity).
 **Do not run `audit resolve` yourself** unless the user tells you which answer
 is right — it records their verdict. Each element has a target and cost
 (`work targets`); an element missing its target is no longer guessed by the
@@ -1364,7 +1365,7 @@ iql --json calendar changes
 ```
 
 A proposal changes nothing and reaches nobody. It shows on the calendar, marked,
-until the user approves it in the Calendar tab or with `iql calendar approve
+until the user approves it in **To review** or the Calendar, or with `iql calendar approve
 <change-id>` — which **exits 4 for you**, with no flag around it. Tell the
 user what you proposed and the command. `iql calendar reject` is safe for you
 to call.
@@ -1539,7 +1540,7 @@ the mailbox; point the person at Data Management, which restarts to restore.
 **The user guides** are embedded in the binary and served at `/api/docs` — the
 same Markdown as `docs/*.md`, plus this file. When a user asks how something
 works, `GET /api/docs/index` is a searchable copy of everything they can read
-under Help → Documentation, and pointing them at a guide by name is better
+under **Help**, and pointing them at a guide by name is better
 than paraphrasing it.
 
 Two to avoid unless explicitly asked: `account remove` deletes every stored

@@ -70,7 +70,7 @@ newest 100 conversations."*
 
 ## Measuring the loop
 
-**Intelligence → [Work loop](#open/work-loop)** shows how well the reading is
+**[Agent activity](#open/activity)** shows how well the reading is
 going: how often each kind of answer is right, how much effort it takes, and
 where it should read more carefully.
 

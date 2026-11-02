@@ -79,9 +79,9 @@ const MiniMonth = ({ anchor, onPick }: { anchor: Date; onPick: (d: Date) => void
   return (
     <div className="px-3 pb-3 text-xs">
       <div className="mb-1 flex items-center justify-between">
-        <button onClick={() => setMonth(addMonths(month, -1))} aria-label="Previous month" className="p-0.5 hover:bg-accent"><ChevronLeft className="h-3.5 w-3.5" /></button>
+        <button onClick={() => setMonth(addMonths(month, -1))} aria-label="Previous month" className="inline-flex min-h-6 min-w-6 items-center justify-center hover:bg-accent"><ChevronLeft className="h-3.5 w-3.5" /></button>
         <span className="font-medium">{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span>
-        <button onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month" className="p-0.5 hover:bg-accent"><ChevronRight className="h-3.5 w-3.5" /></button>
+        <button onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month" className="inline-flex min-h-6 min-w-6 items-center justify-center hover:bg-accent"><ChevronRight className="h-3.5 w-3.5" /></button>
       </div>
       <div className="grid grid-cols-7 text-center">
         {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i} className="py-0.5 text-[11px] text-muted-foreground">{d}</span>)}
@@ -89,7 +89,7 @@ const MiniMonth = ({ anchor, onPick }: { anchor: Date; onPick: (d: Date) => void
           <button
             key={d.toISOString()}
             onClick={() => onPick(d)}
-            className={`py-0.5 tabular-nums ${sameDay(d, today) ? 'bg-primary text-primary-foreground' : sameDay(d, anchor) ? 'bg-accent font-semibold' : d.getMonth() === month.getMonth() ? '' : 'text-muted-foreground/50'} hover:bg-accent`}
+            className={`min-h-6 py-0.5 tabular-nums ${sameDay(d, today) ? 'bg-primary text-primary-foreground' : sameDay(d, anchor) ? 'bg-accent font-semibold' : d.getMonth() === month.getMonth() ? '' : 'text-muted-foreground'} hover:bg-accent`}
           >
             {d.getDate()}
           </button>
@@ -431,7 +431,7 @@ export const Calendar = () => {
 
         {attention.length > 0 && (
           <div className="border-t border-border px-3 py-2">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-amber-600">Waiting for you · {attention.length}</p>
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300">Waiting for you · {attention.length}</p>
             <ul className="space-y-2 text-xs">
               {upcoming.map(renderChange)}
             </ul>

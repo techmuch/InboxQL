@@ -148,7 +148,7 @@ export const TimeGrid = ({ days, occurrences, calendars, selected, onSelect, onC
         })}
       </div>
 
-      <div ref={scroller} className="flex-1 overflow-auto">
+      <div ref={scroller} className="flex-1 overflow-auto" tabIndex={0} role="region" aria-label="Hours of the day">
         <div className="relative flex" style={{ height: 24 * HOUR_PX }}>
           <div className="w-14 shrink-0 relative">
             {Array.from({ length: 24 }, (_, h) => (

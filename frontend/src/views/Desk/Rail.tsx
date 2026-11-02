@@ -210,7 +210,7 @@ export const Rail = ({
               onClick={() => setArranging(a => !a)}
               aria-pressed={arranging}
               title={arranging ? 'Done arranging' : 'Arrange the rail'}
-              className={`p-1 ${arranging ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`inline-flex min-h-6 min-w-6 items-center justify-center ${arranging ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               <Settings2 className="w-3 h-3" />
             </button>

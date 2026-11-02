@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>You and your accounts · Settings · InboxQL redesign</title>
+<meta name="description" content="Profile, mail and calendar accounts, and sending.">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="mock-banner" aria-label="About this mockup">
+  <strong>Mockup</strong><span>Static, made-up data. Every item in the left-hand pane opens its own mockup; notes are below each screen.</span>
+  <nav aria-label="Mockup screens" class="small"><a href="index.html">Overview</a> · <a href="plan.html">Plan</a> · <a href="index.html#h-screens">All screens</a> · <a href="workflows.html">Workflows</a> · <a href="palette.html">Command palette</a> · <a href="mobile.html">Phone</a> · <a href="phone-app.html">Phone app</a> · <a href="ask.html">Ask in words</a></nav>
+  <span class="spacer"></span>
+  <button type="button" class="theme-toggle" data-theme-toggle>Show dark theme</button>
+</aside>
+<header class="app-bar">
+  <a class="brand" href="today.html">InboxQL</a>
+  <form class="querybar" role="search" aria-label="Ask" onsubmit="return false">
+    <label for="q" class="sr-only">Query — what this screen shows. Edit it to change the view.</label>
+    <span aria-hidden="true" class="muted">⌕</span>
+    <input id="q" class="q" value="settings:accounts" spellcheck="false" autocomplete="off">
+    <kbd title="Focus the query">/</kbd>
+  </form>
+  <a class="btn" href="palette.html" aria-keyshortcuts="Meta+K">Go to… <span class="k"><kbd>⌘K</kbd></span></a>
+  <a class="btn primary" href="compose.html" aria-keyshortcuts="c">Write <span class="k"><kbd>c</kbd></span></a>
+  <span class="status" role="status" aria-live="off"><span class="dot" aria-hidden="true" style="background:var(--good)"></span>Synced 1 min ago · agent: 3 answers in the last hour</span>
+</header>
+<div class="shell">
+<nav class="nav" aria-label="Places">
+<h2 id="nav-needs-me">Needs me</h2><ul aria-labelledby="nav-needs-me">
+<li><a href="today.html">Today<span class="count">14<span class="sr-only"> items</span></span></a></li>
+<li><a href="ahead.html">Ahead</a></li>
+<li><a href="replies.html">Replies I owe<span class="count">4<span class="sr-only"> items</span></span></a></li>
+<li><a href="review.html">To review<span class="count">9<span class="sr-only"> items</span></span></a></li>
+<li><a href="outbox.html">Drafts and outbox<span class="count">4<span class="sr-only"> items</span></span></a></li>
+</ul>
+<h2 id="nav-mail">Mail</h2><ul aria-labelledby="nav-mail">
+<li><a href="inbox.html">Inbox<span class="count">117<span class="sr-only"> items</span></span></a></li>
+<li><a href="everything.html">Everything</a></li>
+</ul>
+<h2 id="nav-subjects">Subjects</h2><ul aria-labelledby="nav-subjects">
+<li><a href="subject.html">Rafael Ortiz</a></li>
+<li><a href="topic.html">Kitchen remodel</a></li>
+<li><a href="query.html">Receipts 2026</a></li>
+<li><a href="q4.html">Q4 report</a></li>
+</ul>
+<h2 id="nav-places">Places</h2><ul aria-labelledby="nav-places">
+<li><a href="calendar.html">Calendar</a></li>
+<li><a href="board.html">Board</a></li>
+<li><a href="files.html">Files</a></li>
+<li><a href="people.html">People</a></li>
+<li><a href="activity.html">Agent activity</a></li>
+<li><a href="settings.html" aria-current="page">Settings</a></li>
+<li><a href="help.html">Help</a></li>
+</ul>
+<p class="small muted" style="padding:.75rem .6rem 0">Subjects are saved queries. Pin any person, topic or query with <kbd>p</kbd>.</p>
+</nav><main id="main" class="main" aria-labelledby="page-title"><div class="page-head"><div class="grow"><h1 id="page-title">You and your accounts</h1></div></div>
+<div class="settings"><nav class="setnav" aria-label="Settings sections"><form role="search" onsubmit="return false"><label for="setq" class="sr-only">Find a setting</label><input id="setq" placeholder="Find a setting…  ⌘F"></form><ul><li><a href="settings.html">Overview</a></li><li><a href="settings-accounts.html" aria-current="page">You and your accounts</a></li><li><a href="settings-agents.html">Agents and AI</a></li><li><a href="settings-reading.html">Reading and appearance</a></li><li><a href="settings-data.html">Your data<span class="chip warn" title="needs attention">1<span class="sr-only"> needs attention</span></span></a></li><li><a href="settings-computer.html">This computer<span class="chip warn" title="needs attention">1<span class="sr-only"> needs attention</span></span></a></li></ul></nav><div><section class="setgroup" aria-labelledby="g-you"><h2 id="g-you">You</h2><div class="card"><div class="set " id="setting-display-name"><div><div class="lbl" id="l-display-name">Your name</div><p class="desc" id="d-display-name">Shown on mail you send and on your own messages here.</p></div><div class="ctl"><input class="btn" aria-labelledby="l-display-name" value="Alex Kim"></div></div><div class="set " id="setting-profile-email"><div><div class="lbl" id="l-profile-email">Your addresses</div><p class="desc" id="d-profile-email"><code>me()</code> in a query means these. Taken from your accounts.</p></div><div class="ctl"><span class="small">you@example.com, you@work.example</span></div></div><div class="set " id="setting-profile-image"><div><div class="lbl" id="l-profile-image">Picture</div><p class="desc" id="d-profile-image">Shown beside your messages. Never fetched from anywhere unless you ask.</p></div><div class="ctl"><span class="avatar" aria-hidden="true">AK</span><button class="btn">Choose…</button></div></div></div></section><section class="setgroup" aria-labelledby="g-mail"><h2 id="g-mail">Mail accounts <span class="callout" aria-hidden="true">1</span></h2><p class="small muted" style="margin:-.25rem 0 .5rem">Passwords are kept encrypted on this computer and are never shown again.</p><div class="card"><div class="set"><div><div class="lbl">Personal <span class="chip">Gmail</span></div><p class="desc">you@example.com · live: changes reach Gmail in seconds · 82% of older mail here (38,400 of 46,900)</p></div><div class="ctl"><span class="chip good">live</span><button class="btn">Edit</button><button class="btn">Test</button></div></div><div class="set"><div><div class="lbl">Work <span class="chip">IMAP</span></div><p class="desc">you@work.example · mail.work.example:993 · all mail here</p></div><div class="ctl"><span class="chip good">live</span><button class="btn">Edit</button><button class="btn">Test</button></div></div><div class="set wide"><div class="ctl"><button class="btn">+ Add an account</button><span class="small muted">Gmail, iCloud, Fastmail, or any IMAP server</span></div></div></div></section><section class="setgroup" aria-labelledby="g-cal"><h2 id="g-cal">Calendars</h2><div class="card"><div class="set " id="setting-google-calendar"><div><div class="lbl" id="l-google-calendar">Google Calendar</div><p class="desc" id="d-google-calendar">you@example.com · 3 calendars · synced 2 min ago</p></div><div class="ctl"><span class="chip good">connected</span><button class="btn">Choose calendars</button></div></div><div class="set " id="setting-exchange-server"><div><div class="lbl" id="l-exchange-server">Exchange Server</div><p class="desc" id="d-exchange-server">Only Exchange Server on your organisation’s own servers. Microsoft 365 cannot be connected.</p></div><div class="ctl"><button class="btn">Connect…</button></div></div><div class="set " id="setting-calendar-invitations"><div><div class="lbl" id="l-calendar-invitations">Invitations in mail</div><p class="desc" id="d-calendar-invitations">Read invitations that arrive by mail into an Invitations calendar.</p></div><div class="ctl"><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="l-calendar-invitations"></button></div></div></div></section><section class="setgroup" aria-labelledby="g-send"><h2 id="g-send">Sending</h2><div class="card"><div class="set " id="setting-undo-send"><div><div class="lbl" id="l-undo-send">Time to undo a send</div><p class="desc" id="d-undo-send">How long Send waits, with Undo, before mail goes.</p></div><div class="ctl"><fieldset class="seg" aria-labelledby="l-undo-send"><label><input type="radio" name="undo"> 5 s</label><label><input type="radio" name="undo" checked> 10 s</label><label><input type="radio" name="undo"> 20 s</label><label><input type="radio" name="undo"> 30 s</label></fieldset></div></div><div class="set " id="setting-signature"><div><div class="lbl" id="l-signature">Signature</div><p class="desc" id="d-signature">Added below what you write; per account.</p></div><div class="ctl"><button class="btn">Edit signatures</button></div></div><div class="set " id="setting-agent-mail"><div><div class="lbl" id="l-agent-mail">Mail written by agents <span class="callout" aria-hidden="true">2</span></div><p class="desc" id="d-agent-mail">Always waits in Drafts and outbox for your Send. Shown here so you know; it is how InboxQL works, not a setting.</p></div><div class="ctl"><span class="chip">always waits for you</span></div></div></div></section><section class="notes" aria-labelledby="n-set-acc"><h2 id="n-set-acc">About this screen</h2><p><strong>Purpose.</strong> Who you are, which accounts InboxQL reads, and how sending behaves.</p><h3>Callouts</h3><ol><li><span class="callout">1</span> Each account says its state in words — live, how much older mail is here, and where changes go. Test classifies a failure (password refused, host not found, network, certificate) instead of one error.</li><li><span class="callout">2</span> Some rules are facts, not settings. Agent mail waiting for your Send is shown so it is never a surprise, without a switch that suggests it could quietly be off.</li></ol><h3>What changed from today's app</h3><ul><li>Profile, Accounts and Calendars were three sections; they are one page.</li><li>Undo-send time is new as a setting (it is fixed at 10 seconds today).</li></ul><h3>Keyboard</h3><table class="doc"><tr><th>Key</th><th>Does</th></tr><tr><td><kbd>Tab</kbd></td><td>Moves through settings in order; every control has a visible label</td></tr></table><h3>Screen reader</h3><p>Each setting is a label, a description (linked with <code>aria-describedby</code>) and a control. The segmented choices are radio groups in a fieldset named by the setting.</p></section></div></div></main>
+<aside class="evidence" aria-labelledby="ev-s"><h2 id="ev-s">From the command line</h2>
+  <p class="small muted">Everything on this page can also be done with <code>iql</code>, so a script or an agent can read it — and the change shows here.</p>
+  <ul class="small" style="list-style:none;padding:0;display:grid;gap:.55rem"><li><code>iql --json account list</code><br><span class="small muted">accounts, never with passwords</span></li><li><code>iql account verify personal</code><br><span class="small muted">test one; says why it failed</span></li><li><code>iql --json calendar accounts</code><br><span class="small muted">connected calendars</span></li></ul>
+  <h3 style="margin-top:1rem">When changes apply</h3><p class="small">At once. Changing an account’s server asks for its password again — a password for one server is never sent to another.</p>
+  <h3 style="margin-top:1rem">Help</h3><p class="small"><a href="#">Accounts and sync guide</a></p></aside>
+</div>
+</body>
+</html>

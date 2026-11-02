@@ -78,8 +78,8 @@ PHASES = [
          tasks=[
              ('Guides updated for the new layout; release notes', 'done', ''),
              ('Typecheck, unit tests, Go tests; accessibility check in light and dark', 'done', ''),
-             ('Commit, tag, push; the release workflow builds', 'doing', ''),
-             ('Installed with iql update', 'doing', ''),
+             ('Commit, tag, push; the release workflow builds', 'done', 'Tagged v2026.11.2.1; release workflow green; CI failed on gofmt of one test file, fixed in 77ce657 (not yet re-checked: GitHub rate limit)'),
+             ('Installed with iql update', 'done', 'Running 2026.11.2.1 at schema v49; the service binary (~/go/bin/iql) differs from the one on PATH (~/.local/bin/iql), so both were updated'),
          ]),
 ]
 

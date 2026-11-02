@@ -73,7 +73,9 @@ func TestAskSaysWhyItCannot(t *testing.T) {
 	if a := Ask(context.Background(), "  ", Options{Bin: "c"}); a.Error == "" {
 		t.Error("empty question accepted")
 	}
-	Runner = func(context.Context, string, []string, []string, string) ([]byte, error) { return []byte(`{"type":"system"}`), nil }
+	Runner = func(context.Context, string, []string, []string, string) ([]byte, error) {
+		return []byte(`{"type":"system"}`), nil
+	}
 	if a := Ask(context.Background(), "x", Options{Bin: "c"}); a.Error == "" {
 		t.Error("no result line should be an error")
 	}
